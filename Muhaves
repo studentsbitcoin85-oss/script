@@ -1,0 +1,670 @@
+--[[
+    Muhaves Hub v3.2.13 - Complete Features (Auto Lift, Rebirth, Lock Pos & Clean Tweaks)
+]]--
+
+local UI_SCALE = 0.8
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local PGui = LP:WaitForChild("PlayerGui", 15)
+local RS = game:GetService("ReplicatedStorage")
+local Run = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+if not PGui then return end
+
+local env = (getgenv and getgenv()) or _G
+if env.MuhavesStop then pcall(env.MuhavesStop) end
+
+local S = { AutoLift = false, AutoReb = false, LockPos = false, TargetReb = 0, Burst = 800, Delay = 0.02 } 
+local alive = true
+local lockedPosition = nil
+
+local function getRem(n) 
+    local r = RS:FindFirstChild("rEvents") 
+    return r and r:FindFirstChild(n) 
+end
+
+local function getStat(n) 
+    local ls = LP:FindFirstChild("leaderstats") 
+    if not ls then return 0 end
+    local o = ls:FindFirstChild(n) 
+    if o then return tonumber(o.Value) or 0 end
+    for _, child in ipairs(ls:GetChildren()) do
+        if child.Name:lower() == n:lower() then
+            return tonumber(child.Value) or 0
+        end
+    end
+    return 0 
+end
+
+local conn = LP.Idled:Connect(function()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        vu:CaptureController()
+        vu:ClickButton2(Vector2.new())
+    end)
+end)
+
+pcall(function() 
+    local old = PGui:FindFirstChild("MuhavesHUD")
+    if old then old:Destroy() end 
+end)
+
+-- ========== PERFORMA (Flat Graphics & Perbaikan) ==========
+local Perf = { antiLag = false, fps = false }
+local saved = setmetatable({}, { __mode = "k" })
+local pconns = {}
+local token = 0
+local CHUNK = 400
+local origShadows = Lighting.GlobalShadows
+local origQuality, origMeshDetail, terrainOrig, terrainDec, techOrig
+local origFpsCap = nil
+local lightOrig = {}
+local LIGHT_PROPS = { "EnvironmentDiffuseScale", "EnvironmentSpecularScale", "ShadowSoftness" }
+
+local function applyShadows()
+    pcall(function()
+        Lighting.GlobalShadows = origShadows and not (Perf.antiLag or Perf.fps)
+    end)
+end
+
+local function optimize(o)
+    pcall(function()
+        if o:IsA("Terrain") then return end
+        if o:IsDescendantOf(workspace) then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character and o:IsDescendantOf(player.Character) then
+                    return
+                end
+            end
+        end
+        
+        if o:IsA("BasePart") then
+            if not saved[o] then
+                local d = { k = "p", m = o.Material, r = o.Reflectance, s = o.CastShadow }
+                if o:IsA("MeshPart") then d.t, d.f = o.TextureID, o.RenderFidelity end
+                saved[o] = d
+            end
+            o.Material = Enum.Material.SmoothPlastic
+            o.Reflectance = 0
+            o.CastShadow = false
+            if o:IsA("MeshPart") then
+                o.TextureID = ""
+                o.RenderFidelity = Enum.RenderFidelity.Performance
+            end
+        elseif o:IsA("Decal") or o:IsA("Texture") then
+            if not saved[o] then saved[o] = { k = "d", t = o.Transparency } end
+            o.Transparency = 1
+        elseif o:IsA("SurfaceAppearance") then
+            if not saved[o] then
+                saved[o] = { k = "sa", c = o.ColorMap, n = o.NormalMap, m = o.MetalnessMap, r = o.RoughnessMap }
+            end
+            o.ColorMap, o.NormalMap, o.MetalnessMap, o.RoughnessMap = "", "", "", ""
+        elseif o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Beam") or o:IsA("Fire") or o:IsA("Smoke") or o:IsA("Sparkles") then
+            if not saved[o] then saved[o] = { k = "fx", e = o.Enabled } end
+            o.Enabled = false
+        end
+    end)
+end
+
+local function restore(o, d)
+    pcall(function()
+        if not o.Parent then return end
+        if d.k == "p" then
+            o.Material, o.Reflectance, o.CastShadow = d.m, d.r, d.s
+            if d.t ~= nil then o.TextureID, o.RenderFidelity = d.t, d.f end
+        elseif d.k == "d" then
+            o.Transparency = d.t
+        elseif d.k == "sa" then
+            o.ColorMap, o.NormalMap, o.MetalnessMap, o.RoughnessMap = d.c, d.n, d.m, d.r
+        elseif d.k == "at" then
+            o.Density, o.Haze = d.d, d.h
+        else
+            o.Enabled = d.e
+        end
+    end)
+end
+
+local function runChunked(list, fn, myToken)
+    for i, o in ipairs(list) do
+        if myToken ~= token or not alive then return end
+        fn(o)
+        if i % CHUNK == 0 then task.wait() end
+    end
+end
+
+local function flatWorld(on)
+    pcall(function()
+        local T = workspace.Terrain
+        if on then
+            for _, e in ipairs(Lighting:GetChildren()) do
+                if not saved[e] then
+                    if e:IsA("PostEffect") then
+                        saved[e] = { k = "fx", e = e.Enabled }
+                        e.Enabled = false
+                    elseif e:IsA("Atmosphere") then
+                        saved[e] = { k = "at", d = e.Density, h = e.Haze }
+                        e.Density, e.Haze = 0, 0
+                    end
+                end
+            end
+            local cl = T:FindFirstChildOfClass("Clouds")
+            if cl and not saved[cl] then
+                saved[cl] = { k = "fx", e = cl.Enabled }
+                cl.Enabled = false
+            end
+            terrainOrig = terrainOrig or {
+                WaterWaveSize = T.WaterWaveSize, WaterWaveSpeed = T.WaterWaveSpeed, WaterReflectance = T.WaterReflectance,
+            }
+            T.WaterWaveSize, T.WaterWaveSpeed, T.WaterReflectance = 0, 0, 0
+        else
+            if terrainOrig then
+                for k, val in pairs(terrainOrig) do T[k] = val end
+            end
+        end
+    end)
+
+    for _, n in ipairs(LIGHT_PROPS) do
+        pcall(function()
+            if on then
+                if lightOrig[n] == nil then lightOrig[n] = Lighting[n] end
+                Lighting[n] = 0
+            elseif lightOrig[n] ~= nil then
+                Lighting[n] = lightOrig[n]
+            end
+        end)
+    end
+
+    pcall(function()
+        if not (sethiddenproperty and gethiddenproperty) then return end
+        if on then
+            if techOrig == nil then techOrig = gethiddenproperty(Lighting, "Technology") end
+            sethiddenproperty(Lighting, "Technology", Enum.Technology.Compatibility)
+        elseif techOrig ~= nil then
+            sethiddenproperty(Lighting, "Technology", techOrig)
+        end
+    end)
+    pcall(function()
+        if not (sethiddenproperty and gethiddenproperty) then return end
+        local T = workspace.Terrain
+        if on then
+            if terrainDec == nil then terrainDec = gethiddenproperty(T, "Decoration") end
+            sethiddenproperty(T, "Decoration", false)
+        elseif terrainDec ~= nil then
+            sethiddenproperty(T, "Decoration", terrainDec)
+        end
+    end)
+end
+
+local function setAntiLag(v)
+    Perf.antiLag = v
+    token += 1
+    local my = token
+    for _, c in ipairs(pconns) do c:Disconnect() end
+    table.clear(pconns)
+
+    flatWorld(v)
+
+    if v then
+        table.insert(pconns, workspace.DescendantAdded:Connect(optimize))
+        table.insert(pconns, Lighting.ChildAdded:Connect(function(child)
+            if child:IsA("PostEffect") or child:IsA("Atmosphere") then
+                saved[child] = { k = "fx", e = child.Enabled }
+                child.Enabled = false
+            end
+        end))
+        task.spawn(function() runChunked(workspace:GetDescendants(), optimize, my) end)
+    else
+        local list = {}
+        for o in pairs(saved) do list[#list + 1] = o end
+        task.spawn(function()
+            runChunked(list, function(o)
+                local d = saved[o]
+                if d then restore(o, d) saved[o] = nil end
+            end, my)
+        end)
+    end
+    applyShadows()
+end
+
+local function setFps(v)
+    Perf.fps = v
+    pcall(function()
+        local r = settings().Rendering
+        if v then
+            origQuality = origQuality or r.QualityLevel
+            r.QualityLevel = Enum.QualityLevel.Level01
+            if getfpscap and setfpscap then
+                if not origFpsCap then origFpsCap = getfpscap() end
+                setfpscap(60)
+            end
+        elseif origQuality then
+            r.QualityLevel = origQuality
+            if setfpscap and origFpsCap then
+                setfpscap(origFpsCap)
+            end
+        end
+    end)
+    pcall(function()
+        local r = settings().Rendering
+        if v then
+            origMeshDetail = origMeshDetail or r.MeshPartDetailLevel
+            r.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+        elseif origMeshDetail then
+            r.MeshPartDetailLevel = origMeshDetail
+        end
+    end)
+    applyShadows()
+end
+
+local function set3D(off)
+    pcall(function() Run:Set3dRenderingEnabled(not off) end)
+end
+
+local function restoreAll()
+    token += 1
+    Perf.antiLag, Perf.fps = false, false
+    for _, c in ipairs(pconns) do c:Disconnect() end
+    table.clear(pconns)
+    for o, d in pairs(saved) do restore(o, d) end
+    table.clear(saved)
+    flatWorld(false)
+    pcall(function()
+        local r = settings().Rendering
+        if origQuality then r.QualityLevel = origQuality end
+        if origMeshDetail then r.MeshPartDetailLevel = origMeshDetail end
+        if setfpscap and origFpsCap then setfpscap(origFpsCap) end
+    end)
+    pcall(function() Lighting.GlobalShadows = origShadows end)
+    set3D(false)
+end
+
+-- ========== TEMA & BUILDER ==========
+local C = {
+    Outer     = Color3.fromRGB(58, 58, 62),
+    Inner     = Color3.fromRGB(18, 18, 20),
+    InnerLine = Color3.fromRGB(95, 95, 100),
+    Plate     = Color3.fromRGB(30, 30, 34),
+    Btn       = Color3.fromRGB(28, 28, 32),
+    BtnOn     = Color3.fromRGB(26, 62, 40),
+    Line      = Color3.fromRGB(240, 240, 240),
+    LineOn    = Color3.fromRGB(90, 255, 150),
+    Text      = Color3.new(1, 1, 1),
+    Dim       = Color3.fromRGB(170, 170, 175),
+    Red       = Color3.fromRGB(255, 110, 110),
+    RedBg     = Color3.fromRGB(52, 22, 22),
+}
+
+local function Hex(parent, w, h, fill, line, thick, alpha, z)
+    alpha = alpha or 0
+    local tip = h / 2
+    local d = h / math.sqrt(2)
+
+    local root = Instance.new("Frame")
+    root.BackgroundTransparency = 1
+    root.Size = UDim2.fromOffset(w, h)
+    root.ZIndex = z or 1
+    root.Parent = parent
+
+    local sqs, lines = {}, {}
+    for i = 0, 1 do
+        local sq = Instance.new("Frame")
+        sq.AnchorPoint = Vector2.new(0.5, 0.5)
+        sq.Size = UDim2.fromOffset(d, d)
+        sq.Position = UDim2.new(i, i == 0 and tip or -tip, 0.5, 0)
+        sq.Rotation = 45
+        sq.BackgroundColor3 = fill
+        sq.BackgroundTransparency = alpha
+        sq.BorderSizePixel = 0
+        sq.ZIndex = 1
+        sq.Parent = root
+        local st = Instance.new("UIStroke")
+        st.Color, st.Thickness = line, thick
+        st.Parent = sq
+        table.insert(sqs, sq)
+    end
+
+    local mid = Instance.new("Frame")
+    mid.Position = UDim2.fromOffset(tip, 0)
+    mid.Size = UDim2.new(1, -h, 1, 0)
+    mid.BackgroundColor3 = fill
+    mid.BackgroundTransparency = alpha
+    mid.BorderSizePixel = 0
+    mid.ZIndex = 2
+    mid.Parent = root
+
+    for i = 0, 1 do
+        local ln = Instance.new("Frame")
+        ln.AnchorPoint = Vector2.new(0, i)
+        ln.Position = UDim2.new(0, 0, i, 0)
+        ln.Size = UDim2.new(1, 0, 0, thick)
+        ln.BackgroundColor3 = line
+        ln.BorderSizePixel = 0
+        ln.ZIndex = 3
+        ln.Parent = mid
+        table.insert(lines, ln)
+    end
+
+    local function paint(f, l)
+        for _, sq in ipairs(sqs) do
+            sq.BackgroundColor3 = f
+            sq.UIStroke.Color = l
+        end
+        mid.BackgroundColor3 = f
+        for _, ln in ipairs(lines) do ln.BackgroundColor3 = l end
+    end
+
+    return root, paint
+end
+
+local function fmt(n)
+    n = tonumber(n) or 0
+    local units = { "", "K", "M", "B", "T", "Qa", "Qi" }
+    local i = 1
+    while n >= 1000 and i < #units do n = n / 1000 i += 1 end
+    if i == 1 then return tostring(math.floor(n)) end
+    return string.format("%.1f%s", n, units[i])
+end
+
+-- ========== GUI GENERATOR ==========
+local Gui = Instance.new("ScreenGui")
+Gui.Name, Gui.ResetOnSpawn, Gui.IgnoreGuiInset = "MuhavesHUD", false, true
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.Parent = PGui
+
+-- TOMBOL MENU
+local Logo = Instance.new("TextButton")
+Logo.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+Logo.Position, Logo.Size = UDim2.new(0, 15, 0, 180), UDim2.new(0, 42, 0, 42)
+Logo.Font, Logo.Text, Logo.TextColor3, Logo.TextSize = Enum.Font.Fondamento, "M", Color3.new(1, 1, 1), 30
+Logo.TextStrokeTransparency, Logo.TextStrokeColor3 = 0.5, Color3.fromRGB(50, 50, 50)
+Logo.Parent = Gui
+
+local corner = Instance.new("UICorner", Logo)
+corner.CornerRadius = UDim.new(0, 8)
+
+local LogoStroke = Instance.new("UIStroke", Logo)
+LogoStroke.Color, LogoStroke.Thickness = Color3.new(1, 1, 1), 1.5
+
+local PW, PH = 600, 160
+local Main = Hex(Gui, PW, PH, C.Outer, C.Line, 2, 0.05, 1)
+Main.AnchorPoint, Main.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -6)
+local Scale = Instance.new("UIScale", Main)
+Scale.Scale = UI_SCALE
+
+-- Modern Drag Manual
+do
+    local dragging, dragInput, dragStart, startPos
+    Main.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = Main.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    Main.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+local InnerHex = Hex(Main, PW - 12, PH - 12, C.Inner, C.InnerLine, 1, 0.1, 4)
+InnerHex.Position = UDim2.fromOffset(6, 6)
+
+Logo.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
+
+do
+    local plate = Hex(Main, 190, 34, C.Plate, C.Line, 2, 0, 7)
+    plate.Position = UDim2.fromOffset((PW - 190) / 2, -17)
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.Size = UDim2.fromScale(1, 1)
+    t.Font, t.Text, t.TextColor3, t.TextSize = Enum.Font.GothamBlack, "« MUHAVES »", C.Text, 17
+    t.TextStrokeTransparency, t.TextStrokeColor3 = 0.3, Color3.new(0, 0, 0)
+    t.ZIndex = 6
+    t.Parent = plate
+end
+
+local function label(txt, cx, y, w, size, font, color)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    l.AnchorPoint = Vector2.new(0.5, 0)
+    l.Position = UDim2.fromOffset(cx, y)
+    l.Size = UDim2.fromOffset(w, size + 6)
+    l.Font, l.Text, l.TextColor3, l.TextSize = font, txt, color, size
+    l.TextStrokeTransparency, l.TextStrokeColor3 = 0.5, Color3.new(0, 0, 0)
+    l.ZIndex = 6
+    l.Parent = Main
+    return l
+end
+
+local Y1, Y2, Y3 = 42, 76, 110
+local XL, XC, XR = 76, 225, 400
+local CX = PW / 2
+
+label("AUTO", XL + 62, 16, 124, 12, Enum.Font.GothamBlack, C.Text)
+label("TWEAKS", XR + 62, 16, 124, 12, Enum.Font.GothamBlack, C.Text)
+
+local function Badge(x, y)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.fromOffset(30, 30)
+    f.Position = UDim2.fromOffset(x, y)
+    f.BackgroundColor3 = C.Btn
+    f.BorderSizePixel = 0
+    f.ZIndex = 5
+    f.Parent = Main
+    Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+    local st = Instance.new("UIStroke", f)
+    st.Color, st.Thickness = C.Line, 2
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.Size = UDim2.fromScale(1, 1)
+    t.Font, t.Text, t.TextColor3, t.TextSize = Enum.Font.GothamBlack, "0", C.Text, 14
+    t.ZIndex = 6
+    t.Parent = f
+    return t, st
+end
+
+local cnt = { auto = 0, tweak = 0 }
+local BadgeL, StrokeL = Badge(34, PH / 2 - 15)
+local BadgeR, StrokeR = Badge(PW - 64, PH / 2 - 15)
+
+local function refresh()
+    BadgeL.Text, BadgeR.Text = tostring(cnt.auto), tostring(cnt.tweak)
+    BadgeL.TextColor3 = cnt.auto > 0 and C.LineOn or C.Text
+    BadgeR.TextColor3 = cnt.tweak > 0 and C.LineOn or C.Text
+    StrokeL.Color = cnt.auto > 0 and C.LineOn or C.Line
+    StrokeR.Color = cnt.tweak > 0 and C.LineOn or C.Line
+end
+
+local toggles = {}
+local function Toggle(txt, x, y, group, cb)
+    local root, paint = Hex(Main, 124, 26, C.Btn, C.Line, 2, 0, 5)
+    root.Position = UDim2.fromOffset(x, y)
+
+    local b = Instance.new("TextButton")
+    b.BackgroundTransparency = 1
+    b.Size = UDim2.fromScale(1, 1)
+    b.Font, b.TextSize, b.TextColor3, b.Text = Enum.Font.GothamBold, 12, C.Text, txt
+    b.TextStrokeTransparency, b.TextStrokeColor3 = 0.5, Color3.new(0, 0, 0)
+    b.ZIndex = 6
+    b.Parent = root
+
+    local on = false
+    local function set(v)
+        if v == on then return end
+        on = v
+        paint(on and C.BtnOn or C.Btn, on and C.LineOn or C.Line)
+        b.TextColor3 = on and C.LineOn or C.Text
+        cnt[group] += on and 1 or -1
+        refresh()
+        cb(on)
+    end
+    b.MouseButton1Click:Connect(function() set(not on) end)
+    table.insert(toggles, set)
+end
+
+local function ActionBtn(txt, x, y, w, fill, line, textColor, cb)
+    local root = Hex(Main, w, 26, fill, line, 2, 0, 5)
+    root.Position = UDim2.fromOffset(x, y)
+    local b = Instance.new("TextButton")
+    b.BackgroundTransparency = 1
+    b.Size = UDim2.fromScale(1, 1)
+    b.Font, b.TextSize, b.TextColor3, b.Text = Enum.Font.GothamBold, 12, textColor, txt
+    b.TextStrokeTransparency, b.TextStrokeColor3 = 0.5, Color3.new(0, 0, 0)
+    b.ZIndex = 6
+    b.Parent = root
+    b.MouseButton1Click:Connect(cb)
+end
+
+-- Tombol Fitur Auto & Tweaks
+Toggle("Auto Lift", XL, Y1, "auto", function(v) S.AutoLift = v end)
+Toggle("Auto Rebirth", XL, Y2, "auto", function(v) S.AutoReb = v end)
+Toggle("Lock Position", XL, Y3, "auto", function(v) 
+    S.LockPos = v 
+    if v then
+        pcall(function()
+            local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then lockedPosition = hrp.CFrame end
+        end)
+    else
+        lockedPosition = nil
+    end
+end)
+
+Toggle("Anti Lag", XR, Y1, "tweak", setAntiLag)
+Toggle("FPS Boost", XR, Y2, "tweak", setFps)
+Toggle("Disable 3D", XR, Y3, "tweak", set3D)
+
+local function shutdown()
+    if not alive then return end
+    alive = false
+    if conn then conn:Disconnect() end
+    restoreAll()
+    pcall(function() Gui:Destroy() end)
+    env.MuhavesStop = nil
+end
+env.MuhavesStop = shutdown
+
+local TimerLbl = label("AFK  00:00:00", CX, 22, 190, 12, Enum.Font.GothamBold, C.LineOn)
+local StatsLbl = label("STR 0  |  REB 0", CX, Y1, 190, 12, Enum.Font.GothamBold, C.Dim)
+
+ActionBtn("All OFF", XC, Y2, 150, C.Btn, C.Line, C.Text, function()
+    for _, set in ipairs(toggles) do set(false) end
+end)
+ActionBtn("Close Hub", XC, Y3, 150, C.RedBg, C.Red, C.Red, shutdown)
+
+for _, o in ipairs(Gui:GetDescendants()) do
+    if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
+        o.AutoLocalize = false
+    end
+end
+
+local t0 = os.time()
+task.spawn(function()
+    while alive do
+        local s = os.time() - t0
+        TimerLbl.Text = string.format("AFK  %02d:%02d:%02d", s // 3600, (s % 3600) // 60, s % 60)
+        pcall(function()
+            local str = getStat("Strength")
+            if str == 0 then str = getStat("Kekuatan") end
+            local rebs = getStat("Rebirths")
+            if rebs == 0 then rebs = getStat("Rebirth") end
+            StatsLbl.Text = "STR " .. fmt(str) .. "  |  REB " .. fmt(rebs)
+        end)
+        task.wait(1)
+    end
+end)
+
+-- ========== MAIN LOOP: AUTO LIFT ==========
+task.spawn(function()
+    local cachedEv = nil
+    while alive do
+        if S.AutoLift then
+            pcall(function()
+                local char = LP.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                if hum and hum.Health > 0 then
+                    local tool = char:FindFirstChildOfClass("Tool") or LP.Backpack:FindFirstChild("Weight") or LP.Backpack:FindFirstChildOfClass("Tool")
+                    if tool and tool.Parent ~= char then
+                        pcall(function() hum:EquipTool(tool) end)
+                    end
+                    if not cachedEv then cachedEv = getRem("muscleEvent") end
+                    if cachedEv then
+                        for i = 1, S.Burst do
+                            cachedEv:FireServer("rep")
+                        end
+                    end
+                    if tool and tool.Parent == char then
+                        pcall(function() tool:Activate() end)
+                    end
+                end
+            end)
+        end
+        task.wait(S.Delay)
+    end
+end)
+
+-- ========== MAIN LOOP: LOCK POSITION ==========
+task.spawn(function()
+    while alive do
+        if S.LockPos then
+            pcall(function()
+                local char = LP.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if not lockedPosition then
+                        lockedPosition = hrp.CFrame
+                    else
+                        hrp.CFrame = lockedPosition
+                        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+            end)
+        end
+        Run.RenderStepped:Wait()
+    end
+end)
+
+-- ========== MAIN LOOP: AUTO REBIRTH ==========
+task.spawn(function()
+    local cachedReb = nil
+    while alive do
+        if S.AutoReb then
+            pcall(function()
+                local rebs = getStat("Rebirths")
+                if rebs == 0 then rebs = getStat("Rebirth") end
+                local str = getStat("Strength")
+                if str == 0 then str = getStat("Kekuatan") end
+                
+                local targetReq = 10000 + (5000 * rebs)
+                if (S.TargetReb <= 0 or rebs < S.TargetReb) and str >= targetReq then
+                    if not cachedReb then cachedReb = getRem("rebirthRemote") end
+                    if cachedReb then
+                        if cachedReb:IsA("RemoteFunction") then
+                            pcall(function() cachedReb:InvokeServer("rebirthRequest") end)
+                        elseif cachedReb:IsA("RemoteEvent") then
+                            cachedReb:FireServer("rebirthRequest")
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(S.Delay)
+    end
+end)
