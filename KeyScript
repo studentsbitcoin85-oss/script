@@ -1,115 +1,312 @@
 
-local KeySystem = {}
+--[[
+    MUHAVES KEY SYSTEM
+    Black • White • Red
+    UI Demo for Roblox Studio
+]]
 
-function KeySystem.Init()
-    local Players = game:GetService("Players")
-    local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 
-    local verified = false
-    local finished = false
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "MuhavesKeySystem"
-    gui.ResetOnSpawn = false
-    gui.Parent = playerGui
+local RED = Color3.fromRGB(235, 20, 38)
+local WHITE = Color3.fromRGB(245, 245, 245)
+local BLACK = Color3.fromRGB(8, 8, 10)
+local PANEL = Color3.fromRGB(17, 17, 20)
+local MUTED = Color3.fromRGB(155, 155, 165)
+local GREEN = Color3.fromRGB(45, 220, 130)
 
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.fromOffset(340, 220)
-    frame.Position = UDim2.new(0.5, -170, 0.5, -110)
-    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
+local gui = Instance.new("ScreenGui")
+gui.Name = "MuhavesKeySystem"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = frame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(220, 35, 45)
-    stroke.Thickness = 1.5
-    stroke.Parent = frame
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -24, 0, 35)
-    title.Position = UDim2.fromOffset(12, 12)
-    title.BackgroundTransparency = 1
-    title.Text = "MUHAVES  |  KEY SYSTEM"
-    title.TextColor3 = Color3.fromRGB(240, 45, 55)
-    title.TextSize = 19
-    title.Font = Enum.Font.GothamBold
-    title.Parent = frame
-
-    local subtitle = Instance.new("TextLabel")
-    subtitle.Size = UDim2.new(1, -24, 0, 24)
-    subtitle.Position = UDim2.fromOffset(12, 48)
-    subtitle.BackgroundTransparency = 1
-    subtitle.Text = "Enter your access key below"
-    subtitle.TextColor3 = Color3.fromRGB(165, 165, 175)
-    subtitle.TextSize = 12
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.Parent = frame
-
-    local input = Instance.new("TextBox")
-    input.Size = UDim2.new(1, -32, 0, 42)
-    input.Position = UDim2.fromOffset(16, 82)
-    input.BackgroundColor3 = Color3.fromRGB(29, 29, 35)
-    input.TextColor3 = Color3.fromRGB(255, 255, 255)
-    input.PlaceholderText = "Enter key..."
-    input.PlaceholderColor3 = Color3.fromRGB(125, 125, 135)
-    input.Text = ""
-    input.TextSize = 14
-    input.Font = Enum.Font.Gotham
-    input.ClearTextOnFocus = false
-    input.Parent = frame
-
-    local inputCorner = Instance.new("UICorner")
-    inputCorner.CornerRadius = UDim.new(0, 7)
-    inputCorner.Parent = input
-
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -32, 0, 38)
-    button.Position = UDim2.fromOffset(16, 136)
-    button.BackgroundColor3 = Color3.fromRGB(190, 25, 38)
-    button.Text = "VERIFY KEY"
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.TextSize = 14
-    button.Font = Enum.Font.GothamBold
-    button.Parent = frame
-
-    local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 7)
-    buttonCorner.Parent = button
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -32, 0, 24)
-    status.Position = UDim2.fromOffset(16, 178)
-    status.BackgroundTransparency = 1
-    status.Text = "● Waiting for verification"
-    status.TextColor3 = Color3.fromRGB(160, 160, 170)
-    status.TextSize = 11
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-
-    button.Activated:Connect(function()
-        if input.Text == "RTXonTOP" then
-            verified = true
-            finished = true
-            status.Text = "✓ Key accepted!"
-            status.TextColor3 = Color3.fromRGB(70, 220, 125)
-        else
-            status.Text = "✕ Invalid key"
-            status.TextColor3 = Color3.fromRGB(255, 70, 80)
-        end
-    end)
-
-    while not finished do
-        task.wait()
+local function create(className, props, parent)
+    local object = Instance.new(className)
+    for property, value in pairs(props) do
+        object[property] = value
     end
-
-    task.wait(0.5)
-    gui:Destroy()
-
-    return verified
+    object.Parent = parent
+    return object
 end
 
-return KeySystem
+local function corner(parent, radius)
+    create("UICorner", {
+        CornerRadius = UDim.new(0, radius)
+    }, parent)
+end
+
+local function outline(parent, color, thickness)
+    return create("UIStroke", {
+        Color = color,
+        Thickness = thickness or 1,
+        Transparency = 0.2
+    }, parent)
+end
+
+-- Main window
+local main = create("Frame", {
+    Name = "Main",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.new(0.92, 0, 0, 510),
+    BackgroundColor3 = BLACK,
+    BorderSizePixel = 0
+}, gui)
+
+create("UISizeConstraint", {
+    MinSize = Vector2.new(310, 420),
+    MaxSize = Vector2.new(760, 560)
+}, main)
+
+corner(main, 12)
+outline(main, Color3.fromRGB(75, 75, 80), 1)
+
+-- Header
+local header = create("Frame", {
+    Position = UDim2.fromOffset(0, 0),
+    Size = UDim2.new(1, 0, 0, 90),
+    BackgroundColor3 = Color3.fromRGB(12, 12, 15),
+    BorderSizePixel = 0
+}, main)
+corner(header, 12)
+
+create("Frame", {
+    Position = UDim2.new(0, 0, 1, -2),
+    Size = UDim2.new(1, 0, 0, 2),
+    BackgroundColor3 = RED,
+    BorderSizePixel = 0
+}, header)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(20, 12),
+    Size = UDim2.new(1, -90, 0, 38),
+    BackgroundTransparency = 1,
+    Text = "MUHAVES",
+    TextColor3 = WHITE,
+    TextSize = 27,
+    Font = Enum.Font.GothamBlack,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, header)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(22, 49),
+    Size = UDim2.new(1, -90, 0, 23),
+    BackgroundTransparency = 1,
+    Text = "KEY SYSTEM  •  SECURE ACCESS",
+    TextColor3 = RED,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, header)
+
+local close = create("TextButton", {
+    Position = UDim2.new(1, -48, 0, 18),
+    Size = UDim2.fromOffset(30, 30),
+    BackgroundColor3 = Color3.fromRGB(35, 15, 18),
+    Text = "X",
+    TextColor3 = WHITE,
+    TextSize = 16,
+    Font = Enum.Font.GothamBold,
+    AutoButtonColor = true
+}, header)
+corner(close, 6)
+
+close.Activated:Connect(function()
+    gui:Destroy()
+end)
+
+-- Content container
+local content = create("Frame", {
+    Position = UDim2.fromOffset(15, 105),
+    Size = UDim2.new(1, -30, 1, -120),
+    BackgroundTransparency = 1
+}, main)
+
+-- Key panel
+local keyPanel = create("Frame", {
+    Size = UDim2.new(1, 0, 0, 175),
+    BackgroundColor3 = PANEL,
+    BorderSizePixel = 0
+}, content)
+corner(keyPanel, 9)
+outline(keyPanel, Color3.fromRGB(65, 65, 70), 1)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 12),
+    Size = UDim2.new(1, -30, 0, 28),
+    BackgroundTransparency = 1,
+    Text = "◆  INPUT KEY",
+    TextColor3 = WHITE,
+    TextSize = 17,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, keyPanel)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 43),
+    Size = UDim2.new(1, -30, 0, 22),
+    BackgroundTransparency = 1,
+    Text = "Masukkan key untuk verifikasi.",
+    TextColor3 = MUTED,
+    TextSize = 12,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, keyPanel)
+
+local keyInput = create("TextBox", {
+    Position = UDim2.fromOffset(15, 76),
+    Size = UDim2.new(1, -30, 0, 40),
+    BackgroundColor3 = BLACK,
+    Text = "",
+    PlaceholderText = "Masukkan key di sini...",
+    PlaceholderColor3 = MUTED,
+    TextColor3 = WHITE,
+    TextSize = 13,
+    Font = Enum.Font.Gotham,
+    ClearTextOnFocus = false
+}, keyPanel)
+corner(keyInput, 6)
+outline(keyInput, Color3.fromRGB(90, 90, 95), 1)
+
+local verify = create("TextButton", {
+    Position = UDim2.fromOffset(15, 126),
+    Size = UDim2.new(1, -30, 0, 36),
+    BackgroundColor3 = RED,
+    Text = "✓   VERIFY KEY",
+    TextColor3 = WHITE,
+    TextSize = 14,
+    Font = Enum.Font.GothamBold
+}, keyPanel)
+corner(verify, 6)
+
+-- Status panel
+local statusPanel = create("Frame", {
+    Position = UDim2.fromOffset(0, 188),
+    Size = UDim2.new(1, 0, 0, 92),
+    BackgroundColor3 = PANEL,
+    BorderSizePixel = 0
+}, content)
+corner(statusPanel, 9)
+outline(statusPanel, Color3.fromRGB(65, 65, 70), 1)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 8),
+    Size = UDim2.new(1, -30, 0, 25),
+    BackgroundTransparency = 1,
+    Text = "◆  STATUS",
+    TextColor3 = WHITE,
+    TextSize = 15,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, statusPanel)
+
+local statusText = create("TextLabel", {
+    Position = UDim2.fromOffset(15, 37),
+    Size = UDim2.new(1, -30, 0, 36),
+    BackgroundColor3 = BLACK,
+    Text = "●  Menunggu key...",
+    TextColor3 = MUTED,
+    TextSize = 13,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, statusPanel)
+corner(statusText, 6)
+
+-- Information panel
+local infoPanel = create("Frame", {
+    Position = UDim2.fromOffset(0, 293),
+    Size = UDim2.new(1, 0, 0, 85),
+    BackgroundColor3 = PANEL,
+    BorderSizePixel = 0
+}, content)
+corner(infoPanel, 9)
+outline(infoPanel, Color3.fromRGB(65, 65, 70), 1)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 8),
+    Size = UDim2.new(1, -30, 0, 24),
+    BackgroundTransparency = 1,
+    Text = "◆  INFORMASI USER",
+    TextColor3 = WHITE,
+    TextSize = 14,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, infoPanel)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 35),
+    Size = UDim2.new(1, -30, 0, 35),
+    BackgroundTransparency = 1,
+    Text = "Username: " .. player.Name,
+    TextColor3 = MUTED,
+    TextSize = 12,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, infoPanel)
+
+-- Activity log
+local logPanel = create("Frame", {
+    Position = UDim2.fromOffset(0, 390),
+    Size = UDim2.new(1, 0, 0, 85),
+    BackgroundColor3 = PANEL,
+    BorderSizePixel = 0
+}, content)
+corner(logPanel, 9)
+outline(logPanel, Color3.fromRGB(65, 65, 70), 1)
+
+create("TextLabel", {
+    Position = UDim2.fromOffset(15, 7),
+    Size = UDim2.new(1, -30, 0, 22),
+    BackgroundTransparency = 1,
+    Text = "◆  LOG AKTIVITAS",
+    TextColor3 = WHITE,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left
+}, logPanel)
+
+local logText = create("TextLabel", {
+    Position = UDim2.fromOffset(15, 31),
+    Size = UDim2.new(1, -30, 0, 43),
+    BackgroundTransparency = 1,
+    Text = "Aplikasi siap digunakan.",
+    TextColor3 = MUTED,
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top
+}, logPanel)
+
+local function addLog(message)
+    logText.Text = message
+end
+
+verify.Activated:Connect(function()
+    -- Demo UI only: no real authentication.
+    statusText.Text = "●  Demo UI — belum terverifikasi"
+    statusText.TextColor3 = RED
+    addLog("Input diterima. Hubungkan ke sistem autentikasi server milikmu.")
+end)
+
+verify.MouseEnter:Connect(function()
+    TweenService:Create(
+        verify,
+        TweenInfo.new(0.15),
+        {BackgroundColor3 = Color3.fromRGB(190, 10, 25)}
+    ):Play()
+end)
+
+verify.MouseLeave:Connect(function()
+    TweenService:Create(
+        verify,
+        TweenInfo.new(0.15),
+        {BackgroundColor3 = RED}
+    ):Play()
+end)
+
+print("Muhaves Key System UI loaded.")
