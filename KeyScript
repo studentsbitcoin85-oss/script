@@ -1,252 +1,59 @@
---[[
-    MUHAVES | RTX CLAN KEY SYSTEM
-    Key: RTXonTOP
-    GET KEY: Removed
-]]
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local RED = Color3.fromRGB(220, 30, 45)
-local BG = Color3.fromRGB(9, 9, 10)
-local PANEL = Color3.fromRGB(18, 18, 20)
-local BORDER = Color3.fromRGB(48, 48, 52)
-local WHITE = Color3.fromRGB(245, 245, 247)
-local MUTED = Color3.fromRGB(145, 145, 152)
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "MuhavesKeySystem"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.Parent = playerGui
-local function corner(obj, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius)
-    c.Parent = obj
-end
-local function stroke(obj, color, thickness)
-    local s = Instance.new("UIStroke")
-    s.Color = color
-    s.Thickness = thickness or 1
-    s.Parent = obj
-end
-local function label(parent, text, size, color, font)
-    local l = Instance.new("TextLabel")
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextSize = size
-    l.TextColor3 = color
-    l.Font = font or Enum.Font.Gotham
-    l.Parent = parent
-    return l
-end
-local function button(parent, text, color)
-    local b = Instance.new("TextButton")
-    b.Text = text
-    b.TextSize = 13
-    b.Font = Enum.Font.GothamBold
-    b.TextColor3 = WHITE
-    b.BackgroundColor3 = color
-    b.AutoButtonColor = false
-    b.Parent = parent
-    corner(b, 8)
-    b.MouseEnter:Connect(function()
-        TweenService:Create(
-            b,
-            TweenInfo.new(0.15),
-            {
-                BackgroundColor3 =
-                    color:Lerp(Color3.new(1, 1, 1), 0.09)
-            }
-        ):Play()
+
+local KeySystem = {}
+
+function KeySystem.Init()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    local verified = false
+    local finished = false
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MuhavesKeySystem"
+    gui.ResetOnSpawn = false
+    gui.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(320, 180)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -90)
+    frame.Parent = gui
+
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, -30, 0, 40)
+    input.Position = UDim2.fromOffset(15, 20)
+    input.PlaceholderText = "Enter key"
+    input.Text = ""
+    input.Parent = frame
+
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, -30, 0, 40)
+    button.Position = UDim2.fromOffset(15, 75)
+    button.Text = "VERIFY KEY"
+    button.Parent = frame
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -30, 0, 25)
+    status.Position = UDim2.fromOffset(15, 125)
+    status.Text = ""
+    status.Parent = frame
+
+    button.Activated:Connect(function()
+        if input.Text == "RTXonTOP" then
+            verified = true
+            finished = true
+            status.Text = "Key accepted!"
+        else
+            status.Text = "Invalid key!"
+        end
     end)
-    b.MouseLeave:Connect(function()
-        TweenService:Create(
-            b,
-            TweenInfo.new(0.15),
-            {BackgroundColor3 = color}
-        ):Play()
-    end)
-    return b
-end
--- MAIN PANEL
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(370, 355)
-main.Position = UDim2.fromScale(0.5, 0.5)
-main.AnchorPoint = Vector2.new(0.5, 0.5)
-main.BackgroundColor3 = BG
-main.Parent = gui
-corner(main, 14)
-stroke(main, BORDER, 1)
-local sizeLimit = Instance.new("UISizeConstraint")
-sizeLimit.MinSize = Vector2.new(300, 340)
-sizeLimit.MaxSize = Vector2.new(420, 380)
-sizeLimit.Parent = main
--- RED ACCENT
-local accent = Instance.new("Frame")
-accent.Size = UDim2.new(1, -32, 0, 3)
-accent.Position = UDim2.fromOffset(16, 0)
-accent.BackgroundColor3 = RED
-accent.BorderSizePixel = 0
-accent.Parent = main
-corner(accent, 3)
--- LOGO
-local logo = Instance.new("Frame")
-logo.Size = UDim2.fromOffset(48, 48)
-logo.Position = UDim2.fromOffset(20, 22)
-logo.BackgroundColor3 = RED
-logo.Parent = main
-corner(logo, 10)
-local logoText = label(
-    logo, "M", 27, WHITE, Enum.Font.GothamBlack
-)
-logoText.Size = UDim2.fromScale(1, 1)
--- BRAND
-local brand = label(
-    main, "MUHAVES", 20, WHITE, Enum.Font.GothamBlack
-)
-brand.Position = UDim2.fromOffset(80, 22)
-brand.Size = UDim2.fromOffset(200, 25)
-brand.TextXAlignment = Enum.TextXAlignment.Left
-local sub = label(
-    main,
-    "RTX CLAN  /  PRIVATE ACCESS",
-    10,
-    RED,
-    Enum.Font.GothamBold
-)
-sub.Position = UDim2.fromOffset(81, 49)
-sub.Size = UDim2.fromOffset(230, 18)
-sub.TextXAlignment = Enum.TextXAlignment.Left
--- CLOSE BUTTON
-local close = button(main, "X", PANEL)
-close.Size = UDim2.fromOffset(30, 30)
-close.Position = UDim2.new(1, -46, 0, 28)
-close.TextSize = 12
-close.Activated:Connect(function()
+
+    repeat
+        task.wait()
+    until finished
+
     gui:Destroy()
-end)
--- TITLE
-local title = label(
-    main,
-    "AUTHENTICATION",
-    19,
-    WHITE,
-    Enum.Font.GothamBold
-)
-title.Position = UDim2.fromOffset(20, 91)
-title.Size = UDim2.new(1, -40, 0, 27)
-local description = label(
-    main,
-    "Enter your access key to continue",
-    11,
-    MUTED
-)
-description.Position = UDim2.fromOffset(20, 120)
-description.Size = UDim2.new(1, -40, 0, 20)
--- KEY LABEL
-local keyLabel = label(
-    main, "ACCESS KEY", 10, MUTED, Enum.Font.GothamBold
-)
-keyLabel.Position = UDim2.fromOffset(20, 158)
-keyLabel.Size = UDim2.new(1, -40, 0, 17)
-keyLabel.TextXAlignment = Enum.TextXAlignment.Left
--- KEY INPUT
-local input = Instance.new("TextBox")
-input.Name = "KeyInput"
-input.Position = UDim2.fromOffset(20, 180)
-input.Size = UDim2.new(1, -40, 0, 42)
-input.BackgroundColor3 = PANEL
-input.TextColor3 = WHITE
-input.PlaceholderColor3 = Color3.fromRGB(100, 100, 106)
-input.PlaceholderText = "Enter your key..."
-input.Text = ""
-input.TextSize = 13
-input.Font = Enum.Font.Code
-input.ClearTextOnFocus = false
-input.TextXAlignment = Enum.TextXAlignment.Left
-input.Parent = main
-corner(input, 8)
-stroke(input, BORDER, 1)
-local inputPadding = Instance.new("UIPadding")
-inputPadding.PaddingLeft = UDim.new(0, 12)
-inputPadding.PaddingRight = UDim.new(0, 12)
-inputPadding.Parent = input
--- VERIFY BUTTON (FULL WIDTH)
-local verify = button(main, "VERIFY KEY", RED)
-verify.Position = UDim2.fromOffset(20, 235)
-verify.Size = UDim2.new(1, -40, 0, 39)
--- STATUS PANEL
-local statusPanel = Instance.new("Frame")
-statusPanel.Position = UDim2.fromOffset(20, 287)
-statusPanel.Size = UDim2.new(1, -40, 0, 43)
-statusPanel.BackgroundColor3 = PANEL
-statusPanel.Parent = main
-corner(statusPanel, 8)
-local statusTitle = label(
-    statusPanel,
-    "●  VERIFICATION STATUS",
-    10,
-    MUTED,
-    Enum.Font.GothamBold
-)
-statusTitle.Position = UDim2.fromOffset(12, 5)
-statusTitle.Size = UDim2.new(1, -24, 0, 15)
-statusTitle.TextXAlignment = Enum.TextXAlignment.Left
-local statusText = label(
-    statusPanel,
-    "Waiting for key input...",
-    11,
-    WHITE
-)
-statusText.Position = UDim2.fromOffset(12, 21)
-statusText.Size = UDim2.new(1, -24, 0, 16)
-statusText.TextXAlignment = Enum.TextXAlignment.Left
--- FOOTER
-local footer = label(
-    main,
-    "MUHAVES DEVS  •  RTX CLAN",
-    9,
-    MUTED,
-    Enum.Font.GothamMedium
-)
-footer.Position = UDim2.new(0, 0, 1, -20)
-footer.Size = UDim2.new(1, 0, 0, 12)
--- STATUS FUNCTION
-local function setStatus(message, color)
-    statusText.Text = message
-    statusText.TextColor3 = color
+    return verified
 end
--- KEY VALIDATION
-local function validateKey(key)
-    return key == "RTXonTOP"
-end
--- VERIFY ACTION
-verify.Activated:Connect(function()
-    local key = input.Text:match("^%s*(.-)%s*$")
-    if key == "" then
-        setStatus("Please enter your key.", RED)
-        return
-    end
-    verify.Text = "VERIFYING..."
-    verify.Active = false
-    verify.Selectable = false
-    setStatus("Checking key...", MUTED)
-    task.wait(0.4)
-    local ok, valid = pcall(validateKey, key)
-    verify.Text = "VERIFY KEY"
-    verify.Active = true
-    verify.Selectable = true
-    if not ok then
-        setStatus("Verification error. Try again.", RED)
-    elseif valid then
-        setStatus(
-            "Key accepted!",
-            Color3.fromRGB(70, 210, 120)
-        )
-        -- Tambahkan aksi setelah key berhasil diverifikasi di sini.
-    else
-        setStatus("Invalid key. Please try again.", RED)
-    end
-end)
+
+return KeySystem
