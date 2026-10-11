@@ -1,9 +1,6 @@
 
---[[
-    MUHAVES KEY SYSTEM
-    Black • White • Red
-    UI Demo for Roblox Studio
-]]
+-- MUHAVES KEY SYSTEM | COMPACT RED EDITION
+-- Demo UI untuk Roblox Studio
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -11,294 +8,217 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local RED = Color3.fromRGB(235, 20, 38)
+local RED = Color3.fromRGB(235, 25, 40)
 local WHITE = Color3.fromRGB(245, 245, 245)
-local BLACK = Color3.fromRGB(8, 8, 10)
-local PANEL = Color3.fromRGB(17, 17, 20)
+local BLACK = Color3.fromRGB(10, 10, 12)
+local PANEL = Color3.fromRGB(20, 20, 23)
 local MUTED = Color3.fromRGB(155, 155, 165)
 local GREEN = Color3.fromRGB(45, 220, 130)
+
+local EXPECTED_KEY = "RTXonTOP" -- Demo only; not secure authentication
+
+local oldGui = playerGui:FindFirstChild("MuhavesKeySystem")
+if oldGui then
+    oldGui:Destroy()
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "MuhavesKeySystem"
 gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
 gui.Parent = playerGui
 
 local function create(className, props, parent)
-    local object = Instance.new(className)
+    local obj = Instance.new(className)
     for property, value in pairs(props) do
-        object[property] = value
+        obj[property] = value
     end
-    object.Parent = parent
-    return object
+    obj.Parent = parent
+    return obj
 end
 
-local function corner(parent, radius)
+local function round(parent, radius)
     create("UICorner", {
         CornerRadius = UDim.new(0, radius)
     }, parent)
 end
 
-local function outline(parent, color, thickness)
-    return create("UIStroke", {
+local function stroke(parent, color)
+    create("UIStroke", {
         Color = color,
-        Thickness = thickness or 1,
-        Transparency = 0.2
+        Thickness = 1
     }, parent)
 end
 
--- Main window
+-- Main window: smaller and centered
 local main = create("Frame", {
     Name = "Main",
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.new(0.92, 0, 0, 510),
+    Size = UDim2.fromOffset(340, 365),
     BackgroundColor3 = BLACK,
     BorderSizePixel = 0
 }, gui)
 
-create("UISizeConstraint", {
-    MinSize = Vector2.new(310, 420),
-    MaxSize = Vector2.new(760, 560)
-}, main)
-
-corner(main, 12)
-outline(main, Color3.fromRGB(75, 75, 80), 1)
+round(main, 10)
+stroke(main, RED)
 
 -- Header
 local header = create("Frame", {
-    Position = UDim2.fromOffset(0, 0),
-    Size = UDim2.new(1, 0, 0, 90),
-    BackgroundColor3 = Color3.fromRGB(12, 12, 15),
+    Size = UDim2.new(1, 0, 0, 65),
+    BackgroundColor3 = PANEL,
     BorderSizePixel = 0
 }, main)
-corner(header, 12)
-
-create("Frame", {
-    Position = UDim2.new(0, 0, 1, -2),
-    Size = UDim2.new(1, 0, 0, 2),
-    BackgroundColor3 = RED,
-    BorderSizePixel = 0
-}, header)
+round(header, 10)
 
 create("TextLabel", {
-    Position = UDim2.fromOffset(20, 12),
-    Size = UDim2.new(1, -90, 0, 38),
+    Position = UDim2.fromOffset(16, 8),
+    Size = UDim2.new(1, -55, 0, 28),
     BackgroundTransparency = 1,
     Text = "MUHAVES",
     TextColor3 = WHITE,
-    TextSize = 27,
+    TextSize = 22,
     Font = Enum.Font.GothamBlack,
     TextXAlignment = Enum.TextXAlignment.Left
 }, header)
 
 create("TextLabel", {
-    Position = UDim2.fromOffset(22, 49),
-    Size = UDim2.new(1, -90, 0, 23),
+    Position = UDim2.fromOffset(17, 35),
+    Size = UDim2.new(1, -55, 0, 19),
     BackgroundTransparency = 1,
-    Text = "KEY SYSTEM  •  SECURE ACCESS",
+    Text = "KEY SYSTEM  /  PRIVATE",
     TextColor3 = RED,
-    TextSize = 13,
+    TextSize = 11,
     Font = Enum.Font.GothamBold,
     TextXAlignment = Enum.TextXAlignment.Left
 }, header)
 
 local close = create("TextButton", {
-    Position = UDim2.new(1, -48, 0, 18),
-    Size = UDim2.fromOffset(30, 30),
-    BackgroundColor3 = Color3.fromRGB(35, 15, 18),
+    Position = UDim2.new(1, -37, 0, 13),
+    Size = UDim2.fromOffset(25, 25),
+    BackgroundColor3 = RED,
     Text = "X",
     TextColor3 = WHITE,
-    TextSize = 16,
-    Font = Enum.Font.GothamBold,
-    AutoButtonColor = true
+    TextSize = 13,
+    Font = Enum.Font.GothamBold
 }, header)
-corner(close, 6)
+round(close, 5)
 
 close.Activated:Connect(function()
     gui:Destroy()
 end)
 
--- Content container
-local content = create("Frame", {
-    Position = UDim2.fromOffset(15, 105),
-    Size = UDim2.new(1, -30, 1, -120),
-    BackgroundTransparency = 1
-}, main)
-
--- Key panel
-local keyPanel = create("Frame", {
-    Size = UDim2.new(1, 0, 0, 175),
-    BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, content)
-corner(keyPanel, 9)
-outline(keyPanel, Color3.fromRGB(65, 65, 70), 1)
-
+-- Input section
 create("TextLabel", {
-    Position = UDim2.fromOffset(15, 12),
-    Size = UDim2.new(1, -30, 0, 28),
+    Position = UDim2.fromOffset(16, 82),
+    Size = UDim2.new(1, -32, 0, 24),
     BackgroundTransparency = 1,
-    Text = "◆  INPUT KEY",
+    Text = "INPUT KEY",
     TextColor3 = WHITE,
-    TextSize = 17,
+    TextSize = 15,
     Font = Enum.Font.GothamBold,
     TextXAlignment = Enum.TextXAlignment.Left
-}, keyPanel)
+}, main)
 
-create("TextLabel", {
-    Position = UDim2.fromOffset(15, 43),
-    Size = UDim2.new(1, -30, 0, 22),
-    BackgroundTransparency = 1,
-    Text = "Masukkan key untuk verifikasi.",
-    TextColor3 = MUTED,
-    TextSize = 12,
-    Font = Enum.Font.Gotham,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, keyPanel)
-
-local keyInput = create("TextBox", {
-    Position = UDim2.fromOffset(15, 76),
-    Size = UDim2.new(1, -30, 0, 40),
-    BackgroundColor3 = BLACK,
+local input = create("TextBox", {
+    Position = UDim2.fromOffset(16, 113),
+    Size = UDim2.new(1, -32, 0, 40),
+    BackgroundColor3 = PANEL,
     Text = "",
-    PlaceholderText = "Masukkan key di sini...",
+    PlaceholderText = "Masukkan key...",
     PlaceholderColor3 = MUTED,
     TextColor3 = WHITE,
     TextSize = 13,
     Font = Enum.Font.Gotham,
     ClearTextOnFocus = false
-}, keyPanel)
-corner(keyInput, 6)
-outline(keyInput, Color3.fromRGB(90, 90, 95), 1)
+}, main)
+round(input, 6)
+stroke(input, Color3.fromRGB(75, 75, 80))
 
 local verify = create("TextButton", {
-    Position = UDim2.fromOffset(15, 126),
-    Size = UDim2.new(1, -30, 0, 36),
+    Position = UDim2.fromOffset(16, 164),
+    Size = UDim2.new(1, -32, 0, 38),
     BackgroundColor3 = RED,
-    Text = "✓   VERIFY KEY",
+    Text = "VERIFY KEY",
     TextColor3 = WHITE,
     TextSize = 14,
     Font = Enum.Font.GothamBold
-}, keyPanel)
-corner(verify, 6)
+}, main)
+round(verify, 6)
 
--- Status panel
-local statusPanel = create("Frame", {
-    Position = UDim2.fromOffset(0, 188),
-    Size = UDim2.new(1, 0, 0, 92),
-    BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, content)
-corner(statusPanel, 9)
-outline(statusPanel, Color3.fromRGB(65, 65, 70), 1)
-
+-- Status
 create("TextLabel", {
-    Position = UDim2.fromOffset(15, 8),
-    Size = UDim2.new(1, -30, 0, 25),
+    Position = UDim2.fromOffset(16, 216),
+    Size = UDim2.new(1, -32, 0, 20),
     BackgroundTransparency = 1,
-    Text = "◆  STATUS",
+    Text = "STATUS",
     TextColor3 = WHITE,
-    TextSize = 15,
+    TextSize = 12,
     Font = Enum.Font.GothamBold,
     TextXAlignment = Enum.TextXAlignment.Left
-}, statusPanel)
+}, main)
 
-local statusText = create("TextLabel", {
-    Position = UDim2.fromOffset(15, 37),
-    Size = UDim2.new(1, -30, 0, 36),
-    BackgroundColor3 = BLACK,
-    Text = "●  Menunggu key...",
-    TextColor3 = MUTED,
-    TextSize = 13,
-    Font = Enum.Font.Gotham,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, statusPanel)
-corner(statusText, 6)
-
--- Information panel
-local infoPanel = create("Frame", {
-    Position = UDim2.fromOffset(0, 293),
-    Size = UDim2.new(1, 0, 0, 85),
+local status = create("TextLabel", {
+    Position = UDim2.fromOffset(16, 241),
+    Size = UDim2.new(1, -32, 0, 36),
     BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, content)
-corner(infoPanel, 9)
-outline(infoPanel, Color3.fromRGB(65, 65, 70), 1)
-
-create("TextLabel", {
-    Position = UDim2.fromOffset(15, 8),
-    Size = UDim2.new(1, -30, 0, 24),
-    BackgroundTransparency = 1,
-    Text = "◆  INFORMASI USER",
-    TextColor3 = WHITE,
-    TextSize = 14,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, infoPanel)
-
-create("TextLabel", {
-    Position = UDim2.fromOffset(15, 35),
-    Size = UDim2.new(1, -30, 0, 35),
-    BackgroundTransparency = 1,
-    Text = "Username: " .. player.Name,
+    Text = "Menunggu key...",
     TextColor3 = MUTED,
     TextSize = 12,
     Font = Enum.Font.Gotham,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, infoPanel)
+    TextWrapped = true
+}, main)
+round(status, 6)
 
--- Activity log
-local logPanel = create("Frame", {
-    Position = UDim2.fromOffset(0, 390),
-    Size = UDim2.new(1, 0, 0, 85),
-    BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, content)
-corner(logPanel, 9)
-outline(logPanel, Color3.fromRGB(65, 65, 70), 1)
-
+-- Footer
 create("TextLabel", {
-    Position = UDim2.fromOffset(15, 7),
-    Size = UDim2.new(1, -30, 0, 22),
+    Position = UDim2.fromOffset(16, 294),
+    Size = UDim2.new(1, -32, 0, 35),
     BackgroundTransparency = 1,
-    Text = "◆  LOG AKTIVITAS",
-    TextColor3 = WHITE,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, logPanel)
-
-local logText = create("TextLabel", {
-    Position = UDim2.fromOffset(15, 31),
-    Size = UDim2.new(1, -30, 0, 43),
-    BackgroundTransparency = 1,
-    Text = "Aplikasi siap digunakan.",
+    Text = "MUHAVES  •  Better Script, Better Experience",
     TextColor3 = MUTED,
-    TextSize = 11,
+    TextSize = 10,
     Font = Enum.Font.Gotham,
-    TextWrapped = true,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top
-}, logPanel)
+    TextWrapped = true
+}, main)
 
-local function addLog(message)
-    logText.Text = message
-end
+local verified = false
+local busy = false
 
 verify.Activated:Connect(function()
-    -- Demo UI only: no real authentication.
-    statusText.Text = "●  Demo UI — belum terverifikasi"
-    statusText.TextColor3 = RED
-    addLog("Input diterima. Hubungkan ke sistem autentikasi server milikmu.")
+    if busy then
+        return
+    end
+
+    busy = true
+    verify.Text = "CHECKING..."
+    status.TextColor3 = MUTED
+    status.Text = "Memeriksa key..."
+
+    if input.Text == EXPECTED_KEY then
+        verified = true
+        status.TextColor3 = GREEN
+        status.Text = "Key demo valid!"
+        verify.Text = "VERIFIED"
+
+        task.wait(0.7)
+        gui:Destroy()
+    else
+        status.TextColor3 = RED
+        status.Text = "Key salah. Coba lagi."
+        verify.Text = "VERIFY KEY"
+    end
+
+    busy = false
 end)
 
 verify.MouseEnter:Connect(function()
-    TweenService:Create(
-        verify,
-        TweenInfo.new(0.15),
-        {BackgroundColor3 = Color3.fromRGB(190, 10, 25)}
-    ):Play()
+    if not verified then
+        TweenService:Create(
+            verify,
+            TweenInfo.new(0.15),
+            {BackgroundColor3 = Color3.fromRGB(180, 10, 25)}
+        ):Play()
+    end
 end)
 
 verify.MouseLeave:Connect(function()
@@ -308,5 +228,3 @@ verify.MouseLeave:Connect(function()
         {BackgroundColor3 = RED}
     ):Play()
 end)
-
-print("Muhaves Key System UI loaded.")
