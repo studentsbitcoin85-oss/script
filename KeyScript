@@ -1,176 +1,106 @@
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local KeySystem = require(
-    ReplicatedStorage:WaitForChild("KeySystem")
-)
-
--- Hindari UI duplikat
-local oldGui = playerGui:FindFirstChild("RTXKeySystem")
-if oldGui then
-    oldGui:Destroy()
-end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "RTXKeySystem"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.DisplayOrder = 100
-gui.Parent = playerGui
-
-local frame = Instance.new("Frame")
-frame.Name = "Main"
-frame.Size = UDim2.fromOffset(320, 210)
-frame.Position = UDim2.new(0.5, -160, 0.5, -105)
-frame.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
-frame.BorderSizePixel = 0
-frame.Parent = gui
-
-local frameCorner = Instance.new("UICorner")
-frameCorner.CornerRadius = UDim.new(0, 12)
-frameCorner.Parent = frame
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(210, 40, 40)
-stroke.Thickness = 1.5
-stroke.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -20, 0, 42)
-title.Position = UDim2.fromOffset(10, 8)
-title.BackgroundTransparency = 1
-title.Text = "RTX | KEY SYSTEM"
-title.TextColor3 = Color3.fromRGB(255, 55, 55)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-title.Parent = frame
-
-local subtitle = Instance.new("TextLabel")
-subtitle.Size = UDim2.new(1, -20, 0, 22)
-subtitle.Position = UDim2.fromOffset(10, 45)
-subtitle.BackgroundTransparency = 1
-subtitle.Text = "Masukkan key untuk melanjutkan"
-subtitle.TextColor3 = Color3.fromRGB(180, 180, 180)
-subtitle.Font = Enum.Font.Gotham
-subtitle.TextSize = 11
-subtitle.Parent = frame
-
-local input = Instance.new("TextBox")
-input.Name = "KeyInput"
-input.Size = UDim2.new(1, -32, 0, 42)
-input.Position = UDim2.fromOffset(16, 78)
-input.BackgroundColor3 = Color3.fromRGB(34, 34, 34)
-input.TextColor3 = Color3.new(1, 1, 1)
-input.PlaceholderColor3 = Color3.fromRGB(135, 135, 135)
-input.PlaceholderText = "Enter key..."
-input.Text = ""
-input.ClearTextOnFocus = false
-input.Font = Enum.Font.Gotham
-input.TextSize = 14
-input.Parent = frame
-
-local inputCorner = Instance.new("UICorner")
-inputCorner.CornerRadius = UDim.new(0, 7)
-inputCorner.Parent = input
-
-local verify = Instance.new("TextButton")
-verify.Name = "VerifyButton"
-verify.Size = UDim2.new(1, -32, 0, 38)
-verify.Position = UDim2.fromOffset(16, 130)
-verify.BackgroundColor3 = Color3.fromRGB(190, 35, 35)
-verify.TextColor3 = Color3.new(1, 1, 1)
-verify.Text = "VERIFY KEY"
-verify.Font = Enum.Font.GothamBold
-verify.TextSize = 13
-verify.AutoButtonColor = true
-verify.Parent = frame
-
-local buttonCorner = Instance.new("UICorner")
-buttonCorner.CornerRadius = UDim.new(0, 7)
-buttonCorner.Parent = verify
-
-local status = Instance.new("TextLabel")
-status.Name = "Status"
-status.Size = UDim2.new(1, -20, 0, 25)
-status.Position = UDim2.fromOffset(10, 174)
-status.BackgroundTransparency = 1
-status.Text = "Status: Waiting for key"
-status.TextColor3 = Color3.fromRGB(180, 180, 180)
-status.Font = Enum.Font.Gotham
-status.TextSize = 11
-status.Parent = frame
-
-local busy = false
-
-local function setStatus(message, color)
-    status.Text = message
-    status.TextColor3 = color
-end
-
-local function onVerified()
-    setStatus(
-        "Key accepted!",
-        Color3.fromRGB(80, 220, 120)
-    )
-
-    verify.Text = "SUCCESS"
-    verify.Active = false
-
-    task.wait(0.7)
-    gui:Destroy()
-
-    -- Tempat menjalankan fitur proyek milik sendiri.
-    print("Key verified; callback executed.")
-end
-
-local function submitKey()
-    if busy then
-        return
+local KeySystem = {}
+local CORRECT_KEY = "RTXOnTop"
+function KeySystem.Init()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    -- TEMA RTX: HITAM, PUTIH, MERAH
+    local BLACK = Color3.fromRGB(12, 12, 14)
+    local DARK = Color3.fromRGB(25, 25, 29)
+    local WHITE = Color3.fromRGB(245, 245, 245)
+    local GRAY = Color3.fromRGB(165, 165, 170)
+    local RED = Color3.fromRGB(220, 35, 50)
+    local DARK_RED = Color3.fromRGB(145, 20, 30)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MuhavesKeySystem"
+    gui.ResetOnSpawn = false
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(320, 190)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -95)
+    frame.BackgroundColor3 = BLACK
+    frame.BorderSizePixel = 0
+    frame.Parent = gui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+    -- GARIS MERAH
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = RED
+    stroke.Thickness = 1.5
+    stroke.Parent = frame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 45)
+    title.BackgroundTransparency = 1
+    title.Text = "RTX | KEY SYSTEM"
+    title.TextColor3 = WHITE
+    title.TextSize = 17
+    title.Font = Enum.Font.GothamBold
+    title.Parent = frame
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, -40, 0, 38)
+    input.Position = UDim2.fromOffset(20, 55)
+    input.BackgroundColor3 = DARK
+    input.TextColor3 = WHITE
+    input.PlaceholderText = "Masukkan key..."
+    input.PlaceholderColor3 = GRAY
+    input.Text = ""
+    input.TextSize = 14
+    input.Font = Enum.Font.Gotham
+    input.ClearTextOnFocus = false
+    input.BorderSizePixel = 0
+    input.Parent = frame
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 7)
+    inputCorner.Parent = input
+    local inputStroke = Instance.new("UIStroke")
+    inputStroke.Color = DARK_RED
+    inputStroke.Thickness = 1
+    inputStroke.Parent = input
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -40, 0, 20)
+    status.Position = UDim2.fromOffset(20, 96)
+    status.BackgroundTransparency = 1
+    status.Text = "Masukkan key untuk melanjutkan"
+    status.TextColor3 = GRAY
+    status.TextSize = 11
+    status.Font = Enum.Font.Gotham
+    status.Parent = frame
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, -40, 0, 38)
+    button.Position = UDim2.fromOffset(20, 128)
+    button.BackgroundColor3 = RED
+    button.Text = "VERIFY KEY"
+    button.TextColor3 = WHITE
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = true
+    button.Parent = frame
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 7)
+    buttonCorner.Parent = button
+    local finished = false
+    local function cleanup()
+        if gui then
+            gui:Destroy()
+        end
     end
-
-    busy = true
-    verify.Text = "CHECKING..."
-    verify.Active = false
-
-    local ok, valid = pcall(function()
-        return KeySystem.Verify(input.Text)
+    button.MouseButton1Click:Connect(function()
+        if input.Text == CORRECT_KEY then
+            finished = true
+            status.Text = "KEY BERHASIL!"
+            status.TextColor3 = RED
+            task.wait(0.4)
+            cleanup()
+        else
+            status.Text = "KEY SALAH, COBA LAGI!"
+            status.TextColor3 = RED
+            input.Text = ""
+        end
     end)
-
-    if not ok then
-        setStatus(
-            "Verification error. Check Output.",
-            Color3.fromRGB(255, 75, 75)
-        )
-        warn("Key verification error:", valid)
-        verify.Text = "TRY AGAIN"
-        verify.Active = true
-        busy = false
-        return
+    gui.Parent = player:WaitForChild("PlayerGui")
+    while not finished and gui.Parent do
+        task.wait(0.1)
     end
-
-    if valid == true then
-        onVerified()
-    else
-        setStatus(
-            "Wrong key. Try again.",
-            Color3.fromRGB(255, 75, 75)
-        )
-        verify.Text = "VERIFY KEY"
-        verify.Active = true
-        busy = false
-        input:CaptureFocus()
-    end
+    return finished
 end
-
-verify.Activated:Connect(submitKey)
-
-input.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        submitKey()
-    end
-end)
-
-print("RTX Key UI loaded successfully.")
+return KeySystem
