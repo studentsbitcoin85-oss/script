@@ -3,99 +3,144 @@ local CORRECT_KEY = "RTXOnTop"
 function KeySystem.Init()
     local Players = game:GetService("Players")
     local player = Players.LocalPlayer
-    -- TEMA RTX: HITAM, PUTIH, MERAH
-    local BLACK = Color3.fromRGB(12, 12, 14)
-    local DARK = Color3.fromRGB(25, 25, 29)
+    -- RTX PREMIUM COLOR PALETTE
+    local BLACK = Color3.fromRGB(10, 10, 12)
+    local PANEL = Color3.fromRGB(18, 18, 21)
+    local INPUT_BG = Color3.fromRGB(27, 27, 31)
     local WHITE = Color3.fromRGB(245, 245, 245)
-    local GRAY = Color3.fromRGB(165, 165, 170)
-    local RED = Color3.fromRGB(220, 35, 50)
-    local DARK_RED = Color3.fromRGB(145, 20, 30)
+    local GRAY = Color3.fromRGB(145, 145, 153)
+    local RED = Color3.fromRGB(210, 35, 48)
+    local BORDER = Color3.fromRGB(48, 48, 54)
     local gui = Instance.new("ScreenGui")
     gui.Name = "MuhavesKeySystem"
     gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.fromOffset(320, 190)
-    frame.Position = UDim2.new(0.5, -160, 0.5, -95)
-    frame.BackgroundColor3 = BLACK
+    frame.Name = "PremiumPanel"
+    frame.Size = UDim2.fromOffset(330, 215)
+    frame.Position = UDim2.new(0.5, -165, 0.5, -107)
+    frame.BackgroundColor3 = PANEL
     frame.BorderSizePixel = 0
     frame.Parent = gui
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
+    corner.CornerRadius = UDim.new(0, 10)
     corner.Parent = frame
-    -- GARIS MERAH
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = RED
-    stroke.Thickness = 1.5
-    stroke.Parent = frame
+    local outline = Instance.new("UIStroke")
+    outline.Color = BORDER
+    outline.Thickness = 1
+    outline.Parent = frame
+    -- TOP ACCENT
+    local accent = Instance.new("Frame")
+    accent.Name = "RedAccent"
+    accent.Size = UDim2.new(1, 0, 0, 3)
+    accent.BackgroundColor3 = RED
+    accent.BorderSizePixel = 0
+    accent.Parent = frame
+    local accentCorner = Instance.new("UICorner")
+    accentCorner.CornerRadius = UDim.new(0, 10)
+    accentCorner.Parent = accent
+    -- TITLE
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 45)
+    title.Size = UDim2.new(1, -40, 0, 30)
+    title.Position = UDim2.fromOffset(20, 17)
     title.BackgroundTransparency = 1
-    title.Text = "RTX | KEY SYSTEM"
+    title.Text = "RTX PREMIUM"
     title.TextColor3 = WHITE
-    title.TextSize = 17
+    title.TextSize = 19
     title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = frame
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(1, -40, 0, 18)
+    subtitle.Position = UDim2.fromOffset(20, 45)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "KEY AUTHENTICATION"
+    subtitle.TextColor3 = GRAY
+    subtitle.TextSize = 10
+    subtitle.Font = Enum.Font.GothamMedium
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.Parent = frame
+    -- DIVIDER
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, -40, 0, 1)
+    divider.Position = UDim2.fromOffset(20, 72)
+    divider.BackgroundColor3 = BORDER
+    divider.BorderSizePixel = 0
+    divider.Parent = frame
+    -- KEY INPUT
     local input = Instance.new("TextBox")
-    input.Size = UDim2.new(1, -40, 0, 38)
-    input.Position = UDim2.fromOffset(20, 55)
-    input.BackgroundColor3 = DARK
+    input.Name = "KeyInput"
+    input.Size = UDim2.new(1, -40, 0, 40)
+    input.Position = UDim2.fromOffset(20, 87)
+    input.BackgroundColor3 = INPUT_BG
+    input.BorderSizePixel = 0
     input.TextColor3 = WHITE
-    input.PlaceholderText = "Masukkan key..."
+    input.PlaceholderText = "Enter your access key"
     input.PlaceholderColor3 = GRAY
     input.Text = ""
-    input.TextSize = 14
+    input.TextSize = 13
     input.Font = Enum.Font.Gotham
     input.ClearTextOnFocus = false
-    input.BorderSizePixel = 0
     input.Parent = frame
     local inputCorner = Instance.new("UICorner")
-    inputCorner.CornerRadius = UDim.new(0, 7)
+    inputCorner.CornerRadius = UDim.new(0, 6)
     inputCorner.Parent = input
-    local inputStroke = Instance.new("UIStroke")
-    inputStroke.Color = DARK_RED
-    inputStroke.Thickness = 1
-    inputStroke.Parent = input
+    local inputOutline = Instance.new("UIStroke")
+    inputOutline.Color = BORDER
+    inputOutline.Thickness = 1
+    inputOutline.Parent = input
+    -- STATUS
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -40, 0, 20)
-    status.Position = UDim2.fromOffset(20, 96)
+    status.Size = UDim2.new(1, -40, 0, 17)
+    status.Position = UDim2.fromOffset(20, 132)
     status.BackgroundTransparency = 1
-    status.Text = "Masukkan key untuk melanjutkan"
+    status.Text = "Enter your key to continue"
     status.TextColor3 = GRAY
-    status.TextSize = 11
+    status.TextSize = 10
     status.Font = Enum.Font.Gotham
+    status.TextXAlignment = Enum.TextXAlignment.Left
     status.Parent = frame
+    -- VERIFY BUTTON
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -40, 0, 38)
-    button.Position = UDim2.fromOffset(20, 128)
+    button.Name = "VerifyButton"
+    button.Size = UDim2.new(1, -40, 0, 35)
+    button.Position = UDim2.fromOffset(20, 158)
     button.BackgroundColor3 = RED
-    button.Text = "VERIFY KEY"
-    button.TextColor3 = WHITE
-    button.TextSize = 14
-    button.Font = Enum.Font.GothamBold
     button.BorderSizePixel = 0
+    button.Text = "VERIFY ACCESS"
+    button.TextColor3 = WHITE
+    button.TextSize = 12
+    button.Font = Enum.Font.GothamBold
     button.AutoButtonColor = true
     button.Parent = frame
     local buttonCorner = Instance.new("UICorner")
-    buttonCorner.CornerRadius = UDim.new(0, 7)
+    buttonCorner.CornerRadius = UDim.new(0, 6)
     buttonCorner.Parent = button
     local finished = false
+    local verifying = false
     local function cleanup()
         if gui then
             gui:Destroy()
         end
     end
     button.MouseButton1Click:Connect(function()
+        if verifying or finished then
+            return
+        end
+        verifying = true
         if input.Text == CORRECT_KEY then
-            finished = true
-            status.Text = "KEY BERHASIL!"
+            status.Text = "ACCESS GRANTED"
             status.TextColor3 = RED
+            button.Text = "VERIFIED"
+            finished = true
             task.wait(0.4)
             cleanup()
         else
-            status.Text = "KEY SALAH, COBA LAGI!"
+            status.Text = "INVALID KEY — TRY AGAIN"
             status.TextColor3 = RED
             input.Text = ""
         end
+        verifying = false
     end)
     gui.Parent = player:WaitForChild("PlayerGui")
     while not finished and gui.Parent do
