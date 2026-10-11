@@ -1,230 +1,145 @@
 
--- MUHAVES KEY SYSTEM | COMPACT RED EDITION
--- Demo UI untuk Roblox Studio
+--[[
+    MUHAVES KEY SYSTEM
+    Compact UI | Black - White - Red
+]]
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
-local RED = Color3.fromRGB(235, 25, 40)
-local WHITE = Color3.fromRGB(245, 245, 245)
-local BLACK = Color3.fromRGB(10, 10, 12)
-local PANEL = Color3.fromRGB(20, 20, 23)
-local MUTED = Color3.fromRGB(155, 155, 165)
-local GREEN = Color3.fromRGB(45, 220, 130)
-
-local EXPECTED_KEY = "RTXonTOP" -- Demo only; not secure authentication
-
-local oldGui = playerGui:FindFirstChild("MuhavesKeySystem")
-if oldGui then
-    oldGui:Destroy()
-end
+local CORRECT_KEY = "RTXonTOP"
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "MuhavesKeySystem"
 gui.ResetOnSpawn = false
-gui.Parent = playerGui
+gui.Parent = player:WaitForChild("PlayerGui")
 
-local function create(className, props, parent)
-    local obj = Instance.new(className)
-    for property, value in pairs(props) do
-        obj[property] = value
-    end
-    obj.Parent = parent
-    return obj
+local main = Instance.new("Frame")
+main.Name = "MainFrame"
+main.Size = UDim2.fromOffset(260, 280)
+main.Position = UDim2.new(0.5, -130, 0.5, -140)
+main.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+main.BorderSizePixel = 0
+main.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = main
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(220, 35, 45)
+stroke.Thickness = 1.5
+stroke.Parent = main
+
+local function makeLabel(text, size, pos, font, color)
+    local label = Instance.new("TextLabel")
+    label.Size = size
+    label.Position = pos
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.Font = font or Enum.Font.Gotham
+    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.TextSize = 12
+    label.Parent = main
+    return label
 end
 
-local function round(parent, radius)
-    create("UICorner", {
-        CornerRadius = UDim.new(0, radius)
-    }, parent)
-end
+makeLabel(
+    "MUHAVES",
+    UDim2.new(1, -20, 0, 25),
+    UDim2.fromOffset(10, 16),
+    Enum.Font.GothamBold,
+    Color3.fromRGB(240, 40, 50)
+)
 
-local function stroke(parent, color)
-    create("UIStroke", {
-        Color = color,
-        Thickness = 1
-    }, parent)
-end
+makeLabel(
+    "KEY VERIFICATION",
+    UDim2.new(1, -20, 0, 20),
+    UDim2.fromOffset(10, 42),
+    Enum.Font.GothamBold
+)
 
--- Main window: smaller and centered
-local main = create("Frame", {
-    Name = "Main",
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(340, 365),
-    BackgroundColor3 = BLACK,
-    BorderSizePixel = 0
-}, gui)
+makeLabel(
+    "Enter your access key below",
+    UDim2.new(1, -20, 0, 18),
+    UDim2.fromOffset(10, 70),
+    Enum.Font.Gotham,
+    Color3.fromRGB(165, 165, 175)
+)
 
-round(main, 10)
-stroke(main, RED)
+local input = Instance.new("TextBox")
+input.Name = "KeyInput"
+input.Size = UDim2.new(1, -32, 0, 38)
+input.Position = UDim2.fromOffset(16, 103)
+input.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
+input.PlaceholderText = "Enter key..."
+input.PlaceholderColor3 = Color3.fromRGB(135, 135, 145)
+input.Text = ""
+input.TextColor3 = Color3.new(1, 1, 1)
+input.TextSize = 12
+input.Font = Enum.Font.Gotham
+input.ClearTextOnFocus = false
+input.Parent = main
 
--- Header
-local header = create("Frame", {
-    Size = UDim2.new(1, 0, 0, 65),
-    BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, main)
-round(header, 10)
+Instance.new("UICorner", input).CornerRadius =
+    UDim.new(0, 6)
 
-create("TextLabel", {
-    Position = UDim2.fromOffset(16, 8),
-    Size = UDim2.new(1, -55, 0, 28),
-    BackgroundTransparency = 1,
-    Text = "MUHAVES",
-    TextColor3 = WHITE,
-    TextSize = 22,
-    Font = Enum.Font.GothamBlack,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, header)
+local inputStroke = Instance.new("UIStroke")
+inputStroke.Color = Color3.fromRGB(65, 65, 72)
+inputStroke.Parent = input
 
-create("TextLabel", {
-    Position = UDim2.fromOffset(17, 35),
-    Size = UDim2.new(1, -55, 0, 19),
-    BackgroundTransparency = 1,
-    Text = "KEY SYSTEM  /  PRIVATE",
-    TextColor3 = RED,
-    TextSize = 11,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, header)
+local verify = Instance.new("TextButton")
+verify.Name = "VerifyButton"
+verify.Size = UDim2.new(1, -32, 0, 36)
+verify.Position = UDim2.fromOffset(16, 153)
+verify.BackgroundColor3 = Color3.fromRGB(205, 30, 42)
+verify.Text = "VERIFY KEY"
+verify.TextColor3 = Color3.new(1, 1, 1)
+verify.TextSize = 12
+verify.Font = Enum.Font.GothamBold
+verify.AutoButtonColor = true
+verify.Parent = main
 
-local close = create("TextButton", {
-    Position = UDim2.new(1, -37, 0, 13),
-    Size = UDim2.fromOffset(25, 25),
-    BackgroundColor3 = RED,
-    Text = "X",
-    TextColor3 = WHITE,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold
-}, header)
-round(close, 5)
+Instance.new("UICorner", verify).CornerRadius =
+    UDim.new(0, 6)
 
-close.Activated:Connect(function()
-    gui:Destroy()
-end)
+local status = makeLabel(
+    "Waiting for key...",
+    UDim2.new(1, -24, 0, 28),
+    UDim2.fromOffset(12, 198),
+    Enum.Font.Gotham,
+    Color3.fromRGB(175, 175, 185)
+)
 
--- Input section
-create("TextLabel", {
-    Position = UDim2.fromOffset(16, 82),
-    Size = UDim2.new(1, -32, 0, 24),
-    BackgroundTransparency = 1,
-    Text = "INPUT KEY",
-    TextColor3 = WHITE,
-    TextSize = 15,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, main)
+makeLabel(
+    "MUHAVES  •  KEY SYSTEM",
+    UDim2.new(1, -20, 0, 18),
+    UDim2.fromOffset(10, 244),
+    Enum.Font.Gotham,
+    Color3.fromRGB(100, 100, 110)
+)
 
-local input = create("TextBox", {
-    Position = UDim2.fromOffset(16, 113),
-    Size = UDim2.new(1, -32, 0, 40),
-    BackgroundColor3 = PANEL,
-    Text = "",
-    PlaceholderText = "Masukkan key...",
-    PlaceholderColor3 = MUTED,
-    TextColor3 = WHITE,
-    TextSize = 13,
-    Font = Enum.Font.Gotham,
-    ClearTextOnFocus = false
-}, main)
-round(input, 6)
-stroke(input, Color3.fromRGB(75, 75, 80))
-
-local verify = create("TextButton", {
-    Position = UDim2.fromOffset(16, 164),
-    Size = UDim2.new(1, -32, 0, 38),
-    BackgroundColor3 = RED,
-    Text = "VERIFY KEY",
-    TextColor3 = WHITE,
-    TextSize = 14,
-    Font = Enum.Font.GothamBold
-}, main)
-round(verify, 6)
-
--- Status
-create("TextLabel", {
-    Position = UDim2.fromOffset(16, 216),
-    Size = UDim2.new(1, -32, 0, 20),
-    BackgroundTransparency = 1,
-    Text = "STATUS",
-    TextColor3 = WHITE,
-    TextSize = 12,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, main)
-
-local status = create("TextLabel", {
-    Position = UDim2.fromOffset(16, 241),
-    Size = UDim2.new(1, -32, 0, 36),
-    BackgroundColor3 = PANEL,
-    Text = "Menunggu key...",
-    TextColor3 = MUTED,
-    TextSize = 12,
-    Font = Enum.Font.Gotham,
-    TextWrapped = true
-}, main)
-round(status, 6)
-
--- Footer
-create("TextLabel", {
-    Position = UDim2.fromOffset(16, 294),
-    Size = UDim2.new(1, -32, 0, 35),
-    BackgroundTransparency = 1,
-    Text = "MUHAVES  •  Better Script, Better Experience",
-    TextColor3 = MUTED,
-    TextSize = 10,
-    Font = Enum.Font.Gotham,
-    TextWrapped = true
-}, main)
-
-local verified = false
 local busy = false
 
 verify.Activated:Connect(function()
-    if busy then
-        return
-    end
-
+    if busy then return end
     busy = true
-    verify.Text = "CHECKING..."
-    status.TextColor3 = MUTED
-    status.Text = "Memeriksa key..."
+    verify.Active = false
 
-    if input.Text == EXPECTED_KEY then
-        verified = true
-        status.TextColor3 = GREEN
-        status.Text = "Key demo valid!"
-        verify.Text = "VERIFIED"
+    if input.Text == CORRECT_KEY then
+        status.Text = "Key accepted!"
+        status.TextColor3 = Color3.fromRGB(70, 220, 120)
+        verify.Text = "SUCCESS"
 
-        task.wait(0.7)
+        task.wait(0.6)
         gui:Destroy()
     else
-        status.TextColor3 = RED
-        status.Text = "Key salah. Coba lagi."
-        verify.Text = "VERIFY KEY"
+        status.Text = "Invalid key. Try again."
+        status.TextColor3 = Color3.fromRGB(255, 75, 75)
+        inputStroke.Color = Color3.fromRGB(220, 35, 45)
+
+        task.wait(0.2)
+        verify.Active = true
+        busy = false
     end
-
-    busy = false
-end)
-
-verify.MouseEnter:Connect(function()
-    if not verified then
-        TweenService:Create(
-            verify,
-            TweenInfo.new(0.15),
-            {BackgroundColor3 = Color3.fromRGB(180, 10, 25)}
-        ):Play()
-    end
-end)
-
-verify.MouseLeave:Connect(function()
-    TweenService:Create(
-        verify,
-        TweenInfo.new(0.15),
-        {BackgroundColor3 = RED}
-    ):Play()
 end)
