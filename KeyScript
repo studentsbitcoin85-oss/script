@@ -1,145 +1,33 @@
 
---[[
-    MUHAVES KEY SYSTEM
-    Compact UI | Black - White - Red
-]]
+-- KeySystem.lua
+-- ModuleScript untuk proyek Roblox Studio milik sendiri
 
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local KeySystem = {}
 
 local CORRECT_KEY = "RTXonTOP"
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "MuhavesKeySystem"
-gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
-
-local main = Instance.new("Frame")
-main.Name = "MainFrame"
-main.Size = UDim2.fromOffset(260, 280)
-main.Position = UDim2.new(0.5, -130, 0.5, -140)
-main.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-main.BorderSizePixel = 0
-main.Parent = gui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = main
-
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(220, 35, 45)
-stroke.Thickness = 1.5
-stroke.Parent = main
-
-local function makeLabel(text, size, pos, font, color)
-    local label = Instance.new("TextLabel")
-    label.Size = size
-    label.Position = pos
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.Font = font or Enum.Font.Gotham
-    label.TextColor3 = color or Color3.new(1, 1, 1)
-    label.TextSize = 12
-    label.Parent = main
-    return label
+function KeySystem.Verify(input)
+    return input == CORRECT_KEY
 end
 
-makeLabel(
-    "MUHAVES",
-    UDim2.new(1, -20, 0, 25),
-    UDim2.fromOffset(10, 16),
-    Enum.Font.GothamBold,
-    Color3.fromRGB(240, 40, 50)
-)
-
-makeLabel(
-    "KEY VERIFICATION",
-    UDim2.new(1, -20, 0, 20),
-    UDim2.fromOffset(10, 42),
-    Enum.Font.GothamBold
-)
-
-makeLabel(
-    "Enter your access key below",
-    UDim2.new(1, -20, 0, 18),
-    UDim2.fromOffset(10, 70),
-    Enum.Font.Gotham,
-    Color3.fromRGB(165, 165, 175)
-)
-
-local input = Instance.new("TextBox")
-input.Name = "KeyInput"
-input.Size = UDim2.new(1, -32, 0, 38)
-input.Position = UDim2.fromOffset(16, 103)
-input.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
-input.PlaceholderText = "Enter key..."
-input.PlaceholderColor3 = Color3.fromRGB(135, 135, 145)
-input.Text = ""
-input.TextColor3 = Color3.new(1, 1, 1)
-input.TextSize = 12
-input.Font = Enum.Font.Gotham
-input.ClearTextOnFocus = false
-input.Parent = main
-
-Instance.new("UICorner", input).CornerRadius =
-    UDim.new(0, 6)
-
-local inputStroke = Instance.new("UIStroke")
-inputStroke.Color = Color3.fromRGB(65, 65, 72)
-inputStroke.Parent = input
-
-local verify = Instance.new("TextButton")
-verify.Name = "VerifyButton"
-verify.Size = UDim2.new(1, -32, 0, 36)
-verify.Position = UDim2.fromOffset(16, 153)
-verify.BackgroundColor3 = Color3.fromRGB(205, 30, 42)
-verify.Text = "VERIFY KEY"
-verify.TextColor3 = Color3.new(1, 1, 1)
-verify.TextSize = 12
-verify.Font = Enum.Font.GothamBold
-verify.AutoButtonColor = true
-verify.Parent = main
-
-Instance.new("UICorner", verify).CornerRadius =
-    UDim.new(0, 6)
-
-local status = makeLabel(
-    "Waiting for key...",
-    UDim2.new(1, -24, 0, 28),
-    UDim2.fromOffset(12, 198),
-    Enum.Font.Gotham,
-    Color3.fromRGB(175, 175, 185)
-)
-
-makeLabel(
-    "MUHAVES  •  KEY SYSTEM",
-    UDim2.new(1, -20, 0, 18),
-    UDim2.fromOffset(10, 244),
-    Enum.Font.Gotham,
-    Color3.fromRGB(100, 100, 110)
-)
-
-local busy = false
-
-verify.Activated:Connect(function()
-    if busy then return end
-    busy = true
-    verify.Active = false
-
-    if input.Text == CORRECT_KEY then
-        status.Text = "Key accepted!"
-        status.TextColor3 = Color3.fromRGB(70, 220, 120)
-        verify.Text = "SUCCESS"
-
-        task.wait(0.6)
-        gui:Destroy()
-    else
-        status.Text = "Invalid key. Try again."
-        status.TextColor3 = Color3.fromRGB(255, 75, 75)
-        inputStroke.Color = Color3.fromRGB(220, 35, 45)
-
-        task.wait(0.2)
-        verify.Active = true
-        busy = false
+function KeySystem.Init(onVerified)
+    if type(onVerified) ~= "function" then
+        warn("Callback verifikasi belum diberikan.")
+        return false
     end
-end)
+
+    -- Panggil dari UI milik proyek lu setelah
+    -- pengguna memasukkan key dan menekan Verify.
+    local function SubmitKey(input)
+        if not KeySystem.Verify(input) then
+            return false
+        end
+
+        onVerified()
+        return true
+    end
+
+    return SubmitKey
+end
+
+return KeySystem
