@@ -3,8 +3,7 @@ local KeySystem = {}
 
 function KeySystem.Init()
     local Players = game:GetService("Players")
-    local player = Players.LocalPlayer
-    local playerGui = player:WaitForChild("PlayerGui")
+    local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
     local verified = false
     local finished = false
@@ -15,44 +14,101 @@ function KeySystem.Init()
     gui.Parent = playerGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.fromOffset(320, 180)
-    frame.Position = UDim2.new(0.5, -160, 0.5, -90)
+    frame.Size = UDim2.fromOffset(340, 220)
+    frame.Position = UDim2.new(0.5, -170, 0.5, -110)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+    frame.BorderSizePixel = 0
     frame.Parent = gui
 
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(220, 35, 45)
+    stroke.Thickness = 1.5
+    stroke.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -24, 0, 35)
+    title.Position = UDim2.fromOffset(12, 12)
+    title.BackgroundTransparency = 1
+    title.Text = "MUHAVES  |  KEY SYSTEM"
+    title.TextColor3 = Color3.fromRGB(240, 45, 55)
+    title.TextSize = 19
+    title.Font = Enum.Font.GothamBold
+    title.Parent = frame
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(1, -24, 0, 24)
+    subtitle.Position = UDim2.fromOffset(12, 48)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "Enter your access key below"
+    subtitle.TextColor3 = Color3.fromRGB(165, 165, 175)
+    subtitle.TextSize = 12
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.Parent = frame
+
     local input = Instance.new("TextBox")
-    input.Size = UDim2.new(1, -30, 0, 40)
-    input.Position = UDim2.fromOffset(15, 20)
-    input.PlaceholderText = "Enter key"
+    input.Size = UDim2.new(1, -32, 0, 42)
+    input.Position = UDim2.fromOffset(16, 82)
+    input.BackgroundColor3 = Color3.fromRGB(29, 29, 35)
+    input.TextColor3 = Color3.fromRGB(255, 255, 255)
+    input.PlaceholderText = "Enter key..."
+    input.PlaceholderColor3 = Color3.fromRGB(125, 125, 135)
     input.Text = ""
+    input.TextSize = 14
+    input.Font = Enum.Font.Gotham
+    input.ClearTextOnFocus = false
     input.Parent = frame
 
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 7)
+    inputCorner.Parent = input
+
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -30, 0, 40)
-    button.Position = UDim2.fromOffset(15, 75)
+    button.Size = UDim2.new(1, -32, 0, 38)
+    button.Position = UDim2.fromOffset(16, 136)
+    button.BackgroundColor3 = Color3.fromRGB(190, 25, 38)
     button.Text = "VERIFY KEY"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
     button.Parent = frame
 
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 7)
+    buttonCorner.Parent = button
+
     local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -30, 0, 25)
-    status.Position = UDim2.fromOffset(15, 125)
-    status.Text = ""
+    status.Size = UDim2.new(1, -32, 0, 24)
+    status.Position = UDim2.fromOffset(16, 178)
+    status.BackgroundTransparency = 1
+    status.Text = "● Waiting for verification"
+    status.TextColor3 = Color3.fromRGB(160, 160, 170)
+    status.TextSize = 11
+    status.Font = Enum.Font.Gotham
     status.Parent = frame
 
     button.Activated:Connect(function()
         if input.Text == "RTXonTOP" then
             verified = true
             finished = true
-            status.Text = "Key accepted!"
+            status.Text = "✓ Key accepted!"
+            status.TextColor3 = Color3.fromRGB(70, 220, 125)
         else
-            status.Text = "Invalid key!"
+            status.Text = "✕ Invalid key"
+            status.TextColor3 = Color3.fromRGB(255, 70, 80)
         end
     end)
 
-    repeat
+    while not finished do
         task.wait()
-    until finished
+    end
 
+    task.wait(0.5)
     gui:Destroy()
+
     return verified
 end
 
