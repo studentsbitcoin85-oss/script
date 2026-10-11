@@ -3,22 +3,21 @@ local CORRECT_KEY = "RTXOnTop"
 function KeySystem.Init()
     local Players = game:GetService("Players")
     local player = Players.LocalPlayer
-    -- RTX PREMIUM COLOR PALETTE
-    local BLACK = Color3.fromRGB(10, 10, 12)
+    -- COLOR THEME
+    local BLACK = Color3.fromRGB(9, 9, 11)
     local PANEL = Color3.fromRGB(18, 18, 21)
-    local INPUT_BG = Color3.fromRGB(27, 27, 31)
+    local DARK = Color3.fromRGB(27, 27, 31)
     local WHITE = Color3.fromRGB(245, 245, 245)
-    local GRAY = Color3.fromRGB(145, 145, 153)
-    local RED = Color3.fromRGB(210, 35, 48)
+    local GRAY = Color3.fromRGB(150, 150, 158)
+    local RED = Color3.fromRGB(220, 35, 50)
     local BORDER = Color3.fromRGB(48, 48, 54)
     local gui = Instance.new("ScreenGui")
     gui.Name = "MuhavesKeySystem"
     gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
     local frame = Instance.new("Frame")
-    frame.Name = "PremiumPanel"
-    frame.Size = UDim2.fromOffset(330, 215)
-    frame.Position = UDim2.new(0.5, -165, 0.5, -107)
+    frame.Name = "MainPanel"
+    frame.Size = UDim2.fromOffset(340, 225)
+    frame.Position = UDim2.new(0.5, -170, 0.5, -112)
     frame.BackgroundColor3 = PANEL
     frame.BorderSizePixel = 0
     frame.Parent = gui
@@ -29,58 +28,99 @@ function KeySystem.Init()
     outline.Color = BORDER
     outline.Thickness = 1
     outline.Parent = frame
-    -- TOP ACCENT
+    -- HEADER
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 66)
+    header.BackgroundColor3 = BLACK
+    header.BorderSizePixel = 0
+    header.Parent = frame
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 10)
+    headerCorner.Parent = header
+    -- Cover lower header corners for a straight divider
+    local headerCover = Instance.new("Frame")
+    headerCover.Size = UDim2.new(1, 0, 0, 10)
+    headerCover.Position = UDim2.new(0, 0, 1, -10)
+    headerCover.BackgroundColor3 = BLACK
+    headerCover.BorderSizePixel = 0
+    headerCover.Parent = header
     local accent = Instance.new("Frame")
-    accent.Name = "RedAccent"
     accent.Size = UDim2.new(1, 0, 0, 3)
     accent.BackgroundColor3 = RED
     accent.BorderSizePixel = 0
-    accent.Parent = frame
-    local accentCorner = Instance.new("UICorner")
-    accentCorner.CornerRadius = UDim.new(0, 10)
-    accentCorner.Parent = accent
-    -- TITLE
+    accent.Parent = header
+    local logo = Instance.new("Frame")
+    logo.Size = UDim2.fromOffset(42, 42)
+    logo.Position = UDim2.fromOffset(18, 13)
+    logo.BackgroundColor3 = RED
+    logo.BorderSizePixel = 0
+    logo.Parent = header
+    local logoCorner = Instance.new("UICorner")
+    logoCorner.CornerRadius = UDim.new(0, 8)
+    logoCorner.Parent = logo
+    local logoText = Instance.new("TextLabel")
+    logoText.Size = UDim2.new(1, 0, 1, 0)
+    logoText.BackgroundTransparency = 1
+    logoText.Text = "R"
+    logoText.TextColor3 = WHITE
+    logoText.TextSize = 26
+    logoText.Font = Enum.Font.GothamBlack
+    logoText.Parent = logo
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -40, 0, 30)
-    title.Position = UDim2.fromOffset(20, 17)
+    title.Size = UDim2.new(1, -85, 0, 26)
+    title.Position = UDim2.fromOffset(70, 16)
     title.BackgroundTransparency = 1
-    title.Text = "RTX PREMIUM"
+    title.Text = "RTX PRIVATE"
     title.TextColor3 = WHITE
-    title.TextSize = 19
+    title.TextSize = 17
     title.Font = Enum.Font.GothamBold
     title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    title.Parent = header
     local subtitle = Instance.new("TextLabel")
-    subtitle.Size = UDim2.new(1, -40, 0, 18)
-    subtitle.Position = UDim2.fromOffset(20, 45)
+    subtitle.Size = UDim2.new(1, -85, 0, 17)
+    subtitle.Position = UDim2.fromOffset(71, 39)
     subtitle.BackgroundTransparency = 1
     subtitle.Text = "KEY AUTHENTICATION"
     subtitle.TextColor3 = GRAY
-    subtitle.TextSize = 10
+    subtitle.TextSize = 9
     subtitle.Font = Enum.Font.GothamMedium
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.Parent = frame
-    -- DIVIDER
-    local divider = Instance.new("Frame")
-    divider.Size = UDim2.new(1, -40, 0, 1)
-    divider.Position = UDim2.fromOffset(20, 72)
-    divider.BackgroundColor3 = BORDER
-    divider.BorderSizePixel = 0
-    divider.Parent = frame
-    -- KEY INPUT
+    subtitle.Parent = header
+    -- BODY TITLE
+    local bodyTitle = Instance.new("TextLabel")
+    bodyTitle.Size = UDim2.new(1, -36, 0, 22)
+    bodyTitle.Position = UDim2.fromOffset(18, 78)
+    bodyTitle.BackgroundTransparency = 1
+    bodyTitle.Text = "Welcome back."
+    bodyTitle.TextColor3 = WHITE
+    bodyTitle.TextSize = 15
+    bodyTitle.Font = Enum.Font.GothamBold
+    bodyTitle.TextXAlignment = Enum.TextXAlignment.Left
+    bodyTitle.Parent = frame
+    local description = Instance.new("TextLabel")
+    description.Size = UDim2.new(1, -36, 0, 17)
+    description.Position = UDim2.fromOffset(18, 100)
+    description.BackgroundTransparency = 1
+    description.Text = "Enter your key to continue"
+    description.TextColor3 = GRAY
+    description.TextSize = 11
+    description.Font = Enum.Font.Gotham
+    description.TextXAlignment = Enum.TextXAlignment.Left
+    description.Parent = frame
+    -- INPUT PANEL
     local input = Instance.new("TextBox")
     input.Name = "KeyInput"
-    input.Size = UDim2.new(1, -40, 0, 40)
-    input.Position = UDim2.fromOffset(20, 87)
-    input.BackgroundColor3 = INPUT_BG
-    input.BorderSizePixel = 0
+    input.Size = UDim2.new(1, -36, 0, 36)
+    input.Position = UDim2.fromOffset(18, 125)
+    input.BackgroundColor3 = DARK
     input.TextColor3 = WHITE
-    input.PlaceholderText = "Enter your access key"
+    input.PlaceholderText = "Enter access key..."
     input.PlaceholderColor3 = GRAY
     input.Text = ""
-    input.TextSize = 13
+    input.TextSize = 12
     input.Font = Enum.Font.Gotham
     input.ClearTextOnFocus = false
+    input.BorderSizePixel = 0
     input.Parent = frame
     local inputCorner = Instance.new("UICorner")
     inputCorner.CornerRadius = UDim.new(0, 6)
@@ -89,58 +129,55 @@ function KeySystem.Init()
     inputOutline.Color = BORDER
     inputOutline.Thickness = 1
     inputOutline.Parent = input
-    -- STATUS
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -40, 0, 17)
-    status.Position = UDim2.fromOffset(20, 132)
-    status.BackgroundTransparency = 1
-    status.Text = "Enter your key to continue"
-    status.TextColor3 = GRAY
-    status.TextSize = 10
-    status.Font = Enum.Font.Gotham
-    status.TextXAlignment = Enum.TextXAlignment.Left
-    status.Parent = frame
     -- VERIFY BUTTON
     local button = Instance.new("TextButton")
     button.Name = "VerifyButton"
-    button.Size = UDim2.new(1, -40, 0, 35)
-    button.Position = UDim2.fromOffset(20, 158)
+    button.Size = UDim2.new(1, -36, 0, 34)
+    button.Position = UDim2.fromOffset(18, 168)
     button.BackgroundColor3 = RED
-    button.BorderSizePixel = 0
     button.Text = "VERIFY ACCESS"
     button.TextColor3 = WHITE
     button.TextSize = 12
     button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 0
     button.AutoButtonColor = true
     button.Parent = frame
     local buttonCorner = Instance.new("UICorner")
     buttonCorner.CornerRadius = UDim.new(0, 6)
     buttonCorner.Parent = button
+    -- STATUS
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -36, 0, 14)
+    status.Position = UDim2.fromOffset(18, 204)
+    status.BackgroundTransparency = 1
+    status.Text = "RTX PRIVATE  |  READY"
+    status.TextColor3 = GRAY
+    status.TextSize = 9
+    status.Font = Enum.Font.Gotham
+    status.TextXAlignment = Enum.TextXAlignment.Center
+    status.Parent = frame
     local finished = false
-    local verifying = false
     local function cleanup()
         if gui then
             gui:Destroy()
         end
     end
     button.MouseButton1Click:Connect(function()
-        if verifying or finished then
+        if finished then
             return
         end
-        verifying = true
         if input.Text == CORRECT_KEY then
+            finished = true
             status.Text = "ACCESS GRANTED"
             status.TextColor3 = RED
             button.Text = "VERIFIED"
-            finished = true
             task.wait(0.4)
             cleanup()
         else
-            status.Text = "INVALID KEY — TRY AGAIN"
+            status.Text = "INVALID KEY - TRY AGAIN"
             status.TextColor3 = RED
             input.Text = ""
         end
-        verifying = false
     end)
     gui.Parent = player:WaitForChild("PlayerGui")
     while not finished and gui.Parent do
