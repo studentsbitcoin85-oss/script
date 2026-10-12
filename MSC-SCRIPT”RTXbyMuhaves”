@@ -1,7 +1,26 @@
---[[
-    RTX CLAN PRIVATE 
-    by Muhaves
-]]
+-- RTX CLAN PRIVATE | KEY SYSTEM
+
+local keyUrl =
+    "https://raw.githubusercontent.com/studentsbitcoin85-oss/script/refs/heads/main/KeyScript"
+
+local success, KeySystem = pcall(function()
+    return loadstring(game:HttpGet(keyUrl))()
+end)
+
+if not success or type(KeySystem) ~= "table"
+    or type(KeySystem.Init) ~= "function" then
+    warn("KeyScript gagal dimuat atau formatnya salah.")
+    return
+end
+
+local keySuccess, verified = pcall(function()
+    return KeySystem.Init()
+end)
+
+if not keySuccess or verified ~= true then
+    warn("Verifikasi key gagal.")
+    return
+end
 
 local services = {
     players = game:GetService("Players"),
