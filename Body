@@ -37,7 +37,95 @@ local Callbacks = {
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
 	Teleport = function(name) end,
+	AntiAFK = function(s) end, AntiLag = function(s) end,
 }
+
+---------------------------------------------------------------------
+-- Utilitas sisi klien: Anti AFK & Anti Lag (hanya pengaturan lokal, bisa dibatalkan)
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+
+-- Anti AFK: respon sinyal Idled supaya tidak di-kick karena diam
+local afkConn
+Callbacks.AntiAFK = function(state)
+	if afkConn then afkConn:Disconnect() afkConn = nil end
+	if state then
+		afkConn = Players.LocalPlayer.Idled:Connect(function()
+			pcall(function()
+				VirtualUser:CaptureController()
+				VirtualUser:ClickButton2(Vector2.new())
+			end)
+		end)
+	end
+end
+
+-- Anti Lag: matikan efek visual (partikel, cahaya, bayangan) tanpa menghapus apa pun.
+-- Semua nilai asli disimpan dan dikembalikan saat dimatikan.
+local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}), lighting = nil, quality = nil}
+local EFFECTS = {
+	ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true,
+	PointLight = true, SpotLight = true, SurfaceLight = true,
+}
+
+local function dampen(obj)
+	if EFFECTS[obj.ClassName] then
+		antiLag.saved[obj] = {effect = true, enabled = obj.Enabled}
+		obj.Enabled = false
+	elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
+		antiLag.saved[obj] = {material = obj.Material, reflectance = obj.Reflectance}
+		obj.Material = Enum.Material.SmoothPlastic
+		obj.Reflectance = 0
+	end
+end
+
+Callbacks.AntiLag = function(state)
+	if state == antiLag.on then return end
+	antiLag.on = state
+	if state then
+		antiLag.lighting = {
+			GlobalShadows = Lighting.GlobalShadows,
+			EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+		}
+		pcall(function() antiLag.quality = settings().Rendering.QualityLevel end)
+		Lighting.GlobalShadows = false
+		Lighting.EnvironmentDiffuseScale = 0
+		Lighting.EnvironmentSpecularScale = 0
+		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+
+		antiLag.conn = workspace.DescendantAdded:Connect(function(d)
+			if antiLag.on then pcall(dampen, d) end
+		end)
+		task.spawn(function()
+			local n = 0
+			for _, d in ipairs(workspace:GetDescendants()) do
+				if not antiLag.on then return end
+				pcall(dampen, d)
+				n += 1
+				if n % 400 == 0 then task.wait() end
+			end
+		end)
+	else
+		if antiLag.conn then antiLag.conn:Disconnect() antiLag.conn = nil end
+		if antiLag.lighting then
+			for k, v in pairs(antiLag.lighting) do pcall(function() Lighting[k] = v end) end
+		end
+		if antiLag.quality then
+			pcall(function() settings().Rendering.QualityLevel = antiLag.quality end)
+		end
+		for obj, info in pairs(antiLag.saved) do
+			pcall(function()
+				if info.effect then
+					obj.Enabled = info.enabled
+				else
+					obj.Material = info.material
+					obj.Reflectance = info.reflectance
+				end
+			end)
+		end
+		antiLag.saved = setmetatable({}, {__mode = "k"})
+	end
+end
 
 ---------------------------------------------------------------------
 -- Helper (semua posisi absolut pada kanvas 1536x1024)
@@ -222,8 +310,8 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-text(root, "v3 • Fast Farming", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
-print("[MuhavesUI] v3 dimuat")
+text(root, "v4 • Anti AFK/Lag", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
+print("[MuhavesUI] v4 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
@@ -341,29 +429,33 @@ local fsDA    = stat(p2, "🕒", "Dura Average", "-- /s | -- / min | -- /h | -- 
 ---------------------------------------------------------------------
 -- TAB 3: Other
 local p3 = pages[2]
-box(p3, 305, 140, 1490, 650, SEC, 16)
+box(p3, 305, 140, 1490, 715, SEC, 16)
 local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
 
-box(p3, 321, 215, 880, 415, CARD, 12)
+box(p3, 321, 215, 880, 480, CARD, 12)
 toggleRow(p3, 345, 400, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
 hline(p3, 335, 866, 281)
 toggleRow(p3, 345, 400, 314, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
 hline(p3, 335, 866, 347)
 toggleRow(p3, 345, 400, 380, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
+hline(p3, 335, 866, 413)
+toggleRow(p3, 345, 400, 446, "Anti AFK", "Cegah kick karena diam terlalu lama.", false, function(st) Callbacks.AntiAFK(st) end)
 
-box(p3, 895, 215, 1474, 415, CARD, 12)
+box(p3, 895, 215, 1474, 480, CARD, 12)
 toggleRow(p3, 919, 974, 248, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
 hline(p3, 909, 1460, 281)
 toggleRow(p3, 919, 974, 314, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
 hline(p3, 909, 1460, 347)
 toggleRow(p3, 919, 974, 380, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
+hline(p3, 909, 1460, 413)
+toggleRow(p3, 919, 974, 446, "Anti Lag", "Kurangi efek visual agar lebih ringan.", false, function(st) Callbacks.AntiLag(st) end)
 
-box(p3, 321, 435, 1474, 630, CARD, 12)
-text(p3, "Teleport (Tekan E)", 17, 345, 462, 300, TX, F.GothamMedium)
+box(p3, 321, 500, 1474, 695, CARD, 12)
+text(p3, "Teleport (Tekan E)", 17, 345, 527, 300, TX, F.GothamMedium)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
 	local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
 	local x = 345 + col * 565
-	local y = 485 + row * 62
+	local y = 550 + row * 62
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
 		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(545, 48), BorderSizePixel = 0,
