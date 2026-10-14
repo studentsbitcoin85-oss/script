@@ -1,7 +1,8 @@
 --[[
-    Muhaves Private Farming - UI ONLY (versi presisi)
-    LocalScript. Semua koordinat diambil dari screenshot 1536x1024, lalu di-scale otomatis.
-    Isi ASSETS dengan ID gambar hasil upload (folder assets). Kosong = tampil teks pengganti.
+    Muhaves Private Farming - UI ONLY (per tab)
+    LocalScript. Tiap tab di sidebar punya halaman sendiri:
+    Fast Rebirth / Fast Strength / Other / Info.
+    Isi ASSETS dengan ID gambar hasil upload (folder assets). Kosong = teks pengganti.
     Semua aksi ada di tabel Callbacks (kosong).
 ]]
 
@@ -24,7 +25,6 @@ local LINE  = Color3.fromRGB(40, 40, 43)
 local TX    = Color3.fromRGB(240, 240, 240)
 local SUB   = Color3.fromRGB(140, 140, 145)
 local MUTED = Color3.fromRGB(190, 190, 194)
-local OK    = Color3.fromRGB(61, 220, 132)
 local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
 
@@ -39,6 +39,8 @@ local Callbacks = {
 	Teleport = function(name) end,
 }
 
+---------------------------------------------------------------------
+-- Helper (semua posisi absolut pada kanvas 1536x1024)
 local function new(class, props, parent)
 	local o = Instance.new(class)
 	for k, v in pairs(props) do o[k] = v end
@@ -48,7 +50,6 @@ end
 local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
 local function stroke(o, c, t) new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
 
--- semua posisi absolut sesuai screenshot
 local function box(p, x1, y1, x2, y2, bg, r, noStroke)
 	local f = new("Frame", {
 		Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
@@ -59,7 +60,7 @@ local function box(p, x1, y1, x2, y2, bg, r, noStroke)
 	return f
 end
 
--- teks: x kiri, cy = titik tengah vertikal
+-- x = kiri, cy = titik tengah vertikal
 local function text(p, t, size, x, cy, w, color, font, align)
 	local h = size + 10
 	return new("TextLabel", {
@@ -123,11 +124,16 @@ local function numberBox(p, x1, y1, x2, y2, value, cb)
 	end)
 end
 
--- baris dengan toggle di kiri
 local function toggleRow(p, tx, titleX, cy, title, sub, initial, cb)
 	toggle(p, tx, cy, initial, cb)
-	text(p, title, 17, titleX, cy - 9, 260, TX, F.GothamMedium)
-	text(p, sub, 13, titleX, cy + 13, 330, SUB)
+	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
+	text(p, sub, 13, titleX, cy + 13, 400, SUB)
+end
+
+local function iconRow(p, icon, ix, titleX, cy, title, sub)
+	text(p, icon, 30, ix, cy, 44, MUTED, F.GothamBold, CENTER)
+	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
+	text(p, sub, 13, titleX, cy + 13, 400, SUB)
 end
 
 local function pill(p, x1, y1, x2, y2, t)
@@ -138,15 +144,22 @@ local function pill(p, x1, y1, x2, y2, t)
 	return text(f, t, 15, 36, (y2 - y1) / 2, x2 - x1 - 40, TX)
 end
 
-local function secHeader(p, icon, title, sub, cy, status, px1, py1, px2, py2)
-	text(p, icon, 30, 326, cy, 44, TX, F.GothamBold, CENTER)
-	text(p, title, 25, 380, cy - 10, 400, TX, F.GothamMedium)
-	text(p, sub, 15, 380, cy + 15, 500, SUB)
-	return pill(p, px1, py1, px2, py2, status)
+-- header halaman: ikon + judul + subjudul + pill status (kanan)
+local function pageHeader(p, icon, title, sub, status, pillX1)
+	text(p, icon, 30, 326, 178, 44, TX, F.GothamBold, CENTER)
+	text(p, title, 25, 380, 168, 500, TX, F.GothamMedium)
+	text(p, sub, 15, 380, 193, 600, SUB)
+	if status then return pill(p, pillX1, 160, pillX1 + 141, 192, status) end
+end
+
+local function stat(p, icon, name, value, cy, ix, nx, vx, vw, size, align)
+	text(p, icon, size + 2, ix - 10, cy, 22, MUTED, F.Gotham, CENTER)
+	text(p, name, size, nx, cy, 170, Color3.fromRGB(205, 205, 208))
+	return text(p, value, size, vx, cy, vw, TX, F.Gotham, align or LEFT)
 end
 
 ---------------------------------------------------------------------
--- ScreenGui + frame dasar 1536x1024
+-- ScreenGui + kanvas
 local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
 
@@ -179,17 +192,11 @@ local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, 
 local closeBtn = new("TextButton", {Text = "✕", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40)}, root)
 
--- Kontainer isi (untuk minimize)
-local body = new("Frame", {Position = UDim2.fromOffset(0, 126), Size = UDim2.fromOffset(W, H - 126), BackgroundTransparency = 1, ClipsDescendants = false}, root)
-body.Position = UDim2.fromOffset(0, 0)
-body.Size = UDim2.fromOffset(W, H)
--- semua elemen isi memakai koordinat absolut screenshot, jadi body = root-sized
-
+local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
 minBtn.MouseButton1Click:Connect(function() body.Visible = not body.Visible end)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
--- Drag
-do
+do -- drag lewat header
 	local dragging, start, startPos
 	header.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -206,15 +213,23 @@ do
 end
 
 ---------------------------------------------------------------------
+-- Halaman (satu per tab)
+local pages = {}
+for i = 1, 4 do
+	pages[i] = new("Frame", {Name = "Page" .. i, Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1, Visible = false}, body)
+end
+
 -- Sidebar
 box(body, 45, 140, 290, 978, SEC, 16)
 local nav = {{"⚡", "Fast Rebirth", 181}, {"🏋", "Fast Strength", 251}, {"⚙", "Other", 325}, {"ℹ", "Info", 400}}
 local navBtns = {}
 local function selectNav(idx)
 	for i, b in ipairs(navBtns) do
-		b.BackgroundTransparency = (i == idx) and 0 or 1
-		b.TextColor3 = (i == idx) and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
-		b:FindFirstChildOfClass("UIStroke").Enabled = (i == idx)
+		local on = i == idx
+		b.BackgroundTransparency = on and 0 or 1
+		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
+		b:FindFirstChildOfClass("UIStroke").Enabled = on
+		pages[i].Visible = on
 	end
 end
 for i, n in ipairs(nav) do
@@ -230,147 +245,143 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-selectNav(1)
 image(body, ASSETS.Character, 40, 470, 290, 930, "[ character.png ]", 14)
 
 ---------------------------------------------------------------------
--- Fast Rebirth
-box(body, 305, 140, 1230, 432, SEC, 16)
-local rbStatus = secHeader(body, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", 178, "Status: Inactive", 1072, 160, 1213, 192)
+-- TAB 1: Fast Rebirth
+local p1 = pages[1]
+box(p1, 305, 140, 1490, 765, SEC, 16)
+local rbStatus = pageHeader(p1, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
 
-box(body, 321, 210, 821, 412, CARD, 12)
-toggleRow(body, 337, 397, 245, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
-hline(body, 335, 806, 277)
-toggleRow(body, 337, 397, 306, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
-hline(body, 335, 806, 341)
-text(body, "⟳", 30, 337, 374, 44, MUTED, F.GothamBold, CENTER)
-text(body, "Rebirth Target", 17, 397, 364, 260, TX, F.GothamMedium)
-text(body, "Target strength untuk rebirth.", 13, 397, 386, 300, SUB)
-numberBox(body, 691, 355, 806, 393, "5.000", Callbacks.RebirthTarget)
+box(p1, 321, 215, 1474, 465, CARD, 12)
+toggleRow(p1, 345, 410, 270, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
+hline(p1, 335, 1460, 307)
+toggleRow(p1, 345, 410, 345, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
+hline(p1, 335, 1460, 382)
+iconRow(p1, "⟳", 345, 410, 420, "Rebirth Target", "Target strength untuk rebirth.")
+numberBox(p1, 1320, 400, 1450, 440, "5.000", Callbacks.RebirthTarget)
 
-box(body, 836, 210, 1214, 412, CARD, 12)
-text(body, "Rebirth Stats", 18, 853, 233, 200, TX, F.GothamMedium)
-local function stat(icon, name, value, cy, ix, nx, vx1, vx2, size)
-	text(body, icon, size + 2, ix - 10, cy, 22, MUTED, F.Gotham, CENTER)
-	text(body, name, size, nx, cy, 160, Color3.fromRGB(205, 205, 208))
-	return text(body, value, size, vx1, cy, vx2 - vx1, TX, F.Gotham, RIGHT)
-end
-local rbRebirths = stat("◎", "Rebirths", "0", 274, 865, 890, 1000, 1090, 14)
-local rbGained   = stat("⇪", "Gained", "0", 314, 865, 890, 1000, 1090, 14)
-local rbHour     = stat("◷", "Pace / Hour", "--", 351, 865, 890, 1000, 1090, 14)
-local rbDay      = stat("◷", "Pace / Day", "--", 387, 865, 890, 1000, 1090, 14)
-image(body, ASSETS.EmblemStats, 1120, 225, 1195, 300, "M", 40)
+box(p1, 321, 485, 1474, 745, CARD, 12)
+text(p1, "Rebirth Stats", 18, 345, 512, 250, TX, F.GothamMedium)
+local rbRebirths = stat(p1, "◎", "Rebirths", "0", 565, 355, 380, 700, 200, 15)
+local rbGained   = stat(p1, "⇪", "Gained", "0", 615, 355, 380, 700, 200, 15)
+local rbHour     = stat(p1, "◷", "Pace / Hour", "--", 665, 355, 380, 700, 200, 15)
+local rbDay      = stat(p1, "◷", "Pace / Day", "--", 715, 355, 380, 700, 200, 15)
+image(p1, ASSETS.EmblemStats, 1325, 540, 1435, 650, "M", 48)
 
 ---------------------------------------------------------------------
--- Fast Strength
-box(body, 305, 445, 1230, 730, SEC, 16)
-local fsStatus = secHeader(body, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", 483, "Status: Inactive", 1072, 465, 1213, 497)
+-- TAB 2: Fast Strength
+local p2 = pages[2]
+box(p2, 305, 140, 1490, 795, SEC, 16)
+local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1332)
 
-box(body, 321, 519, 701, 720, CARD, 12)
-toggleRow(body, 337, 397, 555, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
-hline(body, 335, 688, 586)
-toggleRow(body, 337, 397, 618, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
-hline(body, 335, 688, 650)
-text(body, "◔", 30, 337, 683, 44, MUTED, F.GothamBold, CENTER)
-text(body, "Max Reps / Second", 17, 397, 673, 260, TX, F.GothamMedium)
-text(body, "Batas maksimal reps per detik.", 13, 397, 695, 300, SUB)
-numberBox(body, 601, 664, 687, 702, "659", Callbacks.MaxReps)
+box(p2, 321, 215, 1474, 445, CARD, 12)
+toggleRow(p2, 345, 410, 262, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
+hline(p2, 335, 1460, 296)
+toggleRow(p2, 345, 410, 330, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
+hline(p2, 335, 1460, 364)
+iconRow(p2, "◔", 345, 410, 398, "Max Reps / Second", "Batas maksimal reps per detik.")
+numberBox(p2, 1360, 378, 1450, 418, "659", Callbacks.MaxReps)
 
-box(body, 716, 514, 1068, 720, CARD, 12)
-text(body, "Strength Stats", 15, 730, 531, 200, TX, F.GothamMedium)
-local function srow(icon, name, cy, value, small)
-	text(body, icon, 13, 728, cy, 20, MUTED, F.Gotham, CENTER)
-	text(body, name, 12, 759, cy, 110, Color3.fromRGB(205, 205, 208))
-	return text(body, value, small and 11 or 12, 871, cy, 190, TX)
-end
-local fsStr  = srow("🏋", "Strength", 560, "0")
-local fsStrG = text(body, "+0", 12, 996, 560, 60, TX)
-local fsDura = srow("♡", "Durability", 587, "0")
-local fsDurG = text(body, "+0", 12, 996, 587, 60, TX)
-local fsSP = srow("◷", "Str Pace", 616, "-- /s | -- / min | -- /h | -- /d", true)
-local fsDP = srow("◷", "Dura Pace", 643, "-- /s | -- / min | -- /h | -- /d", true)
-local fsSA = srow("◷", "Str Average", 671, "-- /s | -- / min | -- /h | -- /d", true)
-local fsDA = srow("◷", "Dura Average", 698, "-- /s | -- / min | -- /h | -- /d", true)
+box(p2, 321, 465, 1000, 775, CARD, 12)
+text(p2, "Strength Stats", 17, 345, 490, 250, TX, F.GothamMedium)
+local fsStr   = stat(p2, "🏋", "Strength", "0", 530, 355, 380, 560, 200, 14)
+local fsStrG  = text(p2, "+0", 14, 820, 530, 100, TX)
+local fsDura  = stat(p2, "♡", "Durability", "0", 568, 355, 380, 560, 200, 14)
+local fsDurG  = text(p2, "+0", 14, 820, 568, 100, TX)
+local fsSP    = stat(p2, "◷", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 606, 355, 380, 560, 420, 13)
+local fsDP    = stat(p2, "◷", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 644, 355, 380, 560, 420, 13)
+local fsSA    = stat(p2, "◷", "Str Average", "-- /s | -- / min | -- /h | -- /d", 682, 355, 380, 560, 420, 13)
+local fsDA    = stat(p2, "◷", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 720, 355, 380, 560, 420, 13)
 
-box(body, 1083, 514, 1243, 720, CARD, 12)
-local ring = new("Frame", {Position = UDim2.fromOffset(1102, 537), Size = UDim2.fromOffset(98, 98), BackgroundTransparency = 1}, body)
-round(ring, 49)
-new("UIStroke", {Color = Color3.fromRGB(62, 62, 66), Thickness = 9}, ring)
-text(ring, "0%", 20, 0, 49, 98, TX, F.Gotham, CENTER)
-text(body, "Runtime", 13, 1100, 659, 100, SUB, F.Gotham, CENTER)
-local fsRuntime = text(body, "0d 0h 0m 0s", 14, 1083, 679, 160, TX, F.GothamMedium, CENTER)
-fsRuntime.Position = UDim2.fromOffset(1070, 679 - 12)
-fsRuntime.Size = UDim2.fromOffset(160, 24)
+box(p2, 1020, 465, 1474, 775, CARD, 12)
+local ring = new("Frame", {Position = UDim2.fromOffset(1177, 520), Size = UDim2.fromOffset(140, 140), BackgroundTransparency = 1}, p2)
+round(ring, 70)
+new("UIStroke", {Color = Color3.fromRGB(62, 62, 66), Thickness = 11}, ring)
+text(ring, "0%", 26, 0, 70, 140, TX, F.Gotham, CENTER)
+text(p2, "Runtime", 15, 1020, 700, 454, SUB, F.Gotham, CENTER)
+local fsRuntime = text(p2, "0d 0h 0m 0s", 18, 1020, 730, 454, TX, F.GothamMedium, CENTER)
 
 ---------------------------------------------------------------------
--- Other
-box(body, 305, 740, 1230, 978, SEC, 16, true)
-hline(body, 318, 1217, 741)
-local otStatus = secHeader(body, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", 771, "Status: Ready", 1090, 755, 1213, 787)
-text(body, "⚙", 34, 326, 771, 44, TX, F.GothamBold, CENTER)
+-- TAB 3: Other
+local p3 = pages[3]
+box(p3, 305, 140, 1490, 650, SEC, 16)
+local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
 
-box(body, 321, 797, 625, 960, CARD, 10, true)
-toggleRow(body, 335, 388, 825, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
-hline(body, 335, 612, 851)
-toggleRow(body, 335, 388, 877, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
-hline(body, 335, 612, 905)
-toggleRow(body, 335, 388, 931, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
+box(p3, 321, 215, 880, 415, CARD, 12)
+toggleRow(p3, 345, 400, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
+hline(p3, 335, 866, 281)
+toggleRow(p3, 345, 400, 314, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
+hline(p3, 335, 866, 347)
+toggleRow(p3, 345, 400, 380, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
 
-box(body, 636, 797, 958, 960, CARD, 10, true)
-toggleRow(body, 648, 707, 825, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
-hline(body, 650, 945, 851)
-toggleRow(body, 648, 707, 877, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
-hline(body, 650, 945, 905)
-toggleRow(body, 648, 707, 931, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
+box(p3, 895, 215, 1474, 415, CARD, 12)
+toggleRow(p3, 919, 974, 248, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
+hline(p3, 909, 1460, 281)
+toggleRow(p3, 919, 974, 314, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
+hline(p3, 909, 1460, 347)
+toggleRow(p3, 919, 974, 380, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
 
-box(body, 968, 797, 1217, 960, CARD, 10, true)
-text(body, "Teleport (Tekan E)", 15, 983, 815, 220, TX, F.GothamMedium)
+box(p3, 321, 435, 1474, 630, CARD, 12)
+text(p3, "Teleport (Tekan E)", 17, 345, 462, 300, TX, F.GothamMedium)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
-	local y = 828 + (i - 1) * 33
+	local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+	local x = 345 + col * 565
+	local y = 485 + row * 62
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(979, y), Size = UDim2.fromOffset(223, 29), BorderSizePixel = 0,
-	}, body)
-	round(b, 6)
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(545, 48), BorderSizePixel = 0,
+	}, p3)
+	round(b, 8)
 	stroke(b)
-	text(b, "📍", 13, 10, 14.5, 20, MUTED, F.Gotham, CENTER)
-	text(b, name, 14, 40, 14.5, 170, TX)
+	text(b, "📍", 16, 12, 24, 24, MUTED, F.Gotham, CENTER)
+	text(b, name, 16, 50, 24, 400, TX)
 	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
 end
 
 ---------------------------------------------------------------------
--- Info
-box(body, 1245, 140, 1490, 978, SEC, 16)
-text(body, "ℹ", 28, 1262, 169, 32, TX, F.GothamBold, CENTER)
-text(body, "Info", 24, 1311, 167, 120, TX, F.GothamMedium)
-box(body, 1262, 198, 1470, 335, Color3.fromRGB(10, 10, 11), 10)
-image(body, ASSETS.LogoInfo, 1295, 215, 1440, 275, "Muhaves", 26)
-text(body, "Private Farming", 17, 1262, 294, 208, TX, F.GothamMedium, CENTER)
-text(body, "v1.0.0", 13, 1262, 313, 208, SUB, F.Gotham, CENTER)
+-- TAB 4: Info
+local p4 = pages[4]
+box(p4, 305, 140, 1490, 810, SEC, 16)
+pageHeader(p4, "ℹ", "Info", "Tentang script ini.", nil)
 
-text(body, "Made by", 14, 1270, 357, 180, SUB)
-text(body, "MuhavesDevs", 17, 1270, 377, 190, MUTED, F.Gotham)
-text(body, "Game", 14, 1270, 406, 180, SUB)
-text(body, "Muscle Legends", 17, 1270, 427, 190, TX, F.GothamMedium)
-text(body, "Status", 14, 1270, 456, 180, SUB)
-text(body, "Working", 17, 1270, 477, 80, TX, F.GothamMedium)
-local okBox = box(body, 1332, 468, 1348, 486, Color3.fromRGB(30, 110, 60), 3, true)
-text(okBox, "✔", 12, 0, 9, 16, Color3.new(1, 1, 1), F.GothamBold, CENTER)
+box(p4, 321, 215, 641, 420, CARD, 12)
+image(p4, ASSETS.LogoInfo, 366, 240, 596, 330, "Muhaves", 34)
+text(p4, "Private Farming", 19, 321, 360, 320, TX, F.GothamMedium, CENTER)
+text(p4, "v1.0.0", 14, 321, 390, 320, SUB, F.Gotham, CENTER)
 
-hline(body, 1262, 1470, 500)
-text(body, "Fitur Utama", 17, 1270, 523, 190, TX, F.GothamMedium)
-for i, t in ipairs({"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}) do
-	local cy = 550 + (i - 1) * 25.3
-	text(body, "✔", 14, 1270, cy, 20, TX, F.GothamBold, CENTER)
-	text(body, t, 15, 1295, cy, 170, MUTED)
+box(p4, 661, 215, 1474, 420, CARD, 12)
+local function kv(x, k, v, extra)
+	text(p4, k, 14, x, 280, 220, SUB)
+	text(p4, v, 19, x, 312, 240, TX, F.GothamMedium)
+	return extra
 end
-hline(body, 1262, 1470, 728)
-text(body, "\"Progress is not luck,", 14, 1245, 755, 245, SUB, F.Gotham, CENTER)
-text(body, "it's a system.\"", 14, 1245, 775, 245, SUB, F.Gotham, CENTER)
-text(body, "- Muhaves", 13, 1245, 798, 245, SUB, F.Gotham, CENTER)
-image(body, ASSETS.EmblemBottom, 1330, 872, 1395, 945, "M", 36)
+kv(690, "Made by", "MuhavesDevs")
+kv(930, "Game", "Muscle Legends")
+text(p4, "Status", 14, 1190, 280, 200, SUB)
+text(p4, "Working", 19, 1190, 312, 90, TX, F.GothamMedium)
+local okBox = box(p4, 1282, 301, 1300, 321, Color3.fromRGB(30, 110, 60), 4, true)
+text(okBox, "✔", 13, 0, 10, 18, Color3.new(1, 1, 1), F.GothamBold, CENTER)
+
+box(p4, 321, 440, 1474, 700, CARD, 12)
+text(p4, "Fitur Utama", 18, 345, 468, 300, TX, F.GothamMedium)
+local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}
+for i, t in ipairs(feats) do
+	local col = i <= 4 and 0 or 1
+	local idx = i <= 4 and i or (i - 4)
+	local cy = 510 + (idx - 1) * 42
+	local x = 345 + col * 420
+	text(p4, "✔", 16, x, cy, 24, TX, F.GothamBold, CENTER)
+	text(p4, t, 17, x + 34, cy, 340, MUTED)
+end
+
+text(p4, "\"Progress is not luck, it's a system.\"", 16, 321, 735, 833, SUB, F.Gotham, CENTER)
+text(p4, "- Muhaves", 14, 321, 765, 833, SUB, F.Gotham, CENTER)
+image(p4, ASSETS.EmblemBottom, 1395, 715, 1460, 790, "M", 36)
 
 ---------------------------------------------------------------------
+selectNav(1)
+
 return {
 	Gui = gui,
 	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
