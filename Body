@@ -258,8 +258,12 @@ scale.Scale = fit()
 
 ---------------------------------------------------------------------
 -- Dock logo (tersembunyi dulu; baru muncul setelah UI dikecilkan)
+local TOUCH = UserInputService.TouchEnabled -- HP / Android
+local DOCK = TOUCH and 80 or 56 -- ukuran logo
+local XBTN = TOUCH and 38 or 22 -- ukuran tombol X
+
 local dock = new("Frame", {
-	Name = "Dock", Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0, 16, 0.5, -28),
+	Name = "Dock", Size = UDim2.fromOffset(DOCK, DOCK), Position = UDim2.new(0, 16, 0.5, -DOCK / 2),
 	BackgroundTransparency = 1, Visible = false, ZIndex = 10,
 }, gui)
 local dockScale = new("UIScale", {Scale = 0}, dock)
@@ -273,12 +277,12 @@ stroke(logo, Color3.fromRGB(55, 55, 58))
 
 -- Tombol X: hapus UI sepenuhnya
 local dockClose = new("TextButton", {
-	Text = "✕", TextSize = 12, Font = F.GothamBold, TextColor3 = TX, AutoButtonColor = false,
+	Text = "✕", TextSize = TOUCH and 20 or 12, Font = F.GothamBold, TextColor3 = TX, AutoButtonColor = false,
 	BackgroundColor3 = Color3.fromRGB(150, 45, 45), BorderSizePixel = 0,
-	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -2, 0, 2), Size = UDim2.fromOffset(22, 22),
+	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -4, 0, 4), Size = UDim2.fromOffset(XBTN, XBTN),
 	ZIndex = 12,
 }, dock)
-round(dockClose, 11)
+round(dockClose, XBTN / 2)
 stroke(dockClose, Color3.fromRGB(20, 20, 22), 1.5)
 dockClose.MouseButton1Click:Connect(function() gui:Destroy() end)
 
@@ -334,14 +338,37 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-local minBtn = new("TextButton", {
-	Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40),
-}, root)
-local closeBtn = new("TextButton", {
-	Text = "✕", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40),
-}, root)
+local function headerBtn(t, color)
+	local b = new("TextButton", {
+		Text = t, Font = F.GothamBold, TextColor3 = color, AutoButtonColor = true,
+		BackgroundColor3 = CARD, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 5,
+	}, root)
+	round(b, 40)
+	stroke(b, Color3.fromRGB(55, 55, 58), 2)
+	return b
+end
+local minBtn = headerBtn("—", MUTED)
+local closeBtn = headerBtn("✕", TX)
+
+-- Ukuran tombol header dihitung dari ukuran di layar (px nyata), bukan ukuran kanvas,
+-- jadi tetap enak ditekan jari walau UI diperkecil.
+local function layoutHeaderBtns()
+	local s = scale.Scale
+	if s < 0.05 then return end
+	local px = TOUCH and 40 or 30 -- ukuran tombol di layar
+	local size = px / s
+	local gap = 8 / s
+	local cy = 78
+	closeBtn.Size = UDim2.fromOffset(size, size)
+	minBtn.Size = UDim2.fromOffset(size, size)
+	closeBtn.Position = UDim2.fromOffset(1504 - 14 / s - size / 2, cy)
+	minBtn.Position = UDim2.fromOffset(1504 - 14 / s - size - gap - size / 2, cy)
+	local ts = math.clamp(math.floor(px * 0.55 / s), 8, 100)
+	closeBtn.TextSize, minBtn.TextSize = ts, ts
+end
+layoutHeaderBtns()
+scale:GetPropertyChangedSignal("Scale"):Connect(layoutHeaderBtns)
 minBtn.MouseButton1Click:Connect(function() setOpen(false) end)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
