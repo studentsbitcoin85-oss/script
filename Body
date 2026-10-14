@@ -163,41 +163,31 @@ local function hline(p, x1, x2, y)
 		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
 end
 
--- Loader gambar bertahap: rbxassetid -> rbxthumb -> Thumbs/Asset.ashx (konsep Elerium).
--- Kalau semuanya gagal, teks pengganti tetap tampil dan ada peringatan di output.
-local ContentProvider = game:GetService("ContentProvider")
+-- Loader gambar: ImageLabel langsung tampil (gambar tidak dimuat kalau disembunyikan).
+-- Urutan percobaan tiap 4 detik kalau belum termuat: Thumbs -> rbxassetid -> rbxthumb.
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
 local function image(p, id, x1, y1, x2, y2, fallback, fsize)
 	local numId = id ~= "" and id:match("%d+") or nil
-	local fb = text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
-	if not numId then return fb end
+	if not numId then
+		return text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
+	end
+	local urls = {
+		THUMB .. numId,
+		"rbxassetid://" .. numId,
+		"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
+	}
 	local img = new("ImageLabel", {
-		BackgroundTransparency = 1, Image = "", Visible = false,
+		BackgroundTransparency = 1, Image = urls[1],
 		Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
 		ScaleType = Enum.ScaleType.Fit,
 	}, p)
 	task.spawn(function()
-		local urls = {
-			"rbxassetid://" .. numId,
-			"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
-			THUMB .. numId,
-		}
-		for _, url in ipairs(urls) do
-			img.Image = url
-			pcall(function() ContentProvider:PreloadAsync({img}) end)
-			local waited = 0
-			while not img.IsLoaded and waited < 3 do
-				task.wait(0.25)
-				waited += 0.25
-			end
-			if img.IsLoaded then
-				img.Visible = true
-				fb.Visible = false
-				return
-			end
+		for i = 2, #urls do
+			task.wait(4)
+			if not img.Parent or img.IsLoaded then return end
+			img.Image = urls[i]
 		end
-		warn("[MuhavesUI] gagal memuat gambar ID " .. numId)
 	end)
 	return img
 end
@@ -310,8 +300,8 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-text(root, "v4 • Anti AFK/Lag", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
-print("[MuhavesUI] v4 dimuat")
+text(root, "v5 • Anti AFK/Lag", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
+print("[MuhavesUI] v5 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
