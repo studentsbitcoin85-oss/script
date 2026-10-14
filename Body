@@ -178,6 +178,10 @@ end
 
 ---------------------------------------------------------------------
 -- ScreenGui + kanvas
+do -- hapus UI lama kalau script dijalankan ulang
+	local old = Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("MuhavesUI")
+	if old then old:Destroy() end
+end
 local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
 
@@ -216,11 +220,6 @@ local logo = new("ImageButton", {
 }, gui)
 round(logo, 14)
 stroke(logo, Color3.fromRGB(55, 55, 58))
--- tulisan pengganti kalau gambar gagal dimuat
-local fb = text(logo, "MHV", 14, 0, 28, 56, TX, F.GothamBlack, CENTER)
-local function chk() fb.Visible = not logo.IsLoaded end
-logo:GetPropertyChangedSignal("IsLoaded"):Connect(chk)
-chk()
 
 do
 	local drag, moved, st, sp
