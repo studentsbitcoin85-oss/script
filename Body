@@ -18,7 +18,15 @@ local ASSETS = {
 	ToggleLogo   = "76948793112874", -- logo untuk besar/kecil
 }
 
-local SIZE = 0.4 -- ukuran default UI (0.3 = kecil, 0.6 = besar)
+-- Pakai thumbnail URL (seperti Elerium) supaya ID Decal/Image sama-sama bisa tampil
+local function assetUrl(id)
+	id = tostring(id)
+	if id:match("^rbxassetid") or id:match("^http") then return id end
+	return "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId=" .. id
+end
+
+local SIZE = 0.32 -- ukuran UI (0.25 = kecil, 0.5 = besar)
+local TS = 1.5   -- pembesar tulisan (1 = asli, 2 = dua kali lipat)
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -68,11 +76,15 @@ end
 
 -- x = kiri, cy = titik tengah vertikal
 local function text(p, t, size, x, cy, w, color, font, align)
+	size = math.floor(size * TS)
+	local nw = w * TS
+	align = align or LEFT
+	if align == CENTER then x = x - (nw - w) / 2 elseif align == RIGHT then x = x - (nw - w) end
 	local h = size + 10
 	return new("TextLabel", {
 		BackgroundTransparency = 1, Text = t, TextSize = size, Font = font or F.Gotham,
-		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(w, h),
-		TextColor3 = color or TX, TextXAlignment = align or LEFT, TextYAlignment = Enum.TextYAlignment.Center,
+		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(nw, h),
+		TextColor3 = color or TX, TextXAlignment = align, TextYAlignment = Enum.TextYAlignment.Center,
 	}, p)
 end
 
@@ -84,7 +96,7 @@ end
 local function image(p, id, x1, y1, x2, y2, fallback, fsize)
 	if id ~= "" then
 		return new("ImageLabel", {
-			BackgroundTransparency = 1, Image = id:match("^rbxassetid") and id or ("rbxassetid://" .. id),
+			BackgroundTransparency = 1, Image = assetUrl(id),
 			Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
 			ScaleType = Enum.ScaleType.Fit,
 		}, p)
@@ -118,7 +130,7 @@ local function numberBox(p, x1, y1, x2, y2, value, cb)
 	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
 	local tb = new("TextBox", {
-		BackgroundTransparency = 1, Text = value, TextSize = 17, Font = F.Gotham, TextColor3 = TX,
+		BackgroundTransparency = 1, Text = value, TextSize = 24, Font = F.Gotham, TextColor3 = TX,
 		Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -36, 1, 0), TextXAlignment = LEFT,
 		ClearTextOnFocus = false,
 	}, f)
@@ -143,7 +155,7 @@ local function iconRow(p, icon, ix, titleX, cy, title, sub)
 end
 
 local function pill(p, x1, y1, x2, y2, t)
-	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(10, 10, 11), 16)
+	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(10, 10, 11), 18)
 	local d = new("Frame", {Position = UDim2.fromOffset(12, (y2 - y1) / 2 - 7), Size = UDim2.fromOffset(14, 14),
 		BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
 	round(d, 7)
@@ -155,7 +167,7 @@ local function pageHeader(p, icon, title, sub, status, pillX1)
 	text(p, icon, 30, 326, 178, 44, TX, F.GothamBold, CENTER)
 	text(p, title, 25, 380, 168, 500, TX, F.GothamMedium)
 	text(p, sub, 15, 380, 193, 600, SUB)
-	if status then return pill(p, pillX1, 160, pillX1 + 141, 192, status) end
+	if status then return pill(p, pillX1, 158, pillX1 + 260, 198, status) end
 end
 
 local function stat(p, icon, name, value, cy, ix, nx, vx, vw, size, align)
@@ -198,12 +210,17 @@ end
 
 -- Logo: klik untuk kecilkan/besarkan, tahan & geser untuk pindah
 local logo = new("ImageButton", {
-	Image = "rbxassetid://" .. ASSETS.ToggleLogo, Size = UDim2.fromOffset(56, 56),
+	Image = assetUrl(ASSETS.ToggleLogo), Size = UDim2.fromOffset(56, 56),
 	Position = UDim2.new(0, 16, 0.5, -28), BackgroundColor3 = WIN,
 	AutoButtonColor = false, ZIndex = 10,
 }, gui)
 round(logo, 14)
 stroke(logo, Color3.fromRGB(55, 55, 58))
+-- tulisan pengganti kalau gambar gagal dimuat
+local fb = text(logo, "MHV", 14, 0, 28, 56, TX, F.GothamBlack, CENTER)
+local function chk() fb.Visible = not logo.IsLoaded end
+logo:GetPropertyChangedSignal("IsLoaded"):Connect(chk)
+chk()
 
 do
 	local drag, moved, st, sp
@@ -288,14 +305,15 @@ local function selectNav(idx)
 end
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
-		Text = "             " .. n[2], TextSize = 19, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
+		Text = "            " .. n[2], TextSize = 21, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
 		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(57, n[3] - 29), Size = UDim2.fromOffset(227, 58),
 		BorderSizePixel = 0,
 	}, body)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
 	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
-	text(b, n[1], 26, 12, 29, 44, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
+	new("TextLabel", {BackgroundTransparency = 1, Text = n[1], TextSize = 28, Font = F.GothamBold, TextColor3 = Color3.fromRGB(235, 235, 238),
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(44, 58)}, b)
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
@@ -305,7 +323,7 @@ image(body, ASSETS.Character, 40, 470, 290, 930, "[ character.png ]", 14)
 -- TAB 1: Fast Rebirth
 local p1 = pages[1]
 box(p1, 305, 140, 1490, 765, SEC, 16)
-local rbStatus = pageHeader(p1, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
+local rbStatus = pageHeader(p1, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1213)
 
 box(p1, 321, 215, 1474, 465, CARD, 12)
 toggleRow(p1, 345, 410, 270, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
@@ -327,7 +345,7 @@ image(p1, ASSETS.EmblemStats, 1325, 540, 1435, 650, "M", 48)
 -- TAB 2: Fast Strength
 local p2 = pages[2]
 box(p2, 305, 140, 1490, 795, SEC, 16)
-local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1332)
+local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1213)
 
 box(p2, 321, 215, 1474, 445, CARD, 12)
 toggleRow(p2, 345, 410, 262, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
@@ -360,7 +378,7 @@ local fsRuntime = text(p2, "0d 0h 0m 0s", 18, 1020, 730, 454, TX, F.GothamMedium
 -- TAB 3: Other
 local p3 = pages[3]
 box(p3, 305, 140, 1490, 650, SEC, 16)
-local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
+local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1213)
 
 box(p3, 321, 215, 880, 415, CARD, 12)
 toggleRow(p3, 345, 400, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
@@ -413,8 +431,8 @@ kv(690, "Made by", "MuhavesDevs")
 kv(930, "Game", "Muscle Legends")
 text(p4, "Status", 14, 1190, 280, 200, SUB)
 text(p4, "Working", 19, 1190, 312, 90, TX, F.GothamMedium)
-local okBox = box(p4, 1282, 301, 1300, 321, Color3.fromRGB(30, 110, 60), 4, true)
-text(okBox, "✔", 13, 0, 10, 18, Color3.new(1, 1, 1), F.GothamBold, CENTER)
+local okBox = box(p4, 1312, 299, 1332, 321, Color3.fromRGB(30, 110, 60), 4, true)
+text(okBox, "✔", 13, 0, 11, 20, Color3.new(1, 1, 1), F.GothamBold, CENTER)
 
 box(p4, 321, 440, 1474, 700, CARD, 12)
 text(p4, "Fitur Utama", 18, 345, 468, 300, TX, F.GothamMedium)
