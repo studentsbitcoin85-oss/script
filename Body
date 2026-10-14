@@ -15,10 +15,10 @@ local ASSETS = {
 	LogoInfo     = "", -- logo_info.png
 	EmblemStats  = "", -- emblem_stats.png
 	EmblemBottom = "", -- emblem_bottom.png
-	ToggleLogo   = "127494481183080", -- logo untuk besar/kecil
+	ToggleLogo   = "76948793112874", -- logo untuk besar/kecil
 }
 
-local SIZE = 0.6 -- ukuran default UI
+local SIZE = 0.4 -- ukuran default UI (0.3 = kecil, 0.6 = besar)
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
