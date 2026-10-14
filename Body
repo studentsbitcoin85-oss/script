@@ -75,26 +75,43 @@ local function hline(p, x1, x2, y)
 		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
 end
 
--- Konsep dari Elerium: gambar dimuat lewat Thumbs/Asset.ashx (aman untuk ID Decal hasil upload),
--- lalu fallback ke rbxassetid:// kalau belum termuat.
+-- Loader gambar bertahap: rbxassetid -> rbxthumb -> Thumbs/Asset.ashx (konsep Elerium).
+-- Kalau semuanya gagal, teks pengganti tetap tampil dan ada peringatan di output.
+local ContentProvider = game:GetService("ContentProvider")
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
 local function image(p, id, x1, y1, x2, y2, fallback, fsize)
 	local numId = id ~= "" and id:match("%d+") or nil
-	if numId then
-		local img = new("ImageLabel", {
-			BackgroundTransparency = 1, Image = THUMB .. numId,
-			Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
-			ScaleType = Enum.ScaleType.Fit,
-		}, p)
-		task.delay(4, function()
-			if img.Parent and not img.IsLoaded then
-				img.Image = "rbxassetid://" .. numId
+	local fb = text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
+	if not numId then return fb end
+	local img = new("ImageLabel", {
+		BackgroundTransparency = 1, Image = "", Visible = false,
+		Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
+		ScaleType = Enum.ScaleType.Fit,
+	}, p)
+	task.spawn(function()
+		local urls = {
+			"rbxassetid://" .. numId,
+			"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
+			THUMB .. numId,
+		}
+		for _, url in ipairs(urls) do
+			img.Image = url
+			pcall(function() ContentProvider:PreloadAsync({img}) end)
+			local waited = 0
+			while not img.IsLoaded and waited < 3 do
+				task.wait(0.25)
+				waited += 0.25
 			end
-		end)
-		return img
-	end
-	return text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
+			if img.IsLoaded then
+				img.Visible = true
+				fb.Visible = false
+				return
+			end
+		end
+		warn("[MuhavesUI] gagal memuat gambar ID " .. numId)
+	end)
+	return img
 end
 
 local function toggle(p, x, cy, initial, cb)
@@ -155,12 +172,13 @@ local function pill(p, x1, y1, x2, y2, t)
 	return text(f, t, 15, 36, (y2 - y1) / 2, x2 - x1 - 40, TX)
 end
 
--- header halaman: ikon + judul + subjudul + pill status (kanan)
-local function pageHeader(p, icon, title, sub, status, pillX1)
-	text(p, icon, 30, 326, 178, 44, TX, F.GothamBold, CENTER)
-	text(p, title, 25, 380, 168, 500, TX, F.GothamMedium)
-	text(p, sub, 15, 380, 193, 600, SUB)
-	if status then return pill(p, pillX1, 160, pillX1 + 141, 192, status) end
+-- header halaman: ikon + judul + subjudul + pill status (kanan); dy = geser vertikal
+local function pageHeader(p, icon, title, sub, status, pillX1, dy)
+	dy = dy or 0
+	text(p, icon, 30, 326, 178 + dy, 44, TX, F.GothamBold, CENTER)
+	text(p, title, 25, 380, 168 + dy, 500, TX, F.GothamMedium)
+	text(p, sub, 15, 380, 193 + dy, 600, SUB)
+	if status then return pill(p, pillX1, 160 + dy, pillX1 + 141, 192 + dy, status) end
 end
 
 local function stat(p, icon, name, value, cy, ix, nx, vx, vw, size, align)
@@ -226,13 +244,13 @@ end
 ---------------------------------------------------------------------
 -- Halaman (satu per tab)
 local pages = {}
-for i = 1, 4 do
+for i = 1, 3 do
 	pages[i] = new("Frame", {Name = "Page" .. i, Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1, Visible = false}, body)
 end
 
 -- Sidebar
 box(body, 45, 140, 290, 978, SEC, 16)
-local nav = {{"⚡", "Fast Rebirth", 181}, {"🏋", "Fast Strength", 251}, {"⚙", "Other", 325}, {"ℹ", "Info", 400}}
+local nav = {{"⚡", "Fast Farming", 181}, {"⚙", "Other", 251}, {"ℹ", "Info", 325}}
 local navBtns = {}
 local function selectNav(idx)
 	for i, b in ipairs(navBtns) do
@@ -256,66 +274,64 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-image(body, ASSETS.Character, 40, 470, 290, 930, "[ character.png ]", 14)
+image(body, ASSETS.Character, 40, 470, 290, 930, "", 14)
 
 ---------------------------------------------------------------------
--- TAB 1: Fast Rebirth
+-- TAB 1: Fast Farming (Fast Rebirth + Fast Strength dalam satu tab)
 local p1 = pages[1]
-box(p1, 305, 140, 1490, 765, SEC, 16)
+box(p1, 305, 140, 1490, 440, SEC, 16)
 local rbStatus = pageHeader(p1, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
 
-box(p1, 321, 215, 1474, 465, CARD, 12)
-toggleRow(p1, 345, 410, 270, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
-hline(p1, 335, 1460, 307)
-toggleRow(p1, 345, 410, 345, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
-hline(p1, 335, 1460, 382)
-iconRow(p1, "⟳", 345, 410, 420, "Rebirth Target", "Target strength untuk rebirth.")
-numberBox(p1, 1320, 400, 1450, 440, "5.000", Callbacks.RebirthTarget)
+box(p1, 321, 215, 880, 425, CARD, 12)
+toggleRow(p1, 345, 410, 250, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
+hline(p1, 335, 866, 285)
+toggleRow(p1, 345, 410, 320, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
+hline(p1, 335, 866, 355)
+iconRow(p1, "⟳", 345, 410, 390, "Rebirth Target", "Target strength untuk rebirth.")
+numberBox(p1, 730, 370, 860, 410, "5.000", Callbacks.RebirthTarget)
 
-box(p1, 321, 485, 1474, 745, CARD, 12)
-text(p1, "Rebirth Stats", 18, 345, 512, 250, TX, F.GothamMedium)
-local rbRebirths = stat(p1, "◎", "Rebirths", "0", 565, 355, 380, 700, 200, 15)
-local rbGained   = stat(p1, "⇪", "Gained", "0", 615, 355, 380, 700, 200, 15)
-local rbHour     = stat(p1, "◷", "Pace / Hour", "--", 665, 355, 380, 700, 200, 15)
-local rbDay      = stat(p1, "◷", "Pace / Day", "--", 715, 355, 380, 700, 200, 15)
-image(p1, ASSETS.EmblemStats, 1325, 540, 1435, 650, "M", 48)
+box(p1, 895, 215, 1474, 425, CARD, 12)
+text(p1, "Rebirth Stats", 18, 920, 240, 250, TX, F.GothamMedium)
+local rbRebirths = stat(p1, "◎", "Rebirths", "0", 285, 930, 955, 1110, 200, 15)
+local rbGained   = stat(p1, "⇪", "Gained", "0", 325, 930, 955, 1110, 200, 15)
+local rbHour     = stat(p1, "◷", "Pace / Hour", "--", 365, 930, 955, 1110, 200, 15)
+local rbDay      = stat(p1, "◷", "Pace / Day", "--", 405, 930, 955, 1110, 200, 15)
+image(p1, ASSETS.EmblemStats, 1360, 255, 1450, 345, "M", 44)
 
----------------------------------------------------------------------
--- TAB 2: Fast Strength
-local p2 = pages[2]
-box(p2, 305, 140, 1490, 795, SEC, 16)
-local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1332)
+local p2 = pages[1]
+box(p2, 305, 455, 1490, 965, SEC, 16)
+local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1332, 315)
 
-box(p2, 321, 215, 1474, 445, CARD, 12)
-toggleRow(p2, 345, 410, 262, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
-hline(p2, 335, 1460, 296)
-toggleRow(p2, 345, 410, 330, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
-hline(p2, 335, 1460, 364)
-iconRow(p2, "◔", 345, 410, 398, "Max Reps / Second", "Batas maksimal reps per detik.")
-numberBox(p2, 1360, 378, 1450, 418, "659", Callbacks.MaxReps)
+box(p2, 321, 530, 760, 740, CARD, 12)
+toggleRow(p2, 345, 410, 565, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
+hline(p2, 335, 746, 600)
+toggleRow(p2, 345, 410, 635, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
+hline(p2, 335, 746, 670)
+iconRow(p2, "◔", 345, 410, 705, "Max Reps / Second", "Batas maksimal reps per detik.")
+numberBox(p2, 650, 685, 740, 725, "659", Callbacks.MaxReps)
 
-box(p2, 321, 465, 1000, 775, CARD, 12)
-text(p2, "Strength Stats", 17, 345, 490, 250, TX, F.GothamMedium)
-local fsStr   = stat(p2, "🏋", "Strength", "0", 530, 355, 380, 560, 200, 14)
-local fsStrG  = text(p2, "+0", 14, 820, 530, 100, TX)
-local fsDura  = stat(p2, "♡", "Durability", "0", 568, 355, 380, 560, 200, 14)
-local fsDurG  = text(p2, "+0", 14, 820, 568, 100, TX)
-local fsSP    = stat(p2, "◷", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 606, 355, 380, 560, 420, 13)
-local fsDP    = stat(p2, "◷", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 644, 355, 380, 560, 420, 13)
-local fsSA    = stat(p2, "◷", "Str Average", "-- /s | -- / min | -- /h | -- /d", 682, 355, 380, 560, 420, 13)
-local fsDA    = stat(p2, "◷", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 720, 355, 380, 560, 420, 13)
-
-box(p2, 1020, 465, 1474, 775, CARD, 12)
-local ring = new("Frame", {Position = UDim2.fromOffset(1177, 520), Size = UDim2.fromOffset(140, 140), BackgroundTransparency = 1}, p2)
+box(p2, 321, 755, 760, 955, CARD, 12)
+local ring = new("Frame", {Position = UDim2.fromOffset(355, 785), Size = UDim2.fromOffset(140, 140), BackgroundTransparency = 1}, p2)
 round(ring, 70)
 new("UIStroke", {Color = Color3.fromRGB(62, 62, 66), Thickness = 11}, ring)
 text(ring, "0%", 26, 0, 70, 140, TX, F.Gotham, CENTER)
-text(p2, "Runtime", 15, 1020, 700, 454, SUB, F.Gotham, CENTER)
-local fsRuntime = text(p2, "0d 0h 0m 0s", 18, 1020, 730, 454, TX, F.GothamMedium, CENTER)
+text(p2, "Runtime", 15, 530, 835, 220, SUB)
+local fsRuntime = text(p2, "0d 0h 0m 0s", 20, 530, 868, 220, TX, F.GothamMedium)
+
+box(p2, 775, 530, 1474, 955, CARD, 12)
+text(p2, "Strength Stats", 17, 800, 558, 250, TX, F.GothamMedium)
+local fsStr   = stat(p2, "🏋", "Strength", "0", 605, 820, 845, 1010, 200, 15)
+local fsStrG  = text(p2, "+0", 15, 1260, 605, 150, TX)
+local fsDura  = stat(p2, "♡", "Durability", "0", 660, 820, 845, 1010, 200, 15)
+local fsDurG  = text(p2, "+0", 15, 1260, 660, 150, TX)
+local fsSP    = stat(p2, "◷", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 715, 820, 845, 1010, 440, 14)
+local fsDP    = stat(p2, "◷", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 770, 820, 845, 1010, 440, 14)
+local fsSA    = stat(p2, "◷", "Str Average", "-- /s | -- / min | -- /h | -- /d", 825, 820, 845, 1010, 440, 14)
+local fsDA    = stat(p2, "◷", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
 
 ---------------------------------------------------------------------
 -- TAB 3: Other
-local p3 = pages[3]
+local p3 = pages[2]
 box(p3, 305, 140, 1490, 650, SEC, 16)
 local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
 
@@ -352,7 +368,7 @@ end
 
 ---------------------------------------------------------------------
 -- TAB 4: Info
-local p4 = pages[4]
+local p4 = pages[3]
 box(p4, 305, 140, 1490, 810, SEC, 16)
 pageHeader(p4, "ℹ", "Info", "Tentang script ini.", nil)
 
