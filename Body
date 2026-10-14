@@ -304,8 +304,8 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-text(root, "v6 • tema hitam", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
-print("[MuhavesUI] v6 dimuat")
+text(root, "v7 • rapat", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
+print("[MuhavesUI] v7 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
@@ -340,9 +340,15 @@ for i = 1, 3 do
 end
 
 -- Sidebar
-box(body, 45, 140, 290, 978, BLACK, 16)
-local nav = {{"⚡", "Fast Farming", 181}, {"⚙", "Other", 251}, {"ℹ", "Info", 325}}
+local sidebar = box(body, 45, 140, 290, 978, BLACK, 16)
+local nav = {{"⚡", "Fast Farming", 181}, {"⚙", "Other", 247}, {"ℹ", "Info", 313}}
 local navBtns = {}
+local charImg
+
+-- Batas bawah sidebar per tab (jendela ikut menyesuaikan, tidak ada ruang kosong berlebih)
+local BOTTOMS = {978, 766, 766}
+local CHAR_MAX_H = 520 -- tinggi maksimum gambar karakter (diregangkan memanjang)
+
 local function selectNav(idx)
 	for i, b in ipairs(navBtns) do
 		local on = i == idx
@@ -350,6 +356,13 @@ local function selectNav(idx)
 		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
 		b:FindFirstChildOfClass("UIStroke").Enabled = on
 		pages[i].Visible = on
+	end
+	local bottom = BOTTOMS[idx]
+	local ti = TweenInfo.new(0.2)
+	TweenService:Create(win, ti, {Size = UDim2.fromOffset(1472, bottom + 14 - 32)}):Play()
+	TweenService:Create(sidebar, ti, {Size = UDim2.fromOffset(245, bottom - 140)}):Play()
+	if charImg then
+		TweenService:Create(charImg, ti, {Size = UDim2.fromOffset(233, math.min(CHAR_MAX_H, bottom - 372))}):Play()
 	end
 end
 for i, n in ipairs(nav) do
@@ -365,7 +378,9 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-image(body, ASSETS.Character, 40, 470, 290, 930, "", 14)
+-- gambar karakter tepat di bawah menu (tanpa jarak), diregangkan memanjang
+charImg = image(body, ASSETS.Character, 51, 358, 284, 358 + CHAR_MAX_H, "", 14)
+if charImg:IsA("ImageLabel") then charImg.ScaleType = Enum.ScaleType.Stretch end
 
 ---------------------------------------------------------------------
 -- TAB 1: Fast Farming (Fast Rebirth + Fast Strength dalam satu tab)
@@ -421,85 +436,85 @@ local fsSA    = stat(p2, "🕒", "Str Average", "-- /s | -- / min | -- /h | -- /
 local fsDA    = stat(p2, "🕒", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
 
 ---------------------------------------------------------------------
--- TAB 3: Other (3 kolom memenuhi lebar)
+-- TAB 3: Other
 local p3 = pages[2]
-box(p3, 305, 140, 1490, 500, SEC, 16)
+box(p3, 305, 140, 1490, 766, SEC, 16)
 local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
 
--- kolom 1
-box(p3, 321, 215, 695, 480, CARD, 12)
-toggleRow(p3, 343, 398, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
-hline(p3, 335, 681, 281)
-toggleRow(p3, 343, 398, 314, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
-hline(p3, 335, 681, 347)
-toggleRow(p3, 343, 398, 380, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
-hline(p3, 335, 681, 413)
-toggleRow(p3, 343, 398, 446, "Anti AFK", "Cegah kick karena diam terlalu lama.", false, function(st) Callbacks.AntiAFK(st) end)
+local tiles = {
+	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs},
+	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake},
+	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, Callbacks.SpinWheel},
+	{"Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts},
+	{"Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets},
+	{"Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups},
+	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
+	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
+}
+for i, t in ipairs(tiles) do
+	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+	local x1 = 321 + col * 292
+	local y1 = 215 + row * 145
+	box(p3, x1, y1, x1 + 277, y1 + 130, CARD, 12)
+	toggle(p3, x1 + 18, y1 + 34, t[3], t[4])
+	text(p3, t[1], 17, x1 + 18, y1 + 76, 245, TX, F.GothamMedium)
+	text(p3, t[2], 12, x1 + 18, y1 + 102, 245, SUB)
+end
 
--- kolom 2
-box(p3, 710, 215, 1084, 480, CARD, 12)
-toggleRow(p3, 732, 787, 248, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
-hline(p3, 724, 1070, 281)
-toggleRow(p3, 732, 787, 314, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
-hline(p3, 724, 1070, 347)
-toggleRow(p3, 732, 787, 380, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
-hline(p3, 724, 1070, 413)
-toggleRow(p3, 732, 787, 446, "Anti Lag", "Kurangi efek visual agar lebih ringan.", false, function(st) Callbacks.AntiLag(st) end)
-
--- kolom 3: teleport
-box(p3, 1099, 215, 1474, 480, CARD, 12)
-text(p3, "Teleport (Tekan E)", 17, 1120, 240, 300, TX, F.GothamMedium)
+box(p3, 321, 505, 1474, 625, CARD, 12)
+text(p3, "Teleport (Tekan E)", 17, 345, 530, 300, TX, F.GothamMedium)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
-	local y = 262 + (i - 1) * 54
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(1114, y), Size = UDim2.fromOffset(345, 46), BorderSizePixel = 0,
+		Position = UDim2.fromOffset(343 + (i - 1) * 288, 552), Size = UDim2.fromOffset(268, 46), BorderSizePixel = 0,
 	}, p3)
 	round(b, 8)
 	stroke(b)
 	text(b, "📍", 16, 12, 23, 24, MUTED, F.Gotham, CENTER)
-	text(b, name, 16, 48, 23, 280, TX)
+	text(b, name, 15, 46, 23, 215, TX)
 	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
 end
 
 ---------------------------------------------------------------------
 -- TAB 4: Info
 local p4 = pages[3]
-box(p4, 305, 140, 1490, 810, SEC, 16)
+box(p4, 305, 140, 1490, 766, SEC, 16)
 pageHeader(p4, "ℹ", "Info", "Tentang script ini.", nil)
 
-box(p4, 321, 215, 641, 420, BLACK, 12)
-image(p4, ASSETS.LogoInfo, 366, 240, 596, 330, "Muhaves", 34)
-text(p4, "Private Farming", 19, 321, 360, 320, TX, F.GothamMedium, CENTER)
-text(p4, "v1.0.0", 14, 321, 390, 320, SUB, F.Gotham, CENTER)
+-- logo
+box(p4, 321, 215, 621, 445, BLACK, 12)
+image(p4, ASSETS.LogoInfo, 346, 240, 596, 340, "Muhaves", 34)
+text(p4, "Private Farming", 19, 321, 375, 300, TX, F.GothamMedium, CENTER)
+text(p4, "v1.0.0", 14, 321, 405, 300, SUB, F.Gotham, CENTER)
 
-box(p4, 661, 215, 1474, 420, CARD, 12)
-local function kv(x, k, v, extra)
-	text(p4, k, 14, x, 280, 220, SUB)
-	text(p4, v, 19, x, 312, 240, TX, F.GothamMedium)
-	return extra
-end
-kv(690, "Made by", "MuhavesDevs")
-kv(930, "Game", "Muscle Legends")
-text(p4, "Status", 14, 1190, 280, 200, SUB)
-text(p4, "Working", 19, 1190, 312, 90, TX, F.GothamMedium)
-text(p4, "✅", 18, 1282, 312, 30, TX, F.Gotham, CENTER)
+-- detail
+box(p4, 637, 215, 1000, 445, CARD, 12)
+text(p4, "Made by", 14, 665, 262, 120, SUB)
+text(p4, "MuhavesDevs", 18, 790, 262, 200, TX, F.GothamMedium)
+hline(p4, 651, 986, 297)
+text(p4, "Game", 14, 665, 332, 120, SUB)
+text(p4, "Muscle Legends", 18, 790, 332, 200, TX, F.GothamMedium)
+hline(p4, 651, 986, 367)
+text(p4, "Status", 14, 665, 402, 120, SUB)
+text(p4, "Working", 18, 790, 402, 90, TX, F.GothamMedium)
+text(p4, "✅", 18, 885, 402, 30, TX, F.Gotham, CENTER)
 
-box(p4, 321, 440, 1474, 700, CARD, 12)
-text(p4, "Fitur Utama", 18, 345, 468, 300, TX, F.GothamMedium)
+-- fitur utama
+box(p4, 1016, 215, 1474, 445, CARD, 12)
+text(p4, "Fitur Utama", 18, 1040, 243, 300, TX, F.GothamMedium)
 local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}
 for i, t in ipairs(feats) do
 	local col = i <= 4 and 0 or 1
 	local idx = i <= 4 and i or (i - 4)
-	local cy = 510 + (idx - 1) * 42
-	local x = 345 + col * 420
-	text(p4, "✅", 16, x, cy, 28, TX, F.Gotham, CENTER)
-	text(p4, t, 17, x + 34, cy, 340, MUTED)
+	local cy = 290 + (idx - 1) * 40
+	local x = 1040 + col * 205
+	text(p4, "✅", 15, x, cy, 28, TX, F.Gotham, CENTER)
+	text(p4, t, 15, x + 32, cy, 170, MUTED)
 end
 
-text(p4, "\"Progress is not luck, it's a system.\"", 16, 321, 735, 833, SUB, F.Gotham, CENTER)
-text(p4, "- Muhaves", 14, 321, 765, 833, SUB, F.Gotham, CENTER)
-image(p4, ASSETS.EmblemBottom, 1395, 715, 1460, 790, "M", 36, true)
+text(p4, "\"Progress is not luck, it's a system.\"", 16, 321, 485, 1153, SUB, F.Gotham, CENTER)
+text(p4, "- Muhaves", 14, 321, 513, 1153, SUB, F.Gotham, CENTER)
+image(p4, ASSETS.EmblemBottom, 1400, 470, 1465, 545, "M", 36, true)
 
 ---------------------------------------------------------------------
 selectNav(1)
