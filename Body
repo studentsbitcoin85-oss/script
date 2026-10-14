@@ -1,494 +1,389 @@
 --[[
-    MUHAVES PRIVATE
-    UI Prototype by Muhaves
-    Black & White Edition
-    Tabs:
-    1. Fast Rebirth
-    2. Fast Strength
-    3. Other
-    4. Info
-    Inferno Unicorn = priority pet
-    Roblox Studio - LocalScript
+    Muhaves Private Farming - UI ONLY
+    Letakkan sebagai LocalScript (mis. di StarterPlayerScripts).
+    Hanya membangun tampilan. Semua callback di tabel Callbacks masih kosong.
 ]]
+
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
---==================================================
--- CONFIG
---==================================================
-local MAX_PET_SLOTS = 12
-local REQUIRED_PET = "Inferno Unicorn"
-local PETS = {
-    ["Omega Overlord"] = {
-        repSpeed = 20, strength = 0,
-        durability = 0, rebirth = 0
-    },
-    ["Swift Samurai"] = {
-        repSpeed = 15, strength = 0,
-        durability = 0, rebirth = 0
-    },
-    ["Powercore Hound"] = {
-        repSpeed = 0, strength = 25,
-        durability = 15, rebirth = 0
-    },
-    ["Titanium Hydra"] = {
-        repSpeed = 0, strength = 0,
-        durability = 0, rebirth = 2
-    },
-    ["Tribal Overlord"] = {
-        repSpeed = 0, strength = 0,
-        durability = 0, rebirth = 2
-    },
-    ["Inferno Unicorn"] = {
-        repSpeed = 0, strength = 25,
-        durability = 25, rebirth = 0
-    },
-    ["Common Boss Pet"] = {
-        repSpeed = 5, strength = 0,
-        durability = 0, rebirth = 0
-    },
-    ["Rare Boss Pet"] = {
-        repSpeed = 7, strength = 0,
-        durability = 0, rebirth = 0
-    },
-    ["Epic Boss Pet"] = {
-        repSpeed = 10, strength = 0,
-        durability = 0, rebirth = 0
-    },
-    ["Rainbow Boss Pet"] = {
-        repSpeed = 10, strength = 7,
-        durability = 0, rebirth = 0
-    },
-    ["Legendary Boss Pet"] = {
-        repSpeed = 10, strength = 10,
-        durability = 0, rebirth = 0
-    },
-    ["Mythic Boss Pet"] = {
-        repSpeed = 10, strength = 20,
-        durability = 0, rebirth = 0
-    },
-    ["Inferno Drake"] = {
-        repSpeed = 40, strength = 0,
-        durability = 0, rebirth = 0
-    },
+
+-- Warna
+local BG     = Color3.fromRGB(5, 5, 5)
+local PANEL  = Color3.fromRGB(12, 12, 13)
+local CARD   = Color3.fromRGB(17, 17, 18)
+local LINE   = Color3.fromRGB(38, 38, 40)
+local TX     = Color3.fromRGB(242, 242, 242)
+local MUTED  = Color3.fromRGB(138, 138, 142)
+local OK     = Color3.fromRGB(61, 220, 132)
+local OFFBG  = Color3.fromRGB(58, 58, 61)
+local ONBG   = Color3.fromRGB(95, 95, 100)
+
+local L, C, R = Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right
+
+-- Callback (isi sendiri)
+local Callbacks = {
+	AutoRebirth = function(state) end,
+	EquipRebirthPets = function(state) end,
+	RebirthTarget = function(value) end,
+	AutoFarmStrength = function(state) end,
+	ControlledSpeed = function(state) end,
+	MaxReps = function(value) end,
+	EatEggs = function(state) end,
+	EatShake = function(state) end,
+	SpinWheel = function(state) end,
+	EatAllBoosts = function(state) end,
+	HidePets = function(state) end,
+	HidePopups = function(state) end,
+	Teleport = function(name) end,
 }
-local State = {
-    currentTab = "Fast Strength",
-    toggles = {
-        ["Fast Rebirth"] = false,
-        ["Fast Strength"] = false,
-        ["Auto Equip"] = false,
-        ["Anti Lag"] = false,
-    }
+
+-- Helper
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	o.Parent = parent
+	return o
+end
+
+local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
+local function stroke(o, c) new("UIStroke", {Color = c or LINE, Thickness = 1}, o) end
+
+local function box(parent, x, y, w, h, bg, r)
+	local f = new("Frame", {
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
+		BackgroundColor3 = bg or CARD, BorderSizePixel = 0,
+	}, parent)
+	round(f, r or 10)
+	stroke(f)
+	return f
+end
+
+local function label(parent, t, size, x, y, w, h, color, font, align)
+	return new("TextLabel", {
+		BackgroundTransparency = 1, Text = t, TextSize = size,
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
+		TextColor3 = color or TX, Font = font or Enum.Font.Gotham,
+		TextXAlignment = align or L, TextTruncate = Enum.TextTruncate.AtEnd,
+	}, parent)
+end
+
+local function toggle(parent, x, y, initial, cb)
+	local state = initial
+	local track = new("TextButton", {
+		Text = "", AutoButtonColor = false,
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(42, 22),
+		BackgroundColor3 = state and ONBG or OFFBG, BorderSizePixel = 0,
+	}, parent)
+	round(track, 11)
+	local knob = new("Frame", {
+		Size = UDim2.fromOffset(16, 16),
+		Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
+		BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 215),
+		BorderSizePixel = 0,
+	}, track)
+	round(knob, 8)
+	track.MouseButton1Click:Connect(function()
+		state = not state
+		local info = TweenInfo.new(0.15)
+		TweenService:Create(track, info, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
+		TweenService:Create(knob, info, {
+			Position = state and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3),
+			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 215),
+		}):Play()
+		cb(state)
+	end)
+	return track
+end
+
+local function numberBox(parent, x, y, w, text, cb)
+	local f = new("Frame", {
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, 28),
+		BackgroundColor3 = PANEL, BorderSizePixel = 0,
+	}, parent)
+	round(f, 7)
+	stroke(f, Color3.fromRGB(70, 70, 74))
+	local tb = new("TextBox", {
+		BackgroundTransparency = 1, Text = text, TextSize = 13, Font = Enum.Font.Gotham,
+		TextColor3 = TX, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0),
+		TextXAlignment = L, ClearTextOnFocus = false,
+	}, f)
+	tb.FocusLost:Connect(function()
+		local n = tonumber((tb.Text:gsub("%.", "")))
+		if n then cb(n) end
+	end)
+	return tb
+end
+
+-- Baris opsi: judul + deskripsi + kontrol di kanan
+local function optionRow(parent, y, w, title, sub, kind, value, cb, icon)
+	local left = 14
+	if icon then
+		label(parent, icon, 18, 8, y + 12, 28, 28, MUTED, Enum.Font.Gotham, C)
+		left = 44
+	end
+	label(parent, title, 13, left, y + 8, w - left - 100, 18, TX, Enum.Font.GothamMedium)
+	label(parent, sub, 10, left, y + 27, w - left - 70, 16, MUTED)
+	if kind == "toggle" then
+		toggle(parent, w - 56, y + 15, value, cb)
+	else
+		numberBox(parent, w - 92, y + 12, 80, value, cb)
+	end
+end
+
+local function divider(parent, y, w)
+	new("Frame", {
+		Position = UDim2.fromOffset(10, y), Size = UDim2.fromOffset(w - 20, 1),
+		BackgroundColor3 = LINE, BorderSizePixel = 0,
+	}, parent)
+end
+
+local function statRow(parent, y, w, icon, name, value, size)
+	label(parent, icon, 13, 12, y, 20, 22, MUTED, Enum.Font.Gotham, C)
+	label(parent, name, size or 12, 38, y, 90, 22, Color3.fromRGB(205, 205, 208))
+	return label(parent, value, size or 12, 130, y, w - 142, 22, TX, Enum.Font.Gotham, R)
+end
+
+local function pill(parent, x, y, text)
+	local p = box(parent, x, y, 130, 28, Color3.fromRGB(10, 10, 11), 14)
+	local dot = new("Frame", {
+		Position = UDim2.fromOffset(12, 9), Size = UDim2.fromOffset(10, 10),
+		BackgroundColor3 = Color3.fromRGB(120, 120, 124), BorderSizePixel = 0,
+	}, p)
+	round(dot, 5)
+	local t = label(p, text, 11, 30, 0, 96, 28, TX)
+	return t, dot
+end
+
+local function sectionHeader(parent, icon, title, sub, status, w)
+	label(parent, icon, 22, 12, 8, 34, 36, TX, Enum.Font.GothamBold, C)
+	label(parent, title, 17, 52, 6, 250, 22, TX, Enum.Font.GothamMedium)
+	label(parent, sub, 11, 52, 28, 300, 16, MUTED)
+	return pill(parent, w - 144, 12, status)
+end
+
+-- ScreenGui
+local gui = new("ScreenGui", {
+	Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, Players.LocalPlayer:WaitForChild("PlayerGui"))
+
+local W, H = 960, 640
+local main = new("Frame", {
+	Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(W, H), BackgroundColor3 = BG, BorderSizePixel = 0, ClipsDescendants = true,
+}, gui)
+round(main, 14)
+stroke(main)
+
+local cam = workspace.CurrentCamera
+local scale = new("UIScale", {}, main)
+local function fit()
+	local v = cam.ViewportSize
+	scale.Scale = math.min(1, (v.X - 20) / W, (v.Y - 20) / H)
+end
+fit()
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+
+-- Header
+local header = new("Frame", {Size = UDim2.fromOffset(W, 62), BackgroundTransparency = 1}, main)
+new("Frame", {Position = UDim2.fromOffset(0, 61), Size = UDim2.fromOffset(W, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+label(header, "Muhaves", 30, 22, 10, 190, 42, TX, Enum.Font.GothamBlack)
+new("Frame", {Position = UDim2.fromOffset(222, 14), Size = UDim2.fromOffset(1, 34), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+label(header, "P R I V A T E   F A R M I N G", 12, 238, 12, 360, 18, TX, Enum.Font.GothamMedium)
+label(header, "Stronger  •  Faster  •  Better", 11, 238, 32, 300, 16, MUTED)
+
+local minBtn = new("TextButton", {
+	Text = "—", TextSize = 16, Font = Enum.Font.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(W - 80, 16), Size = UDim2.fromOffset(30, 30),
+}, header)
+local closeBtn = new("TextButton", {
+	Text = "✕", TextSize = 16, Font = Enum.Font.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(W - 44, 16), Size = UDim2.fromOffset(30, 30),
+}, header)
+
+local body = new("Frame", {Position = UDim2.fromOffset(0, 62), Size = UDim2.fromOffset(W, H - 62), BackgroundTransparency = 1}, main)
+
+minBtn.MouseButton1Click:Connect(function() body.Visible = not body.Visible end)
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- Drag lewat header
+do
+	local dragging, startPos, startInput
+	header.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, startInput, startPos = true, i.Position, main.Position
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - startInput.Position
+			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+end
+
+-- Sidebar
+local side = box(body, 10, 8, 170, 560, PANEL, 12)
+local navItems = {
+	{"⚡", "Fast Rebirth"}, {"🏋", "Fast Strength"}, {"⚙", "Other"}, {"ℹ", "Info"},
 }
---==================================================
--- PET SELECTION ALGORITHM
---==================================================
-local function selectBestPets(ownedPets, mode)
-    local selected = {}
-    local seen = {}
-    local function addPet(name)
-        if #selected >= MAX_PET_SLOTS then
-            return
-        end
-        if PETS[name] and not seen[name] then
-            seen[name] = true
-            table.insert(selected, name)
-        end
-    end
-    -- Required pet is always first if owned.
-    for _, name in ipairs(ownedPets) do
-        if name == REQUIRED_PET then
-            addPet(name)
-            break
-        end
-    end
-    local function getScore(name)
-        local pet = PETS[name]
-        if mode == "Fast Rebirth" then
-            return pet.rebirth
-        elseif mode == "Fast Strength" then
-            return pet.strength * 100 + pet.durability
-        elseif mode == "Fast Reps" then
-            return pet.repSpeed
-        end
-        return 0
-    end
-    local candidates = {}
-    for _, name in ipairs(ownedPets) do
-        if PETS[name] and not seen[name] then
-            table.insert(candidates, name)
-        end
-    end
-    table.sort(candidates, function(a, b)
-        local scoreA = getScore(a)
-        local scoreB = getScore(b)
-        if scoreA == scoreB then
-            return a < b
-        end
-        return scoreA > scoreB
-    end)
-    for _, name in ipairs(candidates) do
-        addPet(name)
-    end
-    return selected
+local navButtons = {}
+local function selectNav(idx)
+	for i, b in ipairs(navButtons) do
+		local on = i == idx
+		b.BackgroundTransparency = on and 0 or 1
+		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(200, 200, 204)
+	end
 end
---==================================================
--- GUI HELPERS
---==================================================
-local function create(className, properties, parent)
-    local object = Instance.new(className)
-    for property, value in pairs(properties) do
-        object[property] = value
-    end
-    object.Parent = parent
-    return object
+for i, item in ipairs(navItems) do
+	local b = new("TextButton", {
+		Text = "      " .. item[1] .. "   " .. item[2], TextSize = 14, Font = Enum.Font.GothamMedium,
+		TextXAlignment = L, AutoButtonColor = false, BackgroundColor3 = Color3.fromRGB(52, 52, 56),
+		Position = UDim2.fromOffset(8, 10 + (i - 1) * 50), Size = UDim2.fromOffset(154, 42), BorderSizePixel = 0,
+	}, side)
+	round(b, 9)
+	navButtons[i] = b
+	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-local oldGui = PlayerGui:FindFirstChild("MuhavesPrivate")
-if oldGui then
-    oldGui:Destroy()
+selectNav(1)
+
+local art = box(side, 12, 230, 146, 230, Color3.fromRGB(14, 14, 15), 8)
+label(art, "[ gambar karakter ]", 10, 0, 100, 146, 30, Color3.fromRGB(80, 80, 84), Enum.Font.Gotham, C)
+label(side, "Muhaves'", 22, 16, 478, 150, 28, Color3.fromRGB(220, 220, 220), Enum.Font.GothamBlack)
+label(side, "Never Give Up.", 15, 16, 504, 150, 22, Color3.fromRGB(200, 200, 200), Enum.Font.GothamBold)
+
+-- Center
+local CX, CW = 190, 556
+
+-- Fast Rebirth
+local rb = box(body, CX, 8, CW, 170, PANEL, 12)
+local rbStatus = sectionHeader(rb, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", CW)
+
+local rbOpts = box(rb, 12, 52, 316, 108, CARD, 10)
+optionRow(rbOpts, 0, 316, "Auto Rebirth", "Otomatis rebirth saat syarat terpenuhi.", "toggle", false, Callbacks.AutoRebirth)
+divider(rbOpts, 36, 316)
+optionRow(rbOpts, 36, 316, "Equip Rebirth Pets", "Pasang pet rebirth terbaik otomatis.", "toggle", true, Callbacks.EquipRebirthPets)
+divider(rbOpts, 72, 316)
+optionRow(rbOpts, 72, 316, "Rebirth Target", "Target strength untuk rebirth.", "number", "5.000", Callbacks.RebirthTarget)
+
+local rbStats = box(rb, 338, 52, 206, 108, CARD, 10)
+label(rbStats, "Rebirth Stats", 13, 12, 6, 150, 20, TX, Enum.Font.GothamMedium)
+local rbRebirths = statRow(rbStats, 30, 206, "◎", "Rebirths", "0")
+local rbGained   = statRow(rbStats, 49, 206, "⇪", "Gained", "0")
+local rbHour     = statRow(rbStats, 68, 206, "◷", "Pace / Hour", "--")
+local rbDay      = statRow(rbStats, 87, 206, "◷", "Pace / Day", "--")
+
+-- Fast Strength
+local fs = box(body, CX, 186, CW, 182, PANEL, 12)
+local fsStatus = sectionHeader(fs, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", CW)
+
+local fsOpts = box(fs, 12, 52, 190, 120, CARD, 10)
+local function smallOpt(y, title, kind, value, cb)
+	label(fsOpts, title, 12, 10, y + 6, 100, 18, TX, Enum.Font.GothamMedium)
+	label(fsOpts, "Sesuai kebutuhan", 9, 10, y + 24, 110, 14, MUTED)
+	if kind == "toggle" then toggle(fsOpts, 190 - 52, y + 10, value, cb)
+	else numberBox(fsOpts, 190 - 74, y + 8, 64, value, cb) end
 end
-local Gui = create("ScreenGui", {
-    Name = "MuhavesPrivate",
-    ResetOnSpawn = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, PlayerGui)
-local Main = create("Frame", {
-    Name = "Main",
-    Size = UDim2.fromOffset(620, 390),
-    Position = UDim2.new(0.5, -310, 0.5, -195),
-    BackgroundColor3 = Color3.fromRGB(12, 12, 12),
-    BorderSizePixel = 0,
-    Active = true,
-}, Gui)
-create("UICorner", {
-    CornerRadius = UDim.new(0, 10),
-}, Main)
-create("UIStroke", {
-    Color = Color3.fromRGB(90, 90, 90),
-    Thickness = 1,
-}, Main)
---==================================================
--- DRAG WINDOW
---==================================================
-local dragging = false
-local dragStart
-local startPosition
-Main.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPosition = Main.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if not dragging then
-        return
-    end
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-        local delta = input.Position - dragStart
-        Main.Position = UDim2.new(
-            startPosition.X.Scale,
-            startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale,
-            startPosition.Y.Offset + delta.Y
-        )
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
---==================================================
--- HEADER
---==================================================
-local Header = create("Frame", {
-    Size = UDim2.new(1, 0, 0, 60),
-    BackgroundColor3 = Color3.fromRGB(22, 22, 22),
-    BorderSizePixel = 0,
-}, Main)
-create("UICorner", {
-    CornerRadius = UDim.new(0, 10),
-}, Header)
--- Covers the bottom rounded corners of header.
-create("Frame", {
-    Position = UDim2.new(0, 0, 1, -10),
-    Size = UDim2.new(1, 0, 0, 10),
-    BackgroundColor3 = Color3.fromRGB(22, 22, 22),
-    BorderSizePixel = 0,
-}, Header)
-create("TextLabel", {
-    Position = UDim2.fromOffset(18, 8),
-    Size = UDim2.new(1, -80, 0, 27),
-    BackgroundTransparency = 1,
-    Text = "MUHAVES PRIVATE",
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    Font = Enum.Font.GothamBold,
-    TextSize = 19,
-    TextXAlignment = Enum.TextXAlignment.Left,
-}, Header)
-create("TextLabel", {
-    Position = UDim2.fromOffset(20, 34),
-    Size = UDim2.new(1, -100, 0, 17),
-    BackgroundTransparency = 1,
-    Text = "BLACK & WHITE EDITION",
-    TextColor3 = Color3.fromRGB(155, 155, 155),
-    Font = Enum.Font.Gotham,
-    TextSize = 10,
-    TextXAlignment = Enum.TextXAlignment.Left,
-}, Header)
-local CloseButton = create("TextButton", {
-    Position = UDim2.new(1, -43, 0, 13),
-    Size = UDim2.fromOffset(28, 28),
-    BackgroundColor3 = Color3.fromRGB(42, 42, 42),
-    Text = "X",
-    TextColor3 = Color3.fromRGB(255, 255, 255),
-    Font = Enum.Font.GothamBold,
-    TextSize = 13,
-    BorderSizePixel = 0,
-}, Header)
-create("UICorner", {
-    CornerRadius = UDim.new(0, 6),
-}, CloseButton)
-CloseButton.Activated:Connect(function()
-    Gui:Destroy()
-end)
---==================================================
--- SIDEBAR
---==================================================
-local Sidebar = create("Frame", {
-    Position = UDim2.fromOffset(12, 72),
-    Size = UDim2.new(0, 165, 1, -84),
-    BackgroundColor3 = Color3.fromRGB(19, 19, 19),
-    BorderSizePixel = 0,
-}, Main)
-create("UICorner", {
-    CornerRadius = UDim.new(0, 8),
-}, Sidebar)
-local SidebarList = create("UIListLayout", {
-    Padding = UDim.new(0, 7),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, Sidebar)
-create("UIPadding", {
-    PaddingTop = UDim.new(0, 12),
-    PaddingLeft = UDim.new(0, 9),
-    PaddingRight = UDim.new(0, 9),
-}, Sidebar)
---==================================================
--- CONTENT
---==================================================
-local Content = create("Frame", {
-    Position = UDim2.fromOffset(190, 72),
-    Size = UDim2.new(1, -202, 1, -84),
-    BackgroundColor3 = Color3.fromRGB(19, 19, 19),
-    BorderSizePixel = 0,
-}, Main)
-create("UICorner", {
-    CornerRadius = UDim.new(0, 8),
-}, Content)
-local Pages = {}
-local TabButtons = {}
-local function makePage(name)
-    local page = create("ScrollingFrame", {
-        Name = name,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Color3.fromRGB(150, 150, 150),
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Visible = false,
-    }, Content)
-    create("UIPadding", {
-        PaddingTop = UDim.new(0, 14),
-        PaddingLeft = UDim.new(0, 13),
-        PaddingRight = UDim.new(0, 13),
-        PaddingBottom = UDim.new(0, 12),
-    }, page)
-    create("UIListLayout", {
-        Padding = UDim.new(0, 9),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, page)
-    Pages[name] = page
-    return page
+smallOpt(0, "Auto Farm Strength", "toggle", false, Callbacks.AutoFarmStrength)
+divider(fsOpts, 40, 190)
+smallOpt(40, "Controlled Speed", "toggle", true, Callbacks.ControlledSpeed)
+divider(fsOpts, 80, 190)
+smallOpt(80, "Max Reps / Second", "number", "659", Callbacks.MaxReps)
+
+local fsStats = box(fs, 210, 52, 232, 120, CARD, 10)
+label(fsStats, "Strength Stats", 12, 10, 4, 150, 18, TX, Enum.Font.GothamMedium)
+local fsStr   = statRow(fsStats, 22, 232, "🏋", "Strength", "0      +0", 10)
+local fsDura  = statRow(fsStats, 38, 232, "♡", "Durability", "0      +0", 10)
+local fsSP    = statRow(fsStats, 54, 232, "◷", "Str Pace", "-- /s | -- /min | -- /h | -- /d", 9)
+local fsDP    = statRow(fsStats, 70, 232, "◷", "Dura Pace", "-- /s | -- /min | -- /h | -- /d", 9)
+local fsSA    = statRow(fsStats, 86, 232, "◷", "Str Average", "-- /s | -- /min | -- /h | -- /d", 9)
+local fsDA    = statRow(fsStats, 102, 232, "◷", "Dura Average", "-- /s | -- /min | -- /h | -- /d", 9)
+
+local fsRun = box(fs, 450, 52, 94, 120, CARD, 10)
+local ring = new("Frame", {
+	Position = UDim2.fromOffset(21, 10), Size = UDim2.fromOffset(52, 52), BackgroundTransparency = 1,
+}, fsRun)
+round(ring, 26)
+new("UIStroke", {Color = Color3.fromRGB(60, 60, 64), Thickness = 5}, ring)
+label(ring, "0%", 12, 0, 0, 52, 52, TX, Enum.Font.Gotham, C)
+label(fsRun, "Runtime", 10, 0, 74, 94, 14, MUTED, Enum.Font.Gotham, C)
+local fsRuntime = label(fsRun, "0d 0h 0m 0s", 10, 0, 90, 94, 16, TX, Enum.Font.GothamMedium, C)
+
+-- Other
+local ot = box(body, CX, 376, CW, 192, PANEL, 12)
+local otStatus = sectionHeader(ot, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", CW)
+
+local function otherCol(x, w, rows)
+	local f = box(ot, x, 52, w, 130, CARD, 10)
+	for i, r in ipairs(rows) do
+		local y = (i - 1) * 43
+		label(f, r[1], 12, 10, y + 6, w - 70, 18, TX, Enum.Font.GothamMedium)
+		label(f, r[2], 9, 10, y + 24, w - 70, 14, MUTED)
+		toggle(f, w - 52, y + 11, r[3], r[4])
+		if i < #rows then divider(f, y + 42, w) end
+	end
 end
-local function makeLabel(parent, text, height)
-    return create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, height or 30),
-        BackgroundTransparency = 1,
-        Text = text,
-        TextColor3 = Color3.fromRGB(235, 235, 235),
-        Font = Enum.Font.Gotham,
-        TextSize = 12,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, parent)
+otherCol(12, 178, {
+	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs},
+	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake},
+	{"Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel},
+})
+otherCol(198, 178, {
+	{"Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts},
+	{"Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets},
+	{"Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups},
+})
+
+local tp = box(ot, 384, 52, 160, 130, CARD, 10)
+label(tp, "Teleport (Tekan E)", 12, 10, 4, 140, 18, TX, Enum.Font.GothamMedium)
+for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
+	local b = new("TextButton", {
+		Text = "  📍  " .. name, TextSize = 11, Font = Enum.Font.Gotham, TextColor3 = TX, TextXAlignment = L,
+		AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(24, 24, 26),
+		Position = UDim2.fromOffset(8, 26 + (i - 1) * 25), Size = UDim2.fromOffset(144, 22), BorderSizePixel = 0,
+	}, tp)
+	round(b, 5)
+	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
 end
-local function makeButton(parent, text, callback)
-    local button = create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 36),
-        BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-        BorderSizePixel = 0,
-        Text = text,
-        TextColor3 = Color3.fromRGB(245, 245, 245),
-        Font = Enum.Font.GothamMedium,
-        TextSize = 12,
-        TextWrapped = true,
-    }, parent)
-    create("UICorner", {
-        CornerRadius = UDim.new(0, 6),
-    }, button)
-    button.Activated:Connect(callback)
-    return button
+
+-- Info
+local info = box(body, 754, 8, 196, 560, PANEL, 12)
+label(info, "ℹ  Info", 17, 14, 10, 160, 26, TX, Enum.Font.GothamMedium)
+local logoBox = box(info, 10, 46, 176, 92, Color3.fromRGB(14, 14, 15), 8)
+label(logoBox, "Muhaves", 22, 0, 10, 176, 32, TX, Enum.Font.GothamBlack, C)
+label(logoBox, "Private Farming", 12, 0, 48, 176, 18, TX, Enum.Font.GothamMedium, C)
+label(logoBox, "v1.0.0", 10, 0, 66, 176, 14, MUTED, Enum.Font.Gotham, C)
+
+local function kv(y, k, v, color)
+	label(info, k, 10, 14, y, 160, 14, MUTED)
+	return label(info, v, 13, 14, y + 14, 170, 18, color or TX, Enum.Font.GothamMedium)
 end
-local function makeToggle(parent, key, title)
-    local button
-    local function update()
-        local enabled = State.toggles[key] == true
-        button.Text = title .. "   [" .. (enabled and "ON" or "OFF") .. "]"
-        button.BackgroundColor3 = enabled
-            and Color3.fromRGB(75, 75, 75)
-            or Color3.fromRGB(35, 35, 35)
-    end
-    button = makeButton(parent, title, function()
-        State.toggles[key] = not State.toggles[key]
-        update()
-    end)
-    update()
-    return button
+kv(150, "Made by", "MuhavesDevs")
+kv(188, "Game", "Muscle Legends")
+kv(226, "Status", "Working  ✔", TX)
+
+new("Frame", {Position = UDim2.fromOffset(10, 268), Size = UDim2.fromOffset(176, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, info)
+label(info, "Fitur Utama", 12, 14, 276, 160, 18, TX, Enum.Font.GothamMedium)
+for i, f in ipairs({"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}) do
+	label(info, "✔  " .. f, 11, 14, 298 + (i - 1) * 24, 170, 18, Color3.fromRGB(205, 205, 208))
 end
-local function showTab(name)
-    State.currentTab = name
-    for pageName, page in pairs(Pages) do
-        page.Visible = pageName == name
-    end
-    for tabName, button in pairs(TabButtons) do
-        button.BackgroundColor3 = tabName == name
-            and Color3.fromRGB(75, 75, 75)
-            or Color3.fromRGB(30, 30, 30)
-    end
-end
-local function makeTab(name, order)
-    local button = create("TextButton", {
-        Name = name,
-        LayoutOrder = order,
-        Size = UDim2.new(1, 0, 0, 38),
-        BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-        BorderSizePixel = 0,
-        Text = name,
-        TextColor3 = Color3.fromRGB(245, 245, 245),
-        Font = Enum.Font.GothamMedium,
-        TextSize = 11,
-        TextWrapped = true,
-    }, Sidebar)
-    create("UICorner", {
-        CornerRadius = UDim.new(0, 6),
-    }, button)
-    TabButtons[name] = button
-    button.Activated:Connect(function()
-        showTab(name)
-    end)
-    return makePage(name)
-end
---==================================================
--- TAB 1: FAST REBIRTH
---==================================================
-local RebirthPage = makeTab("Fast Rebirth", 1)
-makeLabel(RebirthPage, "FAST REBIRTH", 25)
-makeLabel(
-    RebirthPage,
-    "Pet priority: Inferno Unicorn first, then highest Rebirth bonus.",
-    40
-)
-makeToggle(RebirthPage, "Fast Rebirth", "Fast Rebirth")
-makeLabel(
-    RebirthPage,
-    "This prototype does not trigger rebirths or equip pets automatically.",
-    45
-)
---==================================================
--- TAB 2: FAST STRENGTH
---==================================================
-local StrengthPage = makeTab("Fast Strength", 2)
-makeLabel(StrengthPage, "FAST STRENGTH", 25)
-makeLabel(
-    StrengthPage,
-    "Pet priority: Inferno Unicorn first, then Strength and Durability.",
-    40
-)
-makeToggle(StrengthPage, "Fast Strength", "Fast Strength")
-makeLabel(
-    StrengthPage,
-    "Inferno Unicorn stats: Strength 25 | Durability 25.",
-    35
-)
---==================================================
--- TAB 3: OTHER
---==================================================
-local OtherPage = makeTab("Other", 3)
-makeLabel(OtherPage, "OTHER SETTINGS", 25)
-makeToggle(OtherPage, "Auto Equip", "Auto Equip")
-makeToggle(OtherPage, "Anti Lag", "Anti Lag")
-makeLabel(
-    OtherPage,
-    "Settings are UI-only placeholders until connected to systems in your own game.",
-    50
-)
---==================================================
--- TAB 4: INFO
---==================================================
-local InfoPage = makeTab("Info", 4)
-makeLabel(InfoPage, "MUHAVES PRIVATE", 28)
-makeLabel(InfoPage, "Developer: Muhaves", 24)
-makeLabel(InfoPage, "Version: 1.0.0", 24)
-makeLabel(InfoPage, "Theme: Black & White", 24)
-makeLabel(InfoPage, "Pet slots: " .. MAX_PET_SLOTS, 24)
-makeLabel(InfoPage, "Required pet: " .. REQUIRED_PET, 30)
-makeLabel(
-    InfoPage,
-    "The pet selector works with a supplied list of owned pet names. No game remotes are called.",
-    55
-)
-local demoPets = {
-    "Inferno Unicorn",
-    "Inferno Drake",
-    "Powercore Hound",
-    "Titanium Hydra",
-    "Tribal Overlord",
-    "Omega Overlord",
-    "Mythic Boss Pet",
-    "Swift Samurai",
+new("Frame", {Position = UDim2.fromOffset(10, 474), Size = UDim2.fromOffset(176, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, info)
+label(info, "\"Progress is not luck,", 10, 0, 484, 196, 14, MUTED, Enum.Font.Gotham, C)
+label(info, "it's a system.\"", 10, 0, 499, 196, 14, MUTED, Enum.Font.Gotham, C)
+label(info, "- Muhaves", 10, 0, 516, 196, 14, MUTED, Enum.Font.Gotham, C)
+
+-- API sederhana untuk mengubah teks UI dari script lain
+return {
+	Gui = gui,
+	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
+	Strength = {
+		Status = fsStatus, Strength = fsStr, Durability = fsDura,
+		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime,
+	},
+	Other = {Status = otStatus},
+	Callbacks = Callbacks,
 }
-makeButton(InfoPage, "DEMO: Select Fast Strength Pets", function()
-    local result = selectBestPets(demoPets, "Fast Strength")
-    print("MUHAVES PRIVATE | Fast Strength")
-    for index, petName in ipairs(result) do
-        print(index .. ". " .. petName)
-    end
-end)
-makeButton(InfoPage, "DEMO: Select Fast Rebirth Pets", function()
-    local result = selectBestPets(demoPets, "Fast Rebirth")
-    print("MUHAVES PRIVATE | Fast Rebirth")
-    for index, petName in ipairs(result) do
-        print(index .. ". " .. petName)
-    end
-end)
-makeButton(InfoPage, "DEMO: Select Fast Reps Pets", function()
-    local result = selectBestPets(demoPets, "Fast Reps")
-    print("MUHAVES PRIVATE | Fast Reps")
-    for index, petName in ipairs(result) do
-        print(index .. ". " .. petName)
-    end
-end)
---==================================================
--- INITIALIZE
---==================================================
-showTab("Fast Strength")
-print("MUHAVES PRIVATE loaded successfully.")
-print("UI prototype only; pet demo output appears in Output.")
