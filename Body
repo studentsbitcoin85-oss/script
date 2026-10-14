@@ -18,9 +18,12 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-local WIN   = Color3.fromRGB(7, 7, 8)
-local SEC   = Color3.fromRGB(12, 12, 13)
-local CARD  = Color3.fromRGB(16, 16, 17)
+-- Warna latar gambar yang di-upload hampir hitam murni (sekitar 2,2,3).
+-- BLACK dipakai di semua tempat yang menampung gambar supaya menyatu.
+local BLACK = Color3.fromRGB(2, 2, 3)
+local WIN   = BLACK
+local SEC   = Color3.fromRGB(8, 8, 9)
+local CARD  = Color3.fromRGB(14, 14, 15)
 local LINE  = Color3.fromRGB(40, 40, 43)
 local TX    = Color3.fromRGB(240, 240, 240)
 local SUB   = Color3.fromRGB(140, 140, 145)
@@ -167,7 +170,8 @@ end
 -- Urutan percobaan tiap 4 detik kalau belum termuat: Thumbs -> rbxassetid -> rbxthumb.
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
-local function image(p, id, x1, y1, x2, y2, fallback, fsize)
+local function image(p, id, x1, y1, x2, y2, fallback, fsize, holder)
+	if holder then box(p, x1 - 6, y1 - 6, x2 + 6, y2 + 6, BLACK, 10, true) end
 	local numId = id ~= "" and id:match("%d+") or nil
 	if not numId then
 		return text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
@@ -300,8 +304,8 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-text(root, "v5 • Anti AFK/Lag", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
-print("[MuhavesUI] v5 dimuat")
+text(root, "v6 • tema hitam", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
+print("[MuhavesUI] v6 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
@@ -336,7 +340,7 @@ for i = 1, 3 do
 end
 
 -- Sidebar
-box(body, 45, 140, 290, 978, SEC, 16)
+box(body, 45, 140, 290, 978, BLACK, 16)
 local nav = {{"⚡", "Fast Farming", 181}, {"⚙", "Other", 251}, {"ℹ", "Info", 325}}
 local navBtns = {}
 local function selectNav(idx)
@@ -383,7 +387,7 @@ local rbRebirths = stat(p1, "🔁", "Rebirths", "0", 285, 930, 955, 1110, 200, 1
 local rbGained   = stat(p1, "📈", "Gained", "0", 325, 930, 955, 1110, 200, 15)
 local rbHour     = stat(p1, "🕒", "Pace / Hour", "--", 365, 930, 955, 1110, 200, 15)
 local rbDay      = stat(p1, "📅", "Pace / Day", "--", 405, 930, 955, 1110, 200, 15)
-image(p1, ASSETS.EmblemStats, 1360, 255, 1450, 345, "M", 44)
+image(p1, ASSETS.EmblemStats, 1360, 255, 1450, 345, "M", 44, true)
 
 local p2 = pages[1]
 box(p2, 305, 455, 1490, 965, SEC, 16)
@@ -417,43 +421,44 @@ local fsSA    = stat(p2, "🕒", "Str Average", "-- /s | -- / min | -- /h | -- /
 local fsDA    = stat(p2, "🕒", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
 
 ---------------------------------------------------------------------
--- TAB 3: Other
+-- TAB 3: Other (3 kolom memenuhi lebar)
 local p3 = pages[2]
-box(p3, 305, 140, 1490, 715, SEC, 16)
+box(p3, 305, 140, 1490, 500, SEC, 16)
 local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
 
-box(p3, 321, 215, 880, 480, CARD, 12)
-toggleRow(p3, 345, 400, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
-hline(p3, 335, 866, 281)
-toggleRow(p3, 345, 400, 314, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
-hline(p3, 335, 866, 347)
-toggleRow(p3, 345, 400, 380, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
-hline(p3, 335, 866, 413)
-toggleRow(p3, 345, 400, 446, "Anti AFK", "Cegah kick karena diam terlalu lama.", false, function(st) Callbacks.AntiAFK(st) end)
+-- kolom 1
+box(p3, 321, 215, 695, 480, CARD, 12)
+toggleRow(p3, 343, 398, 248, "Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs)
+hline(p3, 335, 681, 281)
+toggleRow(p3, 343, 398, 314, "Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake)
+hline(p3, 335, 681, 347)
+toggleRow(p3, 343, 398, 380, "Spin Fortune Wheel", "Spin roda keberuntungan otomatis.", false, Callbacks.SpinWheel)
+hline(p3, 335, 681, 413)
+toggleRow(p3, 343, 398, 446, "Anti AFK", "Cegah kick karena diam terlalu lama.", false, function(st) Callbacks.AntiAFK(st) end)
 
-box(p3, 895, 215, 1474, 480, CARD, 12)
-toggleRow(p3, 919, 974, 248, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
-hline(p3, 909, 1460, 281)
-toggleRow(p3, 919, 974, 314, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
-hline(p3, 909, 1460, 347)
-toggleRow(p3, 919, 974, 380, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
-hline(p3, 909, 1460, 413)
-toggleRow(p3, 919, 974, 446, "Anti Lag", "Kurangi efek visual agar lebih ringan.", false, function(st) Callbacks.AntiLag(st) end)
+-- kolom 2
+box(p3, 710, 215, 1084, 480, CARD, 12)
+toggleRow(p3, 732, 787, 248, "Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts)
+hline(p3, 724, 1070, 281)
+toggleRow(p3, 732, 787, 314, "Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets)
+hline(p3, 724, 1070, 347)
+toggleRow(p3, 732, 787, 380, "Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups)
+hline(p3, 724, 1070, 413)
+toggleRow(p3, 732, 787, 446, "Anti Lag", "Kurangi efek visual agar lebih ringan.", false, function(st) Callbacks.AntiLag(st) end)
 
-box(p3, 321, 500, 1474, 695, CARD, 12)
-text(p3, "Teleport (Tekan E)", 17, 345, 527, 300, TX, F.GothamMedium)
+-- kolom 3: teleport
+box(p3, 1099, 215, 1474, 480, CARD, 12)
+text(p3, "Teleport (Tekan E)", 17, 1120, 240, 300, TX, F.GothamMedium)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
-	local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
-	local x = 345 + col * 565
-	local y = 550 + row * 62
+	local y = 262 + (i - 1) * 54
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(545, 48), BorderSizePixel = 0,
+		Position = UDim2.fromOffset(1114, y), Size = UDim2.fromOffset(345, 46), BorderSizePixel = 0,
 	}, p3)
 	round(b, 8)
 	stroke(b)
-	text(b, "📍", 16, 12, 24, 24, MUTED, F.Gotham, CENTER)
-	text(b, name, 16, 50, 24, 400, TX)
+	text(b, "📍", 16, 12, 23, 24, MUTED, F.Gotham, CENTER)
+	text(b, name, 16, 48, 23, 280, TX)
 	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
 end
 
@@ -463,7 +468,7 @@ local p4 = pages[3]
 box(p4, 305, 140, 1490, 810, SEC, 16)
 pageHeader(p4, "ℹ", "Info", "Tentang script ini.", nil)
 
-box(p4, 321, 215, 641, 420, CARD, 12)
+box(p4, 321, 215, 641, 420, BLACK, 12)
 image(p4, ASSETS.LogoInfo, 366, 240, 596, 330, "Muhaves", 34)
 text(p4, "Private Farming", 19, 321, 360, 320, TX, F.GothamMedium, CENTER)
 text(p4, "v1.0.0", 14, 321, 390, 320, SUB, F.Gotham, CENTER)
@@ -494,7 +499,7 @@ end
 
 text(p4, "\"Progress is not luck, it's a system.\"", 16, 321, 735, 833, SUB, F.Gotham, CENTER)
 text(p4, "- Muhaves", 14, 321, 765, 833, SUB, F.Gotham, CENTER)
-image(p4, ASSETS.EmblemBottom, 1395, 715, 1460, 790, "M", 36)
+image(p4, ASSETS.EmblemBottom, 1395, 715, 1460, 790, "M", 36, true)
 
 ---------------------------------------------------------------------
 selectNav(1)
