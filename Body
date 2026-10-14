@@ -4,6 +4,9 @@
     Fast Rebirth / Fast Strength / Other / Info.
     Isi ASSETS dengan ID gambar hasil upload (folder assets). Kosong = teks pengganti.
     Semua aksi ada di tabel Callbacks (kosong).
+
+    Ukuran UI: ubah SIZE (0.5 = kecil, 0.8 = besar).
+    Klik logo kecil untuk membesarkan/mengecilkan UI. Tahan & geser logo untuk memindah.
 ]]
 
 local ASSETS = {
@@ -12,7 +15,10 @@ local ASSETS = {
 	LogoInfo     = "", -- logo_info.png
 	EmblemStats  = "", -- emblem_stats.png
 	EmblemBottom = "", -- emblem_bottom.png
+	ToggleLogo   = "127494481183080", -- logo untuk besar/kecil
 }
+
+local SIZE = 0.6 -- ukuran default UI
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -166,14 +172,62 @@ local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGu
 local W, H = 1536, 1024
 local root = new("Frame", {Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, gui)
+
+-- Ukuran + buka/tutup
+local open = true
 local cam = workspace.CurrentCamera
 local scale = new("UIScale", {}, root)
 local function fit()
 	local v = cam.ViewportSize
-	scale.Scale = math.min(1, (v.X - 16) / W, (v.Y - 16) / H)
+	return math.min(SIZE, (v.X - 16) / W, (v.Y - 16) / H)
 end
-fit()
-cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+scale.Scale = fit()
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+	if open then scale.Scale = fit() end
+end)
+
+local function setOpen(s)
+	open = s
+	if s then root.Visible = true end
+	local t = TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Scale = s and fit() or 0.001})
+	t:Play()
+	t.Completed:Connect(function()
+		if not open then root.Visible = false end
+	end)
+end
+
+-- Logo: klik untuk kecilkan/besarkan, tahan & geser untuk pindah
+local logo = new("ImageButton", {
+	Image = "rbxassetid://" .. ASSETS.ToggleLogo, Size = UDim2.fromOffset(56, 56),
+	Position = UDim2.new(0, 16, 0.5, -28), BackgroundColor3 = WIN,
+	AutoButtonColor = false, ZIndex = 10,
+}, gui)
+round(logo, 14)
+stroke(logo, Color3.fromRGB(55, 55, 58))
+
+do
+	local drag, moved, st, sp
+	logo.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			drag, moved, st, sp = true, false, i.Position, logo.Position
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then
+					drag = false
+					if not moved then setOpen(not open) end
+				end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - st
+			if d.Magnitude > 6 then moved = true end
+			if moved then
+				logo.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+			end
+		end
+	end)
+end
 
 local win = box(root, 32, 32, 1504, 992, WIN, 24)
 stroke(win, Color3.fromRGB(55, 55, 58))
@@ -193,7 +247,7 @@ local closeBtn = new("TextButton", {Text = "✕", TextSize = 22, Font = F.Gotham
 	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40)}, root)
 
 local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
-minBtn.MouseButton1Click:Connect(function() body.Visible = not body.Visible end)
+minBtn.MouseButton1Click:Connect(function() setOpen(false) end)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
 do -- drag lewat header
@@ -351,10 +405,9 @@ text(p4, "Private Farming", 19, 321, 360, 320, TX, F.GothamMedium, CENTER)
 text(p4, "v1.0.0", 14, 321, 390, 320, SUB, F.Gotham, CENTER)
 
 box(p4, 661, 215, 1474, 420, CARD, 12)
-local function kv(x, k, v, extra)
+local function kv(x, k, v)
 	text(p4, k, 14, x, 280, 220, SUB)
 	text(p4, v, 19, x, 312, 240, TX, F.GothamMedium)
-	return extra
 end
 kv(690, "Made by", "MuhavesDevs")
 kv(930, "Game", "Muscle Legends")
@@ -384,6 +437,7 @@ selectNav(1)
 
 return {
 	Gui = gui,
+	SetOpen = setOpen,
 	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
 	Strength = {Status = fsStatus, Strength = fsStr, StrengthGain = fsStrG, Durability = fsDura, DurabilityGain = fsDurG,
 		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime},
