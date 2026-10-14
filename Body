@@ -1,33 +1,39 @@
 --[[
     Muhaves Private Farming - UI ONLY (per tab)
-    LocalScript. Tiap tab di sidebar punya halaman sendiri:
-    Fast Rebirth / Fast Strength / Other / Info.
-    Isi ASSETS dengan ID gambar hasil upload (folder assets). Kosong = teks pengganti.
-    Semua aksi ada di tabel Callbacks (kosong).
+    LocalScript. Tab: Fast Rebirth / Fast Strength / Other / Info.
 
-    Ukuran UI: ubah SIZE (0.5 = kecil, 0.8 = besar).
-    Klik logo kecil untuk membesarkan/mengecilkan UI. Tahan & geser logo untuk memindah.
+    - Isi ASSETS dengan ID gambar. Kosong = teks pengganti.
+    - Semua aksi ada di tabel Callbacks (kosong, isi sendiri).
+    - Ukuran UI: ubah SIZE. Ukuran tulisan: ubah TS.
+    - Tombol "—" mengecilkan UI, baru setelah itu logo muncul.
+    - Klik logo = buka UI lagi. Tahan & geser logo = pindah posisi.
+    - Tombol X kecil di logo = hapus UI sepenuhnya.
 ]]
 
+---------------------------------------------------------------------
+-- Pengaturan
 local ASSETS = {
 	LogoHeader   = "", -- logo_header.png
 	Character    = "", -- character.png
 	LogoInfo     = "", -- logo_info.png
 	EmblemStats  = "", -- emblem_stats.png
 	EmblemBottom = "", -- emblem_bottom.png
-	ToggleLogo   = "76948793112874", -- logo untuk besar/kecil
+	ToggleLogo   = "76948793112874", -- logo saat UI dikecilkan
 }
 
--- Pakai thumbnail URL (seperti Elerium) supaya ID Decal/Image sama-sama bisa tampil
-local function assetUrl(id)
-	id = tostring(id)
-	if id:match("^rbxassetid") or id:match("^http") then return id end
-	return "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId=" .. id
-end
-
 local SIZE = 0.32 -- ukuran UI (0.25 = kecil, 0.5 = besar)
-local TS = 1.5   -- pembesar tulisan (1 = asli, 2 = dua kali lipat)
+local TS   = 1.5  -- pembesar tulisan (1 = asli, 2 = dua kali lipat)
 
+local Callbacks = {
+	AutoRebirth = function(s) end, EquipRebirthPets = function(s) end, RebirthTarget = function(v) end,
+	AutoFarmStrength = function(s) end, ControlledSpeed = function(s) end, MaxReps = function(v) end,
+	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
+	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
+	Teleport = function(name) end,
+}
+
+---------------------------------------------------------------------
+-- Services & warna
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -41,17 +47,33 @@ local SUB   = Color3.fromRGB(140, 140, 145)
 local MUTED = Color3.fromRGB(190, 190, 194)
 local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
+local WHITE = Color3.new(1, 1, 1)
+local KNOB_OFF = Color3.fromRGB(225, 225, 225)
 
 local LEFT, CENTER, RIGHT = Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right
 local F = Enum.Font
 
-local Callbacks = {
-	AutoRebirth = function(s) end, EquipRebirthPets = function(s) end, RebirthTarget = function(v) end,
-	AutoFarmStrength = function(s) end, ControlledSpeed = function(s) end, MaxReps = function(v) end,
-	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
-	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
-	Teleport = function(name) end,
-}
+local function isPointer(i)
+	return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch
+end
+local function isMove(i)
+	return i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch
+end
+
+-- Thumbnail URL supaya ID Decal/Image sama-sama bisa tampil
+local function assetUrl(id)
+	id = tostring(id)
+	if id:match("^rbxassetid") or id:match("^http") then return id end
+	return "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId=" .. id
+end
+
+-- Callback dibungkus pcall supaya error di callback tidak merusak UI
+local function safe(fn)
+	return function(...)
+		local ok, err = pcall(fn, ...)
+		if not ok then warn("[MuhavesUI] callback error: " .. tostring(err)) end
+	end
+end
 
 ---------------------------------------------------------------------
 -- Helper (semua posisi absolut pada kanvas 1536x1024)
@@ -62,7 +84,7 @@ local function new(class, props, parent)
 	return o
 end
 local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
-local function stroke(o, c, t) new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
+local function stroke(o, c, t) return new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
 
 local function box(p, x1, y1, x2, y2, bg, r, noStroke)
 	local f = new("Frame", {
@@ -104,6 +126,32 @@ local function image(p, id, x1, y1, x2, y2, fallback, fsize)
 	return text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
 end
 
+-- Drag generik: `target` digeser lewat `handle`. onTap dipanggil kalau cuma diklik (tidak digeser).
+local function makeDraggable(handle, target, threshold, onTap)
+	local dragging, moved, startPos, startTarget
+	handle.InputBegan:Connect(function(i)
+		if not isPointer(i) then return end
+		dragging, moved, startPos, startTarget = true, false, i.Position, target.Position
+		i.Changed:Connect(function()
+			if i.UserInputState == Enum.UserInputState.End then
+				dragging = false
+				if not moved and onTap then onTap() end
+			end
+		end)
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if not (dragging and isMove(i)) then return end
+		local d = i.Position - startPos
+		if d.Magnitude > threshold then moved = true end
+		if moved then
+			target.Position = UDim2.new(startTarget.X.Scale, startTarget.X.Offset + d.X,
+				startTarget.Y.Scale, startTarget.Y.Offset + d.Y)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- Komponen
 local function toggle(p, x, cy, initial, cb)
 	local state = initial
 	local tr = new("TextButton", {
@@ -113,21 +161,23 @@ local function toggle(p, x, cy, initial, cb)
 	round(tr, 13)
 	local kn = new("Frame", {
 		Size = UDim2.fromOffset(20, 20), Position = UDim2.fromOffset(state and 21 or 3, 3),
-		BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225), BorderSizePixel = 0,
+		BackgroundColor3 = state and WHITE or KNOB_OFF, BorderSizePixel = 0,
 	}, tr)
 	round(kn, 10)
+	local info = TweenInfo.new(0.15)
 	tr.MouseButton1Click:Connect(function()
 		state = not state
-		local i = TweenInfo.new(0.15)
-		TweenService:Create(tr, i, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
-		TweenService:Create(kn, i, {Position = UDim2.fromOffset(state and 21 or 3, 3),
-			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
+		TweenService:Create(tr, info, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
+		TweenService:Create(kn, info, {
+			Position = UDim2.fromOffset(state and 21 or 3, 3),
+			BackgroundColor3 = state and WHITE or KNOB_OFF,
+		}):Play()
 		cb(state)
 	end)
 end
 
 local function numberBox(p, x1, y1, x2, y2, value, cb)
-	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(12, 12, 13), 8, true)
+	local f = box(p, x1, y1, x2, y2, SEC, 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
 	local tb = new("TextBox", {
 		BackgroundTransparency = 1, Text = value, TextSize = 24, Font = F.Gotham, TextColor3 = TX,
@@ -137,27 +187,32 @@ local function numberBox(p, x1, y1, x2, y2, value, cb)
 	text(f, "⌃", 10, x2 - x1 - 22, 11, 14, MUTED, F.GothamBold, CENTER)
 	text(f, "⌄", 10, x2 - x1 - 22, (y2 - y1) - 11, 14, MUTED, F.GothamBold, CENTER)
 	tb.FocusLost:Connect(function()
-		local n = tonumber((tb.Text:gsub("%.", "")))
+		local n = tonumber((tb.Text:gsub("[%.,%s]", "")))
 		if n then cb(n) end
 	end)
 end
 
-local function toggleRow(p, tx, titleX, cy, title, sub, initial, cb)
-	toggle(p, tx, cy, initial, cb)
+local function rowLabels(p, titleX, cy, title, sub)
 	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
 	text(p, sub, 13, titleX, cy + 13, 400, SUB)
+end
+
+local function toggleRow(p, tx, titleX, cy, title, sub, initial, cb)
+	toggle(p, tx, cy, initial, safe(cb))
+	rowLabels(p, titleX, cy, title, sub)
 end
 
 local function iconRow(p, icon, ix, titleX, cy, title, sub)
 	text(p, icon, 30, ix, cy, 44, MUTED, F.GothamBold, CENTER)
-	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
-	text(p, sub, 13, titleX, cy + 13, 400, SUB)
+	rowLabels(p, titleX, cy, title, sub)
 end
 
 local function pill(p, x1, y1, x2, y2, t)
 	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(10, 10, 11), 18)
-	local d = new("Frame", {Position = UDim2.fromOffset(12, (y2 - y1) / 2 - 7), Size = UDim2.fromOffset(14, 14),
-		BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
+	local d = new("Frame", {
+		Position = UDim2.fromOffset(12, (y2 - y1) / 2 - 7), Size = UDim2.fromOffset(14, 14),
+		BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0,
+	}, f)
 	round(d, 7)
 	return text(f, t, 15, 36, (y2 - y1) / 2, x2 - x1 - 40, TX)
 end
@@ -178,19 +233,21 @@ end
 
 ---------------------------------------------------------------------
 -- ScreenGui + kanvas
-do -- hapus UI lama kalau script dijalankan ulang
-	local old = Players.LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("MuhavesUI")
-	if old then old:Destroy() end
-end
-local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
+local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+local old = playerGui:FindFirstChild("MuhavesUI") -- hapus UI lama kalau script dijalankan ulang
+if old then old:Destroy() end
+
+local gui = new("ScreenGui", {
+	Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui)
 
 local W, H = 1536, 1024
-local root = new("Frame", {Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, gui)
+local root = new("Frame", {
+	Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1,
+}, gui)
 
--- Ukuran + buka/tutup
-local open = true
 local cam = workspace.CurrentCamera
 local scale = new("UIScale", {}, root)
 local function fit()
@@ -198,58 +255,78 @@ local function fit()
 	return math.min(SIZE, (v.X - 16) / W, (v.Y - 16) / H)
 end
 scale.Scale = fit()
+
+---------------------------------------------------------------------
+-- Dock logo (tersembunyi dulu; baru muncul setelah UI dikecilkan)
+local dock = new("Frame", {
+	Name = "Dock", Size = UDim2.fromOffset(56, 56), Position = UDim2.new(0, 16, 0.5, -28),
+	BackgroundTransparency = 1, Visible = false, ZIndex = 10,
+}, gui)
+local dockScale = new("UIScale", {Scale = 0}, dock)
+
+local logo = new("ImageButton", {
+	Image = assetUrl(ASSETS.ToggleLogo), Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = WIN, AutoButtonColor = false, ZIndex = 10,
+}, dock)
+round(logo, 14)
+stroke(logo, Color3.fromRGB(55, 55, 58))
+
+-- Tombol X: hapus UI sepenuhnya
+local dockClose = new("TextButton", {
+	Text = "✕", TextSize = 12, Font = F.GothamBold, TextColor3 = TX, AutoButtonColor = false,
+	BackgroundColor3 = Color3.fromRGB(150, 45, 45), BorderSizePixel = 0,
+	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -2, 0, 2), Size = UDim2.fromOffset(22, 22),
+	ZIndex = 12,
+}, dock)
+round(dockClose, 11)
+stroke(dockClose, Color3.fromRGB(20, 20, 22), 1.5)
+dockClose.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+---------------------------------------------------------------------
+-- Buka / kecilkan
+local open = true
+local token = 0 -- mencegah animasi lama menimpa yang baru
+
+local function setOpen(s)
+	if open == s then return end
+	open = s
+	token += 1
+	local my = token
+
+	if s then
+		-- logo menghilang dulu, lalu UI membesar
+		local t = TweenService:Create(dockScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {Scale = 0})
+		t:Play()
+		t.Completed:Connect(function()
+			if token == my then dock.Visible = false end
+		end)
+		root.Visible = true
+		TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Scale = fit()}):Play()
+	else
+		-- UI mengecil dulu, baru logo muncul
+		local t = TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Scale = 0.001})
+		t:Play()
+		t.Completed:Connect(function()
+			if token ~= my then return end
+			root.Visible = false
+			dock.Visible = true
+			TweenService:Create(dockScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+		end)
+	end
+end
+
 cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 	if open then scale.Scale = fit() end
 end)
 
-local function setOpen(s)
-	open = s
-	if s then root.Visible = true end
-	local t = TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Scale = s and fit() or 0.001})
-	t:Play()
-	t.Completed:Connect(function()
-		if not open then root.Visible = false end
-	end)
-end
+-- klik logo = buka, tahan & geser = pindah
+makeDraggable(logo, dock, 6, function() setOpen(true) end)
 
--- Logo: klik untuk kecilkan/besarkan, tahan & geser untuk pindah
-local logo = new("ImageButton", {
-	Image = assetUrl(ASSETS.ToggleLogo), Size = UDim2.fromOffset(56, 56),
-	Position = UDim2.new(0, 16, 0.5, -28), BackgroundColor3 = WIN,
-	AutoButtonColor = false, ZIndex = 10,
-}, gui)
-round(logo, 14)
-stroke(logo, Color3.fromRGB(55, 55, 58))
-
-do
-	local drag, moved, st, sp
-	logo.InputBegan:Connect(function(i)
-		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			drag, moved, st, sp = true, false, i.Position, logo.Position
-			i.Changed:Connect(function()
-				if i.UserInputState == Enum.UserInputState.End then
-					drag = false
-					if not moved then setOpen(not open) end
-				end
-			end)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(i)
-		if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-			local d = i.Position - st
-			if d.Magnitude > 6 then moved = true end
-			if moved then
-				logo.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
-			end
-		end
-	end)
-end
-
+---------------------------------------------------------------------
+-- Window + header
 local win = box(root, 32, 32, 1504, 992, WIN, 24)
 stroke(win, Color3.fromRGB(55, 55, 58))
 
----------------------------------------------------------------------
--- Header
 local header = new("Frame", {Position = UDim2.fromOffset(32, 32), Size = UDim2.fromOffset(1472, 93), BackgroundTransparency = 1}, root)
 hline(root, 32, 1504, 125)
 image(root, ASSETS.LogoHeader, 60, 32, 315, 125, "Muhaves", 44)
@@ -257,62 +334,55 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
-local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
-local closeBtn = new("TextButton", {Text = "✕", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40)}, root)
-
-local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
+local minBtn = new("TextButton", {
+	Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40),
+}, root)
+local closeBtn = new("TextButton", {
+	Text = "✕", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40),
+}, root)
 minBtn.MouseButton1Click:Connect(function() setOpen(false) end)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
-do -- drag lewat header
-	local dragging, start, startPos
-	header.InputBegan:Connect(function(i)
-		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			dragging, start, startPos = true, i.Position, root.Position
-			i.Changed:Connect(function() if i.UserInputState == Enum.UserInputState.End then dragging = false end end)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(i)
-		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-			local d = i.Position - start
-			root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-		end
-	end)
-end
+makeDraggable(header, root, 0) -- geser UI lewat header
+
+local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
 
 ---------------------------------------------------------------------
--- Halaman (satu per tab)
+-- Halaman (satu per tab) + sidebar
 local pages = {}
 for i = 1, 4 do
 	pages[i] = new("Frame", {Name = "Page" .. i, Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1, Visible = false}, body)
 end
 
--- Sidebar
 box(body, 45, 140, 290, 978, SEC, 16)
 local nav = {{"⚡", "Fast Rebirth", 181}, {"🏋", "Fast Strength", 251}, {"⚙", "Other", 325}, {"ℹ", "Info", 400}}
 local navBtns = {}
+
 local function selectNav(idx)
 	for i, b in ipairs(navBtns) do
 		local on = i == idx
 		b.BackgroundTransparency = on and 0 or 1
-		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
+		b.TextColor3 = on and WHITE or Color3.fromRGB(215, 215, 218)
 		b:FindFirstChildOfClass("UIStroke").Enabled = on
 		pages[i].Visible = on
 	end
 end
+
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
 		Text = "            " .. n[2], TextSize = 21, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(57, n[3] - 29), Size = UDim2.fromOffset(227, 58),
-		BorderSizePixel = 0,
+		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(57, n[3] - 29),
+		Size = UDim2.fromOffset(227, 58), BorderSizePixel = 0,
 	}, body)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
 	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
-	new("TextLabel", {BackgroundTransparency = 1, Text = n[1], TextSize = 28, Font = F.GothamBold, TextColor3 = Color3.fromRGB(235, 235, 238),
-		Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(44, 58)}, b)
+	new("TextLabel", {
+		BackgroundTransparency = 1, Text = n[1], TextSize = 28, Font = F.GothamBold, TextColor3 = Color3.fromRGB(235, 235, 238),
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.fromOffset(44, 58),
+	}, b)
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
@@ -330,7 +400,7 @@ hline(p1, 335, 1460, 307)
 toggleRow(p1, 345, 410, 345, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
 hline(p1, 335, 1460, 382)
 iconRow(p1, "⟳", 345, 410, 420, "Rebirth Target", "Target strength untuk rebirth.")
-numberBox(p1, 1320, 400, 1450, 440, "5.000", Callbacks.RebirthTarget)
+numberBox(p1, 1320, 400, 1450, 440, "5.000", safe(Callbacks.RebirthTarget))
 
 box(p1, 321, 485, 1474, 745, CARD, 12)
 text(p1, "Rebirth Stats", 18, 345, 512, 250, TX, F.GothamMedium)
@@ -352,18 +422,19 @@ hline(p2, 335, 1460, 296)
 toggleRow(p2, 345, 410, 330, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
 hline(p2, 335, 1460, 364)
 iconRow(p2, "◔", 345, 410, 398, "Max Reps / Second", "Batas maksimal reps per detik.")
-numberBox(p2, 1360, 378, 1450, 418, "659", Callbacks.MaxReps)
+numberBox(p2, 1360, 378, 1450, 418, "659", safe(Callbacks.MaxReps))
 
+local PACE = "-- /s | -- / min | -- /h | -- /d"
 box(p2, 321, 465, 1000, 775, CARD, 12)
 text(p2, "Strength Stats", 17, 345, 490, 250, TX, F.GothamMedium)
-local fsStr   = stat(p2, "🏋", "Strength", "0", 530, 355, 380, 560, 200, 14)
-local fsStrG  = text(p2, "+0", 14, 820, 530, 100, TX)
-local fsDura  = stat(p2, "♡", "Durability", "0", 568, 355, 380, 560, 200, 14)
-local fsDurG  = text(p2, "+0", 14, 820, 568, 100, TX)
-local fsSP    = stat(p2, "◷", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 606, 355, 380, 560, 420, 13)
-local fsDP    = stat(p2, "◷", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 644, 355, 380, 560, 420, 13)
-local fsSA    = stat(p2, "◷", "Str Average", "-- /s | -- / min | -- /h | -- /d", 682, 355, 380, 560, 420, 13)
-local fsDA    = stat(p2, "◷", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 720, 355, 380, 560, 420, 13)
+local fsStr  = stat(p2, "🏋", "Strength", "0", 530, 355, 380, 560, 200, 14)
+local fsStrG = text(p2, "+0", 14, 820, 530, 100, TX)
+local fsDura = stat(p2, "♡", "Durability", "0", 568, 355, 380, 560, 200, 14)
+local fsDurG = text(p2, "+0", 14, 820, 568, 100, TX)
+local fsSP   = stat(p2, "◷", "Str Pace", PACE, 606, 355, 380, 560, 420, 13)
+local fsDP   = stat(p2, "◷", "Dura Pace", PACE, 644, 355, 380, 560, 420, 13)
+local fsSA   = stat(p2, "◷", "Str Average", PACE, 682, 355, 380, 560, 420, 13)
+local fsDA   = stat(p2, "◷", "Dura Average", PACE, 720, 355, 380, 560, 420, 13)
 
 box(p2, 1020, 465, 1474, 775, CARD, 12)
 local ring = new("Frame", {Position = UDim2.fromOffset(1177, 520), Size = UDim2.fromOffset(140, 140), BackgroundTransparency = 1}, p2)
@@ -395,19 +466,18 @@ toggleRow(p3, 919, 974, 380, "Hide Popups", "Sembunyikan notifikasi popup.", tru
 
 box(p3, 321, 435, 1474, 630, CARD, 12)
 text(p3, "Teleport (Tekan E)", 17, 345, 462, 300, TX, F.GothamMedium)
+local teleport = safe(Callbacks.Teleport)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
 	local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
-	local x = 345 + col * 565
-	local y = 485 + row * 62
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(545, 48), BorderSizePixel = 0,
+		Position = UDim2.fromOffset(345 + col * 565, 485 + row * 62), Size = UDim2.fromOffset(545, 48), BorderSizePixel = 0,
 	}, p3)
 	round(b, 8)
 	stroke(b)
 	text(b, "📍", 16, 12, 24, 24, MUTED, F.Gotham, CENTER)
 	text(b, name, 16, 50, 24, 400, TX)
-	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
+	b.MouseButton1Click:Connect(function() teleport(name) end)
 end
 
 ---------------------------------------------------------------------
@@ -431,7 +501,7 @@ kv(930, "Game", "Muscle Legends")
 text(p4, "Status", 14, 1190, 280, 200, SUB)
 text(p4, "Working", 19, 1190, 312, 90, TX, F.GothamMedium)
 local okBox = box(p4, 1312, 299, 1332, 321, Color3.fromRGB(30, 110, 60), 4, true)
-text(okBox, "✔", 13, 0, 11, 20, Color3.new(1, 1, 1), F.GothamBold, CENTER)
+text(okBox, "✔", 13, 0, 11, 20, WHITE, F.GothamBold, CENTER)
 
 box(p4, 321, 440, 1474, 700, CARD, 12)
 text(p4, "Fitur Utama", 18, 345, 468, 300, TX, F.GothamMedium)
