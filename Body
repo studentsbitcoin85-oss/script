@@ -144,8 +144,8 @@ local function numberBox(p, x1, y1, x2, y2, value, cb)
 		Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -36, 1, 0), TextXAlignment = LEFT,
 		ClearTextOnFocus = false,
 	}, f)
-	text(f, "⌃", 10, x2 - x1 - 22, 11, 14, MUTED, F.GothamBold, CENTER)
-	text(f, "⌄", 10, x2 - x1 - 22, (y2 - y1) - 11, 14, MUTED, F.GothamBold, CENTER)
+	text(f, "▲", 10, x2 - x1 - 22, 11, 14, MUTED, F.GothamBold, CENTER)
+	text(f, "▼", 10, x2 - x1 - 22, (y2 - y1) - 11, 14, MUTED, F.GothamBold, CENTER)
 	tb.FocusLost:Connect(function()
 		local n = tonumber((tb.Text:gsub("%.", "")))
 		if n then cb(n) end
@@ -189,6 +189,12 @@ end
 
 ---------------------------------------------------------------------
 -- ScreenGui + kanvas
+do
+	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local old = pg:FindFirstChild("MuhavesUI")
+	if old then old:Destroy() end
+end
+
 local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
 
@@ -216,9 +222,12 @@ new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 4
 text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
 text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
 
+text(root, "v3 • Fast Farming", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
+print("[MuhavesUI] v3 dimuat")
+
 local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
-local closeBtn = new("TextButton", {Text = "✕", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
+local closeBtn = new("TextButton", {Text = "X", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40)}, root)
 
 local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
@@ -280,22 +289,22 @@ image(body, ASSETS.Character, 40, 470, 290, 930, "", 14)
 -- TAB 1: Fast Farming (Fast Rebirth + Fast Strength dalam satu tab)
 local p1 = pages[1]
 box(p1, 305, 140, 1490, 440, SEC, 16)
-local rbStatus = pageHeader(p1, "♛", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
+local rbStatus = pageHeader(p1, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
 
 box(p1, 321, 215, 880, 425, CARD, 12)
 toggleRow(p1, 345, 410, 250, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
 hline(p1, 335, 866, 285)
 toggleRow(p1, 345, 410, 320, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
 hline(p1, 335, 866, 355)
-iconRow(p1, "⟳", 345, 410, 390, "Rebirth Target", "Target strength untuk rebirth.")
+iconRow(p1, "🔄", 345, 410, 390, "Rebirth Target", "Target strength untuk rebirth.")
 numberBox(p1, 730, 370, 860, 410, "5.000", Callbacks.RebirthTarget)
 
 box(p1, 895, 215, 1474, 425, CARD, 12)
 text(p1, "Rebirth Stats", 18, 920, 240, 250, TX, F.GothamMedium)
-local rbRebirths = stat(p1, "◎", "Rebirths", "0", 285, 930, 955, 1110, 200, 15)
-local rbGained   = stat(p1, "⇪", "Gained", "0", 325, 930, 955, 1110, 200, 15)
-local rbHour     = stat(p1, "◷", "Pace / Hour", "--", 365, 930, 955, 1110, 200, 15)
-local rbDay      = stat(p1, "◷", "Pace / Day", "--", 405, 930, 955, 1110, 200, 15)
+local rbRebirths = stat(p1, "🔁", "Rebirths", "0", 285, 930, 955, 1110, 200, 15)
+local rbGained   = stat(p1, "📈", "Gained", "0", 325, 930, 955, 1110, 200, 15)
+local rbHour     = stat(p1, "🕒", "Pace / Hour", "--", 365, 930, 955, 1110, 200, 15)
+local rbDay      = stat(p1, "📅", "Pace / Day", "--", 405, 930, 955, 1110, 200, 15)
 image(p1, ASSETS.EmblemStats, 1360, 255, 1450, 345, "M", 44)
 
 local p2 = pages[1]
@@ -307,7 +316,7 @@ toggleRow(p2, 345, 410, 565, "Auto Farm Strength", "Farming otomatis dengan sist
 hline(p2, 335, 746, 600)
 toggleRow(p2, 345, 410, 635, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
 hline(p2, 335, 746, 670)
-iconRow(p2, "◔", 345, 410, 705, "Max Reps / Second", "Batas maksimal reps per detik.")
+iconRow(p2, "🚀", 345, 410, 705, "Max Reps / Second", "Batas maksimal reps per detik.")
 numberBox(p2, 650, 685, 740, 725, "659", Callbacks.MaxReps)
 
 box(p2, 321, 755, 760, 955, CARD, 12)
@@ -322,12 +331,12 @@ box(p2, 775, 530, 1474, 955, CARD, 12)
 text(p2, "Strength Stats", 17, 800, 558, 250, TX, F.GothamMedium)
 local fsStr   = stat(p2, "🏋", "Strength", "0", 605, 820, 845, 1010, 200, 15)
 local fsStrG  = text(p2, "+0", 15, 1260, 605, 150, TX)
-local fsDura  = stat(p2, "♡", "Durability", "0", 660, 820, 845, 1010, 200, 15)
+local fsDura  = stat(p2, "🛡", "Durability", "0", 660, 820, 845, 1010, 200, 15)
 local fsDurG  = text(p2, "+0", 15, 1260, 660, 150, TX)
-local fsSP    = stat(p2, "◷", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 715, 820, 845, 1010, 440, 14)
-local fsDP    = stat(p2, "◷", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 770, 820, 845, 1010, 440, 14)
-local fsSA    = stat(p2, "◷", "Str Average", "-- /s | -- / min | -- /h | -- /d", 825, 820, 845, 1010, 440, 14)
-local fsDA    = stat(p2, "◷", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
+local fsSP    = stat(p2, "🕒", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 715, 820, 845, 1010, 440, 14)
+local fsDP    = stat(p2, "🕒", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 770, 820, 845, 1010, 440, 14)
+local fsSA    = stat(p2, "🕒", "Str Average", "-- /s | -- / min | -- /h | -- /d", 825, 820, 845, 1010, 440, 14)
+local fsDA    = stat(p2, "🕒", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
 
 ---------------------------------------------------------------------
 -- TAB 3: Other
@@ -387,8 +396,7 @@ kv(690, "Made by", "MuhavesDevs")
 kv(930, "Game", "Muscle Legends")
 text(p4, "Status", 14, 1190, 280, 200, SUB)
 text(p4, "Working", 19, 1190, 312, 90, TX, F.GothamMedium)
-local okBox = box(p4, 1282, 301, 1300, 321, Color3.fromRGB(30, 110, 60), 4, true)
-text(okBox, "✔", 13, 0, 10, 18, Color3.new(1, 1, 1), F.GothamBold, CENTER)
+text(p4, "✅", 18, 1282, 312, 30, TX, F.Gotham, CENTER)
 
 box(p4, 321, 440, 1474, 700, CARD, 12)
 text(p4, "Fitur Utama", 18, 345, 468, 300, TX, F.GothamMedium)
@@ -398,7 +406,7 @@ for i, t in ipairs(feats) do
 	local idx = i <= 4 and i or (i - 4)
 	local cy = 510 + (idx - 1) * 42
 	local x = 345 + col * 420
-	text(p4, "✔", 16, x, cy, 24, TX, F.GothamBold, CENTER)
+	text(p4, "✅", 16, x, cy, 28, TX, F.Gotham, CENTER)
 	text(p4, t, 17, x + 34, cy, 340, MUTED)
 end
 
