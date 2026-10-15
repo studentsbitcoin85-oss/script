@@ -345,20 +345,25 @@ end
 
 -- efek yang muncul beruntun di wadah yang sama (ikon kepalan terbang, dsb.)
 local function spawnCheck(d)
+	if not d:IsA("GuiObject") or d:IsA("GuiButton") then return end
 	local parent = d.Parent
 	if not parent or not (parent:IsA("GuiObject") or parent:IsA("LayerCollector")) then return end
 	if layouty(parent) then return end
 	local now = os.clock()
 	local s = popup.spawn[parent]
-	if not s then s = {t = now, n = 0, flag = false, last = now}; popup.spawn[parent] = s end
-	if now - s.t > 2 then s.t, s.n = now, 0 end
-	if s.flag and now - s.last > 10 then s.flag = false end
-	s.n += 1
-	s.last = now
-	if s.n >= 4 then s.flag = true end
-	if s.flag and d:IsA("GuiObject") and not d:IsA("GuiButton") then
-		hideTarget(d, "spawn")
-	end
+	if not s then s = {short = 0, flag = false, lastShort = 0}; popup.spawn[parent] = s end
+	if s.flag and now - s.lastShort > 20 then s.flag = false; s.short = 0 end
+	-- pelajari umur objek: efek sementara cepat dihapus game, UI menu bertahan lama.
+	-- Wadah baru ditandai "spawner efek" setelah 3 anaknya terbukti hilang dalam <4 detik.
+	d.Destroying:Connect(function()
+		local t = os.clock()
+		if t - now < 4 then
+			s.short += 1
+			s.lastShort = t
+			if s.short >= 3 then s.flag = true end
+		end
+	end)
+	if s.flag then hideTarget(d, "spawn") end
 end
 
 Callbacks.HidePopups = function(state)
@@ -743,7 +748,7 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v16 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v17 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
