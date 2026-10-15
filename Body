@@ -1,13 +1,19 @@
 
+--[[
+    Muhaves Private Farming - UI Skeleton
+    Tabs: Fast Farming / Other / Info
+    Fast Farming: vertical scrolling
+    Farming & Other callbacks: EMPTY
+]]
+
 --==================================================
--- MUHAVES PRIVATE FARMING
--- UI SKELETON ONLY
--- Fast Farming / Other / Info
+-- SERVICES
 --==================================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -16,23 +22,44 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 -- CONFIG
 --==================================================
 
-local CONFIG = {
-    Title = "MUHAVES",
-    Subtitle = "PRIVATE FARMING",
-    Width = 900,
-    Height = 600,
-    Background = Color3.fromRGB(13, 14, 18),
-    Panel = Color3.fromRGB(21, 22, 28),
-    Card = Color3.fromRGB(27, 28, 35),
-    Accent = Color3.fromRGB(135, 90, 255),
-    Text = Color3.fromRGB(245, 245, 250),
-    SubText = Color3.fromRGB(150, 151, 165),
-    Stroke = Color3.fromRGB(47, 48, 60),
+local ASSETS = {
+    LogoHeader = "91147250558427",
+    Character = "96640742460759",
+    LogoInfo = "91147250558427",
+    EmblemStats = "122842326893052",
+    EmblemBottom = "112087359143806",
 }
 
+local C = {
+    Black = Color3.fromRGB(2, 2, 3),
+    Window = Color3.fromRGB(2, 2, 3),
+    Section = Color3.fromRGB(8, 8, 9),
+    Card = Color3.fromRGB(14, 14, 15),
+    Line = Color3.fromRGB(40, 40, 43),
+    Text = Color3.fromRGB(240, 240, 240),
+    Sub = Color3.fromRGB(150, 150, 156),
+    Muted = Color3.fromRGB(190, 190, 194),
+    Off = Color3.fromRGB(70, 70, 74),
+    On = Color3.fromRGB(104, 104, 110),
+}
+
+local F = Enum.Font
+local LEFT = Enum.TextXAlignment.Left
+local CENTER = Enum.TextXAlignment.Center
+local RIGHT = Enum.TextXAlignment.Right
+
+local PAD = 14
+local GAP = 10
+local HEADER_H = 78
+local SIDEBAR_W = 200
+local CONTENT_X = PAD + SIDEBAR_W + PAD
+local CONTENT_Y = HEADER_H + PAD
+local ROW_H = 58
+local MAX_PAGE_HEIGHT = 420
+
 --==================================================
--- CALLBACKS
--- Isi sendiri nanti; saat ini semua masih kosong.
+-- EMPTY CALLBACKS
+-- Implementasi fitur dapat ditambahkan kemudian.
 --==================================================
 
 local Callbacks = {
@@ -59,161 +86,165 @@ local Callbacks = {
 }
 
 --==================================================
--- UI HELPERS
+-- HELPERS
 --==================================================
 
-local function create(className, properties, parent)
+local function new(className, properties, parent)
     local object = Instance.new(className)
 
-    for property, value in pairs(properties or {}) do
-        object[property] = value
+    for key, value in pairs(properties or {}) do
+        object[key] = value
     end
 
     object.Parent = parent
     return object
 end
 
-local function corner(parent, radius)
-    return create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 10)
-    }, parent)
+local function round(object, radius)
+    new("UICorner", {
+        CornerRadius = UDim.new(0, radius or 10),
+    }, object)
 end
 
-local function outline(parent, color, thickness)
-    return create("UIStroke", {
-        Color = color or CONFIG.Stroke,
+local function stroke(object, color, thickness)
+    return new("UIStroke", {
+        Color = color or C.Line,
         Thickness = thickness or 1,
-        Transparency = 0
-    }, parent)
+    }, object)
 end
 
-local function label(parent, value, position, size, textSize, color, font)
-    return create("TextLabel", {
+local function measure(value, size, font)
+    local ok, result = pcall(function()
+        return TextService:GetTextSize(
+            value,
+            size,
+            font or F.Gotham,
+            Vector2.new(10000, 1000)
+        )
+    end)
+
+    return ok and result.X or (#value * size * 0.6)
+end
+
+local function box(parent, x, y, width, height, color, radius)
+    local object = new("Frame", {
+        Position = UDim2.fromOffset(x, y),
+        Size = UDim2.fromOffset(width, height),
+        BackgroundColor3 = color or C.Card,
+        BorderSizePixel = 0,
+    }, parent)
+
+    round(object, radius or 12)
+    stroke(object)
+
+    return object
+end
+
+local function label(parent, value, size, x, centerY, width, color, font, align)
+    local height = size + 10
+
+    return new("TextLabel", {
         BackgroundTransparency = 1,
-        Position = position,
-        Size = size,
         Text = value,
-        TextColor3 = color or CONFIG.Text,
-        TextSize = textSize or 14,
-        Font = font or Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextSize = size,
+        Font = font or F.Gotham,
+        Position = UDim2.fromOffset(x, centerY - height / 2),
+        Size = UDim2.fromOffset(width, height),
+        TextColor3 = color or C.Text,
+        TextXAlignment = align or LEFT,
         TextYAlignment = Enum.TextYAlignment.Center,
-        TextWrapped = true
+        TextWrapped = true,
     }, parent)
 end
 
-local function makeButton(parent, value, position, size)
-    local button = create("TextButton", {
-        Position = position,
-        Size = size,
-        BackgroundColor3 = CONFIG.Card,
-        Text = value,
-        TextColor3 = CONFIG.Text,
-        TextSize = 13,
-        Font = Enum.Font.GothamSemibold,
-        AutoButtonColor = true
+local function divider(parent, x, y, width)
+    new("Frame", {
+        Position = UDim2.fromOffset(x, y),
+        Size = UDim2.fromOffset(width, 1),
+        BackgroundColor3 = C.Line,
+        BorderSizePixel = 0,
     }, parent)
-
-    corner(button, 8)
-    outline(button)
-
-    return button
 end
 
-local function makeToggle(parent, title, callback)
-    local row = create("Frame", {
-        BackgroundColor3 = CONFIG.Card,
-        Size = UDim2.new(1, 0, 0, 55)
+local function image(parent, assetId, x, y, width, height, fallback)
+    local id = tostring(assetId or ""):match("%d+")
+
+    if not id then
+        return label(
+            parent, fallback or "M", 24,
+            x, y + height / 2, width,
+            C.Text, F.GothamBlack, CENTER
+        )
+    end
+
+    return new("ImageLabel", {
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://" .. id,
+        Position = UDim2.fromOffset(x, y),
+        Size = UDim2.fromOffset(width, height),
+        ScaleType = Enum.ScaleType.Fit,
     }, parent)
+end
 
-    corner(row, 9)
-    outline(row)
+local function makeToggle(parent, x, centerY, initial, callback)
+    local state = initial == true
 
-    label(
-        row,
-        title,
-        UDim2.new(0, 12, 0, 0),
-        UDim2.new(1, -75, 1, 0),
-        13,
-        CONFIG.Text,
-        Enum.Font.GothamMedium
-    )
-
-    local switch = create("TextButton", {
-        AnchorPoint = Vector2.new(1, 0.5),
-        Position = UDim2.new(1, -12, 0.5, 0),
-        Size = UDim2.new(0, 42, 0, 23),
-        BackgroundColor3 = CONFIG.Stroke,
+    local track = new("TextButton", {
         Text = "",
-        AutoButtonColor = false
-    }, row)
+        AutoButtonColor = false,
+        Position = UDim2.fromOffset(x, centerY - 13),
+        Size = UDim2.fromOffset(44, 26),
+        BackgroundColor3 = state and C.On or C.Off,
+        BorderSizePixel = 0,
+    }, parent)
 
-    corner(switch, 20)
+    round(track, 13)
 
-    local knob = create("Frame", {
-        Position = UDim2.new(0, 3, 0, 3),
-        Size = UDim2.new(0, 17, 0, 17),
-        BackgroundColor3 = CONFIG.Text
-    }, switch)
+    local knob = new("Frame", {
+        Size = UDim2.fromOffset(20, 20),
+        Position = UDim2.fromOffset(state and 21 or 3, 3),
+        BackgroundColor3 = Color3.fromRGB(235, 235, 235),
+        BorderSizePixel = 0,
+    }, track)
 
-    corner(knob, 20)
+    round(knob, 10)
 
-    local enabled = false
+    track.MouseButton1Click:Connect(function()
+        state = not state
 
-    switch.MouseButton1Click:Connect(function()
-        enabled = not enabled
+        local tweenInfo = TweenInfo.new(0.15)
 
-        TweenService:Create(switch, TweenInfo.new(0.15), {
-            BackgroundColor3 = enabled and CONFIG.Accent or CONFIG.Stroke
+        TweenService:Create(track, tweenInfo, {
+            BackgroundColor3 = state and C.On or C.Off,
         }):Play()
 
-        TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = enabled
-                and UDim2.new(1, -20, 0, 3)
-                or UDim2.new(0, 3, 0, 3)
+        TweenService:Create(knob, tweenInfo, {
+            Position = UDim2.fromOffset(state and 21 or 3, 3),
         }):Play()
 
-        -- UI saja. Callback fitur belum diimplementasikan.
         if callback then
-            callback(enabled)
+            callback(state)
         end
     end)
 
-    return row
+    return track
 end
 
-local function makeInput(parent, title, placeholder, callback)
-    local row = create("Frame", {
-        BackgroundColor3 = CONFIG.Card,
-        Size = UDim2.new(1, 0, 0, 65)
-    }, parent)
-
-    corner(row, 9)
-    outline(row)
-
-    label(
-        row,
-        title,
-        UDim2.new(0, 12, 0, 5),
-        UDim2.new(1, -24, 0, 22),
-        12,
-        CONFIG.SubText
-    )
-
-    local input = create("TextBox", {
-        Position = UDim2.new(0, 12, 0, 31),
-        Size = UDim2.new(1, -24, 0, 26),
-        BackgroundColor3 = CONFIG.Background,
-        Text = "",
-        PlaceholderText = placeholder,
-        PlaceholderColor3 = CONFIG.SubText,
-        TextColor3 = CONFIG.Text,
-        TextSize = 13,
-        Font = Enum.Font.Gotham,
-        ClearTextOnFocus = false
-    }, row)
-
-    corner(input, 6)
+local function makeNumberBox(parent, x, y, width, height, initial, callback)
+    local frame = box(parent, x, y, width, height, C.Black, 8)
+    local input = new("TextBox", {
+        BackgroundTransparency = 1,
+        Text = initial or "",
+        PlaceholderText = "Value",
+        TextSize = 14,
+        Font = F.GothamBold,
+        TextColor3 = C.Text,
+        PlaceholderColor3 = C.Sub,
+        Position = UDim2.fromOffset(8, 0),
+        Size = UDim2.new(1, -16, 1, 0),
+        TextXAlignment = LEFT,
+        ClearTextOnFocus = false,
+    }, frame)
 
     input.FocusLost:Connect(function()
         if callback then
@@ -221,127 +252,194 @@ local function makeInput(parent, title, placeholder, callback)
         end
     end)
 
+    return frame
+end
+
+local function makeOption(parent, y, width, title, subtitle, callback, numberValue)
+    local row = new("Frame", {
+        Position = UDim2.fromOffset(0, y),
+        Size = UDim2.fromOffset(width, ROW_H),
+        BackgroundTransparency = 1,
+    }, parent)
+
+    if numberValue then
+        label(row, "↳", 20, 8, 27, 30, C.Muted, F.GothamBold, CENTER)
+
+        label(
+            row, title, 15, 42, 18,
+            width - 150, C.Text, F.GothamBold
+        )
+
+        label(
+            row, subtitle, 11, 42, 40,
+            width - 150, C.Sub, F.GothamMedium
+        )
+
+        makeNumberBox(
+            row,
+            width - 94,
+            15,
+            80,
+            28,
+            numberValue,
+            callback
+        )
+    else
+        makeToggle(row, 8, ROW_H / 2, false, callback)
+
+        label(
+            row, title, 15, 64, 18,
+            width - 76, C.Text, F.GothamBold
+        )
+
+        label(
+            row, subtitle, 11, 64, 40,
+            width - 76, C.Sub, F.GothamMedium
+        )
+    end
+
     return row
 end
 
-local function makeSection(parent, title, subtitle)
-    local section = create("Frame", {
-        BackgroundColor3 = CONFIG.Panel,
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y
-    }, parent)
-
-    corner(section, 12)
-    outline(section)
-
-    local padding = create("UIPadding", {
-        PaddingTop = UDim.new(0, 14),
-        PaddingBottom = UDim.new(0, 14),
-        PaddingLeft = UDim.new(0, 14),
-        PaddingRight = UDim.new(0, 14)
-    }, section)
-
-    local list = create("UIListLayout", {
-        Padding = UDim.new(0, 9),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    }, section)
+local function makeCardHeader(parent, iconText, title, subtitle, width)
+    label(parent, iconText, 25, PAD, PAD + 22, 36, C.Text, F.GothamBold, CENTER)
 
     label(
-        section,
-        title,
-        UDim2.new(),
-        UDim2.new(1, 0, 0, 25),
-        16,
-        CONFIG.Text,
-        Enum.Font.GothamBold
-    ).LayoutOrder = 1
+        parent, title, 21, PAD + 44, PAD + 12,
+        width - 100, C.Text, F.GothamBold
+    )
 
     label(
-        section,
-        subtitle or "",
-        UDim2.new(),
-        UDim2.new(1, 0, 0, 20),
-        11,
-        CONFIG.SubText
-    ).LayoutOrder = 2
+        parent, subtitle, 12, PAD + 44, PAD + 36,
+        width - 70, C.Sub, F.GothamMedium
+    )
 
-    return section
+    divider(parent, PAD, 62, width - PAD * 2)
 end
 
 --==================================================
--- SCREEN GUI
+-- CREATE GUI
 --==================================================
 
-local previous = PlayerGui:FindFirstChild("MuhavesUI")
-if previous then
-    previous:Destroy()
+local oldGui = PlayerGui:FindFirstChild("MuhavesUI")
+if oldGui then
+    oldGui:Destroy()
 end
 
-local Gui = create("ScreenGui", {
+local Gui = new("ScreenGui", {
     Name = "MuhavesUI",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, PlayerGui)
 
-local Window = create("Frame", {
-    Name = "MainWindow",
+local Window = new("Frame", {
+    Name = "Window",
     AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.new(0.5, 0, 0.5, 0),
-    Size = UDim2.new(0, CONFIG.Width, 0, CONFIG.Height),
-    BackgroundColor3 = CONFIG.Background,
-    BorderSizePixel = 0
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(900, 600),
+    BackgroundColor3 = C.Window,
+    BorderSizePixel = 0,
 }, Gui)
 
-corner(Window, 14)
-outline(Window, CONFIG.Stroke, 1)
+round(Window, 18)
+stroke(Window, Color3.fromRGB(55, 55, 58))
+
+local Scale = new("UIScale", {}, Window)
+
+local currentWidth, currentHeight = 900, 600
+
+local function fitWindow()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    local viewport = camera.ViewportSize
+
+    Scale.Scale = math.min(
+        1,
+        math.max(0.35, (viewport.X - 16) / currentWidth),
+        math.max(0.35, (viewport.Y - 16) / currentHeight)
+    )
+end
+
+if workspace.CurrentCamera then
+    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitWindow)
+end
 
 --==================================================
 -- HEADER
 --==================================================
 
-local Header = create("Frame", {
-    Name = "Header",
-    Size = UDim2.new(1, 0, 0, 72),
-    BackgroundColor3 = CONFIG.Panel,
-    BorderSizePixel = 0
+local Header = new("Frame", {
+    Size = UDim2.new(1, 0, 0, HEADER_H),
+    BackgroundTransparency = 1,
 }, Window)
 
-corner(Header, 14)
+divider(Header, 0, HEADER_H - 1, 900)
+
+image(Header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves")
+
+new("Frame", {
+    Position = UDim2.fromOffset(198, 20),
+    Size = UDim2.fromOffset(1, 38),
+    BackgroundColor3 = C.Line,
+    BorderSizePixel = 0,
+}, Header)
 
 label(
-    Header,
-    CONFIG.Title,
-    UDim2.new(0, 20, 0, 9),
-    UDim2.new(0, 300, 0, 28),
-    20,
-    CONFIG.Text,
-    Enum.Font.GothamBlack
+    Header, "P R I V A T E   F A R M I N G",
+    15, 214, 28, 400, C.Text, F.GothamBold
 )
 
 label(
-    Header,
-    CONFIG.Subtitle .. "  •  UI SKELETON",
-    UDim2.new(0, 21, 0, 38),
-    UDim2.new(0, 350, 0, 18),
-    10,
-    CONFIG.SubText,
-    Enum.Font.GothamMedium
+    Header, "Stronger   •   Faster   •   Better",
+    12, 216, 52, 400, C.Sub, F.GothamMedium
 )
 
-local Minimize = makeButton(
-    Header,
-    "—",
-    UDim2.new(1, -92, 0, 18),
-    UDim2.new(0, 30, 0, 30)
-)
+local MinimizeButton = new("TextButton", {
+    Text = "—",
+    TextSize = 18,
+    Font = F.Gotham,
+    TextColor3 = C.Muted,
+    BackgroundTransparency = 1,
+    Position = UDim2.new(1, -84, 0, 22),
+    Size = UDim2.fromOffset(34, 34),
+}, Header)
 
-local Close = makeButton(
-    Header,
-    "X",
-    UDim2.new(1, -50, 0, 18),
-    UDim2.new(0, 30, 0, 30)
-)
+local CloseButton = new("TextButton", {
+    Text = "X",
+    TextSize = 18,
+    Font = F.GothamBold,
+    TextColor3 = C.Text,
+    BackgroundTransparency = 1,
+    Position = UDim2.new(1, -48, 0, 22),
+    Size = UDim2.fromOffset(34, 34),
+}, Header)
+
+local Body = new("Frame", {
+    Name = "Body",
+    Position = UDim2.fromOffset(0, HEADER_H),
+    Size = UDim2.new(1, 0, 1, -HEADER_H),
+    BackgroundTransparency = 1,
+}, Window)
+
+local minimized = false
+
+MinimizeButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    Body.Visible = not minimized
+
+    TweenService:Create(Window, TweenInfo.new(0.2), {
+        Size = UDim2.fromOffset(
+            currentWidth,
+            minimized and HEADER_H or currentHeight
+        ),
+    }):Play()
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    Gui:Destroy()
+end)
 
 -- Drag window
 do
@@ -352,6 +450,7 @@ do
     Header.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
+
             dragging = true
             dragStart = input.Position
             startPosition = Window.Position
@@ -382,327 +481,499 @@ do
     end)
 end
 
-local minimized = false
-
-Minimize.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    Window.Size = minimized
-        and UDim2.new(0, CONFIG.Width, 0, 72)
-        or UDim2.new(0, CONFIG.Width, 0, CONFIG.Height)
-
-    Sidebar.Visible = not minimized
-    Content.Visible = not minimized
-end)
-
-Close.MouseButton1Click:Connect(function()
-    Gui:Destroy()
-end)
-
 --==================================================
 -- SIDEBAR
 --==================================================
 
-local Sidebar = create("Frame", {
-    Name = "Sidebar",
-    Position = UDim2.new(0, 0, 0, 72),
-    Size = UDim2.new(0, 190, 1, -72),
-    BackgroundColor3 = CONFIG.Panel,
-    BorderSizePixel = 0
-}, Window)
+local Sidebar = box(
+    Body, PAD, PAD, SIDEBAR_W, 400, C.Black, 16
+)
 
-local SidebarPadding = create("UIPadding", {
-    PaddingTop = UDim.new(0, 18),
-    PaddingLeft = UDim.new(0, 12),
-    PaddingRight = UDim.new(0, 12)
-}, Sidebar)
+local NavItems = {
+    {"⚡", "Fast Farming"},
+    {"⚙", "Other"},
+    {"ℹ", "Info"},
+}
 
-local SidebarList = create("UIListLayout", {
-    Padding = UDim.new(0, 9),
-    SortOrder = Enum.SortOrder.LayoutOrder
-}, Sidebar)
-
-label(
-    Sidebar,
-    "NAVIGATION",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 24),
-    10,
-    CONFIG.SubText,
-    Enum.Font.GothamBold
-).LayoutOrder = 1
-
-local Content = create("Frame", {
-    Name = "Content",
-    Position = UDim2.new(0, 190, 0, 72),
-    Size = UDim2.new(1, -190, 1, -72),
-    BackgroundTransparency = 1
-}, Window)
-
-local Pages = {}
-local NavButtons = {}
-local currentPage = "Fast Farming"
-
-local function createPage(name)
-    local page = create("ScrollingFrame", {
-        Name = name:gsub("%s+", "") .. "Page",
-        Position = UDim2.new(0, 14, 0, 14),
-        Size = UDim2.new(1, -28, 1, -28),
+for index, item in ipairs(NavItems) do
+    local button = new("TextButton", {
+        Name = item[2],
+        Text = "",
+        AutoButtonColor = false,
+        Position = UDim2.fromOffset(8, 10 + (index - 1) * 52),
+        Size = UDim2.fromOffset(SIDEBAR_W - 16, 44),
+        BackgroundColor3 = C.Card,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        Visible = false
-    }, Content)
+    }, Sidebar)
 
-    local layout = create("UIListLayout", {
-        Padding = UDim.new(0, 12),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    }, page)
+    round(button, 10)
+    local border = stroke(button, C.Line)
+
+    label(
+        button, item[1], 20, 8, 22, 30,
+        C.Muted, F.GothamBold, CENTER
+    )
+
+    label(
+        button, item[2], 15, 44, 22,
+        SIDEBAR_W - 66, C.Text, F.GothamBold
+    )
+
+    button:SetAttribute("PageIndex", index)
+    button:SetAttribute("Active", false)
+    button:SetAttribute("BorderName", "NavigationBorder")
+
+    -- Keep references for navigation.
+    button.MouseButton1Click:Connect(function()
+        -- Set by navigation below.
+        button:SetAttribute("RequestedPage", index)
+    end)
+end
+
+image(
+    Sidebar,
+    ASSETS.Character,
+    8, 172, SIDEBAR_W - 16, 210,
+    ""
+)
+
+--==================================================
+-- PAGE CONTAINER
+-- All pages use a ScrollingFrame.
+-- Fast Farming has content taller than its viewport.
+--==================================================
+
+local Pages = {}
+local PageButtons = {}
+
+local function createPage(name)
+    local page = new("ScrollingFrame", {
+        Name = name:gsub("%s+", "") .. "Page",
+        Position = UDim2.fromOffset(CONTENT_X, CONTENT_Y),
+        Size = UDim2.fromOffset(500, MAX_PAGE_HEIGHT),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+
+        Visible = false,
+
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ScrollBarThickness = 5,
+        ScrollBarImageColor3 = C.On,
+        ScrollBarImageTransparency = 0,
+        ScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+
+        AutomaticCanvasSize = Enum.AutomaticSize.None,
+        CanvasSize = UDim2.fromOffset(0, 0),
+        CanvasPosition = Vector2.zero,
+
+        ClipsDescendants = true,
+    }, Body)
 
     Pages[name] = page
     return page
 end
 
-local function showPage(name)
-    currentPage = name
+local FarmingPage = createPage("Fast Farming")
+local OtherPage = createPage("Other")
+local InfoPage = createPage("Info")
 
-    for pageName, page in pairs(Pages) do
-        page.Visible = pageName == name
-    end
+--==================================================
+-- PAGE LAYOUT HELPERS
+--==================================================
 
-    for buttonName, button in pairs(NavButtons) do
-        button.BackgroundColor3 = buttonName == name
-            and CONFIG.Accent
-            or CONFIG.Card
-    end
-end
-
-local function addNavigation(name, order)
-    local button = makeButton(
-        Sidebar,
-        name,
-        UDim2.new(),
-        UDim2.new(1, 0, 0, 42)
+local function createSection(parent, y, width, height, iconText, title, subtitle)
+    local section = box(
+        parent, 0, y, width, height, C.Section, 16
     )
 
-    button.LayoutOrder = order
-    NavButtons[name] = button
-
-    button.MouseButton1Click:Connect(function()
-        showPage(name)
-    end)
+    makeCardHeader(section, iconText, title, subtitle, width)
+    return section
 end
 
-addNavigation("Fast Farming", 2)
-addNavigation("Other", 3)
-addNavigation("Info", 4)
+local function addPageContent(page, width, totalHeight)
+    page.Size = UDim2.fromOffset(width, MAX_PAGE_HEIGHT)
+    page.CanvasSize = UDim2.fromOffset(width, totalHeight)
+    page.AutomaticCanvasSize = Enum.AutomaticSize.None
+end
 
 --==================================================
 -- FAST FARMING PAGE
+-- Scroll down to view the second card.
 --==================================================
 
-local FarmingPage = createPage("Fast Farming")
+local FARM_CARD_WIDTH = 570
+local FARM_CARD_HEIGHT = 260
+local FARM_CARD_GAP = 12
+local FARM_TOP = 0
 
-local FarmingHeader = makeSection(
+-- Fast Rebirth card
+local RebirthCard = createSection(
     FarmingPage,
-    "Fast Farming",
-    "Kerangka fitur farming — logic belum dipasang."
+    FARM_TOP,
+    FARM_CARD_WIDTH,
+    FARM_CARD_HEIGHT,
+    "👑",
+    "Fast Rebirth",
+    "Rebirth settings and statistics."
 )
-FarmingHeader.LayoutOrder = 1
 
-makeToggle(
-    FarmingHeader,
+local RebirthOptions = box(
+    RebirthCard,
+    PAD, 76,
+    300, 170,
+    C.Card, 12
+)
+
+makeOption(
+    RebirthOptions, 0, 300,
     "Auto Rebirth",
+    "Automatic rebirth placeholder.",
     Callbacks.AutoRebirth
-).LayoutOrder = 3
+)
 
-makeToggle(
-    FarmingHeader,
+divider(RebirthOptions, 12, ROW_H, 276)
+
+makeOption(
+    RebirthOptions, ROW_H, 300,
     "Equip Rebirth Pets",
+    "Pet equip placeholder.",
     Callbacks.EquipRebirthPets
-).LayoutOrder = 4
+)
 
-makeInput(
-    FarmingHeader,
+divider(RebirthOptions, ROW_H * 2, 276)
+
+makeOption(
+    RebirthOptions, ROW_H * 2, 300,
     "Rebirth Target",
-    "Masukkan target rebirth",
-    Callbacks.RebirthTarget
-).LayoutOrder = 5
-
-local StrengthSection = makeSection(
-    FarmingPage,
-    "Strength Farming",
-    "Kerangka fitur strength — logic belum dipasang."
+    "Target value placeholder.",
+    Callbacks.RebirthTarget,
+    "5.000"
 )
-StrengthSection.LayoutOrder = 2
 
-makeToggle(
-    StrengthSection,
+local RebirthStats = box(
+    RebirthCard,
+    326, 76,
+    230, 170,
+    C.Card, 12
+)
+
+label(
+    RebirthStats, "Rebirth Stats",
+    15, 12, 20, 200, C.Text, F.GothamBold
+)
+
+divider(RebirthStats, 12, 40, 206)
+
+label(RebirthStats, "Rebirths", 12, 12, 65, 125, C.Sub)
+label(RebirthStats, "--", 13, 145, 65, 70, C.Text, F.GothamBold, RIGHT)
+
+label(RebirthStats, "Gained", 12, 12, 93, 125, C.Sub)
+label(RebirthStats, "--", 13, 145, 93, 70, C.Text, F.GothamBold, RIGHT)
+
+label(RebirthStats, "Pace / Hour", 12, 12, 121, 125, C.Sub)
+label(RebirthStats, "--", 13, 145, 121, 70, C.Text, F.GothamBold, RIGHT)
+
+label(RebirthStats, "Pace / Day", 12, 12, 149, 125, C.Sub)
+label(RebirthStats, "--", 13, 145, 149, 70, C.Text, F.GothamBold, RIGHT)
+
+-- Fast Strength card
+local strengthY = FARM_CARD_HEIGHT + FARM_CARD_GAP
+
+local StrengthCard = createSection(
+    FarmingPage,
+    strengthY,
+    FARM_CARD_WIDTH,
+    FARM_CARD_HEIGHT,
+    "🏋",
+    "Fast Strength",
+    "Strength farming settings and statistics."
+)
+
+local StrengthOptions = box(
+    StrengthCard,
+    PAD, 76,
+    300, 170,
+    C.Card, 12
+)
+
+makeOption(
+    StrengthOptions, 0, 300,
     "Auto Farm Strength",
+    "Strength farming placeholder.",
     Callbacks.AutoFarmStrength
-).LayoutOrder = 3
-
-makeToggle(
-    StrengthSection,
-    "Controlled Speed",
-    Callbacks.ControlledSpeed
-).LayoutOrder = 4
-
-makeInput(
-    StrengthSection,
-    "Max Reps / Second",
-    "Masukkan nilai reps",
-    Callbacks.MaxReps
-).LayoutOrder = 5
-
-local FarmingStats = makeSection(
-    FarmingPage,
-    "Statistics",
-    "Tampilan placeholder; belum terhubung ke game."
 )
-FarmingStats.LayoutOrder = 3
+
+divider(StrengthOptions, 12, ROW_H, 276)
+
+makeOption(
+    StrengthOptions, ROW_H, 300,
+    "Controlled Speed",
+    "Speed control placeholder.",
+    Callbacks.ControlledSpeed
+)
+
+divider(StrengthOptions, ROW_H * 2, 276)
+
+makeOption(
+    StrengthOptions, ROW_H * 2, 300,
+    "Max Reps / Second",
+    "Maximum reps placeholder.",
+    Callbacks.MaxReps,
+    "659"
+)
+
+local StrengthStats = box(
+    StrengthCard,
+    326, 76,
+    230, 170,
+    C.Card, 12
+)
 
 label(
-    FarmingStats,
-    "Rebirth: --",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 22),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 3
+    StrengthStats, "Strength Stats",
+    15, 12, 20, 200, C.Text, F.GothamBold
+)
 
-label(
-    FarmingStats,
-    "Strength: --",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 22),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 4
+divider(StrengthStats, 12, 40, 206)
 
-label(
-    FarmingStats,
-    "Durability: --",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 22),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 5
+label(StrengthStats, "Strength", 12, 12, 65, 125, C.Sub)
+label(StrengthStats, "--", 13, 145, 65, 70, C.Text, F.GothamBold, RIGHT)
+
+label(StrengthStats, "Durability", 12, 12, 93, 125, C.Sub)
+label(StrengthStats, "--", 13, 145, 93, 70, C.Text, F.GothamBold, RIGHT)
+
+label(StrengthStats, "Str Pace", 12, 12, 121, 125, C.Sub)
+label(StrengthStats, "--", 13, 145, 121, 70, C.Text, F.GothamBold, RIGHT)
+
+label(StrengthStats, "Dura Pace", 12, 12, 149, 125, C.Sub)
+label(StrengthStats, "--", 13, 145, 149, 70, C.Text, F.GothamBold, RIGHT)
+
+local farmingTotalHeight =
+    strengthY + FARM_CARD_HEIGHT + FARM_CARD_GAP
+
+addPageContent(
+    FarmingPage,
+    FARM_CARD_WIDTH,
+    farmingTotalHeight
+)
 
 --==================================================
 -- OTHER PAGE
 --==================================================
 
-local OtherPage = createPage("Other")
+local OTHER_WIDTH = 570
+local TILE_WIDTH = 270
+local TILE_HEIGHT = 100
+local TILE_GAP = 10
 
-local OtherSection = makeSection(
+local OtherCard = createSection(
     OtherPage,
-    "Other Utilities",
-    "Semua kontrol di bawah hanya UI; belum menjalankan fitur."
+    0,
+    OTHER_WIDTH,
+    510,
+    "⚙",
+    "Other",
+    "Additional utilities — UI placeholders only."
 )
-OtherSection.LayoutOrder = 1
 
-makeToggle(OtherSection, "Eat Eggs (Auto)", Callbacks.EatEggs).LayoutOrder = 3
-makeToggle(OtherSection, "Eat Shake (Auto)", Callbacks.EatShake).LayoutOrder = 4
-makeToggle(OtherSection, "Spin Fortune Wheel", Callbacks.SpinWheel).LayoutOrder = 5
-makeToggle(OtherSection, "Eat All Boosts", Callbacks.EatAllBoosts).LayoutOrder = 6
-makeToggle(OtherSection, "Hide Pets", Callbacks.HidePets).LayoutOrder = 7
-makeToggle(OtherSection, "Hide Popups", Callbacks.HidePopups).LayoutOrder = 8
-makeToggle(OtherSection, "Anti AFK", Callbacks.AntiAFK).LayoutOrder = 9
-makeToggle(OtherSection, "Anti Lag", Callbacks.AntiLag).LayoutOrder = 10
-makeToggle(OtherSection, "Render 3D Off", Callbacks.Render3D).LayoutOrder = 11
-makeToggle(OtherSection, "FPS Limiter", Callbacks.FPSCap).LayoutOrder = 12
-makeToggle(OtherSection, "Hide Players", Callbacks.HidePlayers).LayoutOrder = 13
+local OtherItems = {
+    {"Eat Eggs (Auto)", "Egg automation placeholder.", Callbacks.EatEggs},
+    {"Eat Shake (Auto)", "Shake placeholder.", Callbacks.EatShake},
+    {"Spin Fortune Wheel", "Wheel placeholder.", Callbacks.SpinWheel},
+    {"Eat All Boosts", "Boost placeholder.", Callbacks.EatAllBoosts},
+    {"Hide Pets", "Pet visibility placeholder.", Callbacks.HidePets},
+    {"Hide Popups", "Popup visibility placeholder.", Callbacks.HidePopups},
+    {"Anti AFK", "AFK placeholder.", Callbacks.AntiAFK},
+    {"Anti Lag", "Visual optimization placeholder.", Callbacks.AntiLag},
+    {"Render 3D Off", "Rendering placeholder.", Callbacks.Render3D},
+    {"FPS Limiter", "FPS placeholder.", Callbacks.FPSCap},
+    {"Hide Players", "Player visibility placeholder.", Callbacks.HidePlayers},
+}
 
-local OtherStatus = makeSection(
+local tileStartY = 76
+
+for index, item in ipairs(OtherItems) do
+    local column = (index - 1) % 2
+    local row = math.floor((index - 1) / 2)
+
+    local tile = box(
+        OtherCard,
+        PAD + column * (TILE_WIDTH + TILE_GAP),
+        tileStartY + row * (TILE_HEIGHT + TILE_GAP),
+        TILE_WIDTH,
+        TILE_HEIGHT,
+        C.Card,
+        12
+    )
+
+    label(
+        tile, item[1], 14, 12, 27,
+        TILE_WIDTH - 24, C.Text, F.GothamBold
+    )
+
+    label(
+        tile, item[2], 10, 12, 51,
+        TILE_WIDTH - 24, C.Sub, F.GothamMedium
+    )
+
+    makeToggle(
+        tile,
+        TILE_WIDTH - 54,
+        80,
+        false,
+        item[3]
+    )
+end
+
+local otherTotalHeight =
+    tileStartY + math.ceil(#OtherItems / 2) * (TILE_HEIGHT + TILE_GAP) + PAD
+
+OtherCard.Size = UDim2.fromOffset(OTHER_WIDTH, otherTotalHeight)
+
+addPageContent(
     OtherPage,
-    "Status",
-    "Placeholder status."
+    OTHER_WIDTH,
+    otherTotalHeight
 )
-OtherStatus.LayoutOrder = 2
-
-label(
-    OtherStatus,
-    "FPS: --",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 22),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 3
-
-label(
-    OtherStatus,
-    "Utilities: Standby",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 22),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 4
 
 --==================================================
 -- INFO PAGE
 --==================================================
 
-local InfoPage = createPage("Info")
-
-local InfoSection = makeSection(
+local INFO_WIDTH = 570
+local InfoCard = createSection(
     InfoPage,
-    "Information",
-    "Tentang script."
+    0,
+    INFO_WIDTH,
+    310,
+    "ℹ",
+    "Info",
+    "About Muhaves Private Farming."
 )
-InfoSection.LayoutOrder = 1
+
+image(InfoCard, ASSETS.LogoInfo, 20, 82, 150, 90, "Muhaves")
 
 label(
-    InfoSection,
-    "Author: MuhavesDevs",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 24),
-    13,
-    CONFIG.Text
-).LayoutOrder = 3
+    InfoCard, "MuhavesDevs",
+    18, 190, 104, 340, C.Text, F.GothamBold
+)
 
 label(
-    InfoSection,
-    "Game: Muscle Legends",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 24),
-    13,
-    CONFIG.Text
-).LayoutOrder = 4
+    InfoCard, "Muscle Legends",
+    14, 190, 136, 340, C.Sub, F.GothamMedium
+)
 
 label(
-    InfoSection,
-    "Status: UI Skeleton",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 24),
-    13,
-    CONFIG.Text
-).LayoutOrder = 5
+    InfoCard, "Status: UI Skeleton",
+    13, 190, 164, 340, C.Sub, F.GothamMedium
+)
+
+divider(InfoCard, PAD, 192, INFO_WIDTH - PAD * 2)
 
 label(
-    InfoSection,
-    "Fast Farming dan Other bisa dikembangkan secara terpisah.",
-    UDim2.new(),
-    UDim2.new(1, 0, 0, 42),
-    12,
-    CONFIG.SubText
-).LayoutOrder = 6
+    InfoCard,
+    "Fast Farming and Other are empty UI frameworks.",
+    12, PAD, 220, INFO_WIDTH - PAD * 2, C.Sub, F.GothamMedium
+)
+
+label(
+    InfoCard,
+    "You can connect separate modules later.",
+    12, PAD, 246, INFO_WIDTH - PAD * 2, C.Sub, F.GothamMedium
+)
+
+addPageContent(InfoPage, INFO_WIDTH, 310)
 
 --==================================================
--- INITIAL PAGE
+-- NAVIGATION
 --==================================================
 
-showPage("Fast Farming")
+local function selectPage(name)
+    for pageName, page in pairs(Pages) do
+        page.Visible = pageName == name
+    end
+
+    for _, button in ipairs(Sidebar:GetChildren()) do
+        if button:IsA("TextButton") then
+            local isActive = button.Name == name
+
+            button.BackgroundTransparency = isActive and 0 or 1
+
+            local border = button:FindFirstChildOfClass("UIStroke")
+            if border then
+                border.Enabled = isActive
+            end
+        end
+    end
+
+    local page = Pages[name]
+    if not page then return end
+
+    local contentWidth = page.CanvasSize.X.Offset
+    local contentHeight = page.CanvasSize.Y.Offset
+
+    local viewportHeight = math.min(
+        contentHeight,
+        MAX_PAGE_HEIGHT
+    )
+
+    page.Size = UDim2.fromOffset(
+        contentWidth,
+        viewportHeight
+    )
+
+    currentWidth = CONTENT_X + contentWidth + PAD
+    currentHeight = HEADER_H + PAD + viewportHeight + PAD
+
+    local viewport = workspace.CurrentCamera
+        and workspace.CurrentCamera.ViewportSize
+
+    if viewport then
+        local sidebarHeight = math.max(
+            viewportHeight,
+            300
+        )
+
+        Sidebar.Size = UDim2.fromOffset(
+            SIDEBAR_W,
+            sidebarHeight
+        )
+    end
+
+    minimized = false
+    Body.Visible = true
+
+    TweenService:Create(Window, TweenInfo.new(0.2), {
+        Size = UDim2.fromOffset(currentWidth, currentHeight),
+    }):Play()
+
+    page.CanvasPosition = Vector2.zero
+    fitWindow()
+end
+
+for _, item in ipairs(NavItems) do
+    local button = Sidebar:FindFirstChild(item[2])
+
+    if button then
+        button.MouseButton1Click:Connect(function()
+            selectPage(item[2])
+        end)
+    end
+end
 
 --==================================================
--- RETURN REFERENCES
+-- INITIALIZE
 --==================================================
+
+selectPage("Fast Farming")
 
 return {
     Gui = Gui,
     Pages = Pages,
+    Rebirth = RebirthCard,
+    Strength = StrengthCard,
+    Other = OtherCard,
+    Info = InfoCard,
     Callbacks = Callbacks,
-    Config = CONFIG
 }
