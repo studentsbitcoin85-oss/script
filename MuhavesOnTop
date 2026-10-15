@@ -1299,8 +1299,84 @@ Callbacks.EatShake = function(s) flag.shake = s if s then eatShake() end end
 Callbacks.SpinWheel = function(s) flag.spin = s end
 Callbacks.EatAllBoosts = function(s) flag.boosts = s end
 Callbacks.AntiAFK = function(s) flag.antiAfk = s end
-Callbacks.HidePets = function(s)
-	if showPetsEvent then showPetsEvent:FireServer(s and "hidePets" or "showPets") end
+-- HIDE PETS: pakai opsi bawaan game + sembunyikan pet SEMUA pemain di server (sisi client, bisa dikembalikan).
+-- Pet dikenali dari nama pet di petsFolder tiap pemain + daftar PETS.
+do
+	local on = false
+	local saved = setmetatable({}, {__mode = "k"}) -- instance -> {properti, nilai asli}
+	local names, conns = {}, {}
+
+	local function hideInst(d)
+		local prop = (d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture")) and "Transparency"
+			or ((d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam")) and "Enabled")
+		if not prop or saved[d] ~= nil then return end
+		saved[d] = {prop, d[prop]}
+		d[prop] = (prop == "Enabled") and false or 1
+	end
+	local function hideModel(m)
+		if services.players:GetPlayerFromCharacter(m) then return end
+		hideInst(m)
+		for _, d in ipairs(m:GetDescendants()) do hideInst(d) end
+		conns[#conns + 1] = m.DescendantAdded:Connect(function(d) if on then pcall(hideInst, d) end end)
+	end
+	local function isPet(d)
+		return (d:IsA("Model") or d:IsA("BasePart")) and names[d.Name] == true
+	end
+	local function refreshNames()
+		local added = false
+		for _, p in ipairs(services.players:GetPlayers()) do
+			local pf = p:FindFirstChild("petsFolder")
+			if pf then
+				for _, folder in ipairs(pf:GetChildren()) do
+					if folder:IsA("Folder") then
+						for _, pet in ipairs(folder:GetChildren()) do
+							if not names[pet.Name] then names[pet.Name] = true added = true end
+						end
+					end
+				end
+			end
+		end
+		return added
+	end
+	local function scan()
+		for i, d in ipairs(workspace:GetDescendants()) do
+			if not on then return end
+			if isPet(d) then pcall(hideModel, d) end
+			if i % 500 == 0 then task.wait() end
+		end
+	end
+
+	local function setHidden(state)
+		if state == on then return end
+		on = state
+		if on then
+			for k in pairs(PETS) do names[k] = true end
+			refreshNames()
+			conns[#conns + 1] = workspace.DescendantAdded:Connect(function(d)
+				if on and isPet(d) then pcall(hideModel, d) end
+			end)
+			task.spawn(scan)
+			task.spawn(function()
+				while on and alive() do
+					task.wait(3)
+					if on and refreshNames() then scan() end
+				end
+			end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for d, v in pairs(saved) do
+				if d.Parent then pcall(function() d[v[1]] = v[2] end) end
+			end
+			table.clear(saved)
+		end
+	end
+
+	Callbacks.HidePets = function(state)
+		if showPetsEvent then showPetsEvent:FireServer(state and "hidePets" or "showPets") end
+		setHidden(state)
+	end
+	gui.Destroying:Connect(function() setHidden(false) end)
 end
 Callbacks.HidePopups = function()
 	-- event ini sifatnya toggle di sisi game
