@@ -745,6 +745,12 @@ end
 
 ---------------------------------------------------------------------
 -- PAGE 1: Fast Farming
+-- Locals needed later (return table / other pages) are declared here; everything else lives inside the do-block
+-- and is released afterwards (Luau allows max 200 locals per function).
+local rbStatus, rbRebirths, rbGained, rbHour, rbDay
+local fsStatus, fsRuntime, fsStr, fsStrG, fsDura, fsDurG, fsSP, fsDP, fsSA, fsDA
+local cardW1
+do
 local p1 = newPage()
 
 local rbRows = {
@@ -777,7 +783,7 @@ local PACE_LONG = "000.00M/s | 00.00B/m | 0.00T/h | 00.00T/d"
 local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE_LONG, 13) + 10 + 14
 
 local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
-local cardW1 = inner1 + 2 * PAD
+cardW1 = inner1 + 2 * PAD
 local rbStatsW = inner1 - rbOptsW - GAP
 local fsStatsW = inner1 - fsOptsW - GAP
 local BOX_H = RH * 3
@@ -794,7 +800,7 @@ local PANEL_T = 0.4
 -- Rebirth
 local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
 cardBG(rbCard, ASSETS.FarmBG, FARM_SHADE)
-local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
+rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
 
 local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RH * 5, CARD, 12)
 rbOpts.BackgroundTransparency = PANEL_T
@@ -820,15 +826,15 @@ rbStats.BackgroundTransparency = PANEL_T
 text(rbStats, "Rebirth Stats", 17, 14, 28, 220, TX, F.GothamBold)
 local rvx = rbStatsW - 14 - RB_VW
 local rnW = rvx - 44 - 4
-local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 84, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbGained   = srow(rbStats, "📈", "Gained", "0", 130, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 176, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 84, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbGained   = srow(rbStats, "📈", "Gained", "0", 130, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 176, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
 
 -- Strength
 local fsCard = box(p1, 0, RB_CARD_H + GAP, cardW1, CARD_H, SEC, 16)
 cardBG(fsCard, ASSETS.FarmBG, FARM_SHADE)
-local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Strength farming with detailed stats.", "Status: Inactive", "🕒 0d 0h 0m 0s")
+fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Strength farming with detailed stats.", "Status: Inactive", "🕒 0d 0h 0m 0s")
 fsRuntime.TextXAlignment = CENTER
 fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
 fsRuntime.Size = UDim2.new(1, 0, 0, fsRuntime.Size.Y.Offset)
@@ -847,16 +853,17 @@ text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
 local vnW = vx - 48
 local paceW = fsStatsW - vx - 14 -- use all the remaining box width for the pace rows
-local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold, vnW)
-local fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 46, paceW - 90, TX), 13, 8)
-local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
-local fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
-local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13, nil, nil, vnW)
-local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, nil, vnW)
-local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
-local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
+fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold, vnW)
+fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 46, paceW - 90, TX), 13, 8)
+fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
+fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
+fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13, nil, nil, vnW)
+fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, nil, vnW)
+fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
+fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
 
 sizes[1] = {w = cardW1, h = RB_CARD_H + CARD_H + GAP}
+end
 
 ---------------------------------------------------------------------
 -- PAGE 2: Extras (all toggles are visual only; their functions are filled in through the Callbacks table)
@@ -910,6 +917,8 @@ sizes[2] = {w = cardW2, h = cardH2}
 
 ---------------------------------------------------------------------
 -- PAGE 3: Info (all text is bold and brighter so it is easy to read)
+-- Wrapped in do ... end so its many locals are released afterwards (Luau allows max 200 locals per function).
+do
 local p3 = newPage()
 local BLD = F.GothamBold
 local w1 = math.max(190, tw("Private Farming", 19, BLD)) + 2 * PAD
@@ -974,6 +983,7 @@ do
 end
 image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
+end
 
 ---------------------------------------------------------------------
 -- Live rebirth display: Rebirths (total, full number), Gained (since the script started), pace per hour / day.
