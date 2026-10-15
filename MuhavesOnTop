@@ -1,131 +1,14 @@
 --[[
-    Muhaves Private Farming - SATU FILE (UI + logika farming)
-    Tinggal jalankan file ini. Tidak perlu URL atau file lain.
+    Muhaves Private Farming - UI + Farming (v21)
+    LocalScript. Tab: Fast Farming / Other / Info.
+
+    Satu file: UI (dibungkus function) + logika farming di bagian bawah.
+    Semua toggle terhubung lewat tabel UI.Callbacks. Script mengembalikan tabel UI
+    (UI.Gui, UI.Rebirth, UI.Strength, UI.Other, UI.Callbacks).
 ]]
 
-----------------------------------------------------------------------
--- Services & session
-----------------------------------------------------------------------
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local VirtualUser = game:GetService("VirtualUser")
+local UI = (function()
 
-local player = Players.LocalPlayer
-
-local SESSION_ID = (_G.MuhavesFarmingSession or 0) + 1
-_G.MuhavesFarmingSession = SESSION_ID
-local function alive()
-    return _G.MuhavesFarmingSession == SESSION_ID
-end
-
-if _G.MuhavesFarmingConns then
-    for _, c in ipairs(_G.MuhavesFarmingConns) do
-        pcall(function() c:Disconnect() end)
-    end
-end
-_G.MuhavesFarmingConns = {}
-local function track(conn)
-    table.insert(_G.MuhavesFarmingConns, conn)
-    return conn
-end
-
-local function loop(interval, fn)
-    task.spawn(function()
-        while alive() do
-            local ok, err = pcall(fn)
-            if not ok then warn("[Farming] " .. tostring(err)) end
-            task.wait(interval)
-        end
-    end)
-end
-
--- Log di layar: tetap terlihat walau notifikasi/console tidak tampil
-local logGui, logLabel, logLines, hadError = nil, nil, {}, false
-local function ensureLog()
-    if logGui and logGui.Parent then return end
-    logGui = Instance.new("ScreenGui")
-    logGui.Name = "MuhavesDebug"
-    logGui.ResetOnSpawn = false
-    logGui.DisplayOrder = 999
-    logGui.IgnoreGuiInset = true
-    local placed = false
-    if type(gethui) == "function" then
-        placed = pcall(function() logGui.Parent = gethui() end) and logGui.Parent ~= nil
-    end
-    if not placed then
-        placed = pcall(function() logGui.Parent = game:GetService("CoreGui") end) and logGui.Parent ~= nil
-    end
-    if not placed then logGui.Parent = player:WaitForChild("PlayerGui") end
-    logLabel = Instance.new("TextLabel")
-    logLabel.BackgroundColor3 = Color3.new(0, 0, 0)
-    logLabel.BackgroundTransparency = 0.25
-    logLabel.TextColor3 = Color3.new(1, 1, 1)
-    logLabel.Font = Enum.Font.Code
-    logLabel.TextSize = 14
-    logLabel.TextWrapped = true
-    logLabel.TextXAlignment = Enum.TextXAlignment.Left
-    logLabel.TextYAlignment = Enum.TextYAlignment.Top
-    logLabel.Position = UDim2.fromOffset(10, 40)
-    logLabel.Size = UDim2.fromOffset(460, 170)
-    logLabel.Parent = logGui
-end
-
-local function notify(text, isError)
-    text = tostring(text)
-    warn("[Muhaves] " .. text)
-    if isError then hadError = true end
-    table.insert(logLines, (isError and "[X] " or "[ok] ") .. text)
-    if #logLines > 9 then table.remove(logLines, 1) end
-    pcall(function()
-        ensureLog()
-        logLabel.Text = table.concat(logLines, "\n")
-    end)
-end
-
-local function hideLog()
-    if logGui and not hadError then pcall(function() logGui:Destroy() end) end
-end
-
-notify("Connector mulai berjalan")
-
-----------------------------------------------------------------------
--- Anti AFK (selalu aktif, tidak bergantung toggle di UI)
-----------------------------------------------------------------------
-local function antiAfkPulse()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
-end
-track(player.Idled:Connect(function()
-    if alive() then antiAfkPulse() end
-end))
-loop(60, antiAfkPulse)
-
-----------------------------------------------------------------------
--- Cleanup awal
-----------------------------------------------------------------------
-for _, d in ipairs(game:GetDescendants()) do
-    if d.Name == "RobloxForwardPortals" then d:Destroy() end
-end
-track(game.DescendantAdded:Connect(function(d)
-    if alive() and d.Name == "RobloxForwardPortals" then d:Destroy() end
-end))
-
-local function removeBodyMovement(char)
-    local s = char and char:WaitForChild("bodyMovementScript", 5)
-    if s then s:Destroy() end
-end
-task.spawn(removeBodyMovement, player.Character)
-track(player.CharacterAdded:Connect(function(char)
-    task.spawn(removeBodyMovement, char)
-end))
-
-----------------------------------------------------------------------
--- Library UI (tertanam, tidak perlu URL)
-----------------------------------------------------------------------
-local function buildLibrary()
 local ASSETS = {
 	LogoHeader   = "91147250558427",
 	Character    = "96640742460759",
@@ -137,7 +20,9 @@ local ASSETS = {
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local TextService = game:GetService("TextService")
+local LocalPlayer = Players.LocalPlayer
 
 local BLACK = Color3.fromRGB(2, 2, 3)
 local WIN   = BLACK
@@ -153,485 +38,59 @@ local ONBG  = Color3.fromRGB(104, 104, 110)
 local LEFT, CENTER, RIGHT = Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right
 local F = Enum.Font
 
+-- Hook kosong: isi dari luar nanti. Toggle/angka di UI selalu memanggil versi terbaru dari tabel ini.
 local Callbacks = {
 	AutoRebirth = function(s) end, EquipRebirthPets = function(s) end, RebirthTarget = function(v) end,
 	AutoFarmStrength = function(s) end, ControlledSpeed = function(s) end, MaxReps = function(v) end,
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
-	AntiAFK = function(s) end, AntiLag = function(s) end,
+	AntiAFK = function(s) end, AntiLag = function(s) end, Render3D = function(s) end,
+	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end,
 }
 
--- Callback diambil saat dipanggil (bukan saat UI dibuat), jadi bisa diganti belakangan
-local function late(name)
-	return function(...)
-		local f = Callbacks[name]
-		if f then return f(...) end
+---------------------------------------------------------------------
+-- REBIRTH: hanya MEMBACA angka rebirth pemain untuk ditampilkan di UI (tidak ada aksi ke game).
+local SUFFIX = {"", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"}
+
+local function abbr(n)
+	local neg = n < 0
+	n = math.abs(n)
+	local i = 1
+	while n >= 1000 and i < #SUFFIX do
+		n /= 1000
+		i += 1
 	end
+	local s = i == 1 and tostring(math.floor(n + 0.5)) or string.format("%.2f", n)
+	return (neg and "-" or "") .. s .. SUFFIX[i]
+end
+
+-- angka penuh dengan titik pemisah ribuan: 150000 -> 150.000
+local function full(n)
+	local s = string.format("%.0f", math.abs(n))
+	s = s:reverse():gsub("(%d%d%d)", "%1."):reverse()
+	s = s:gsub("^%.", "")
+	return (n < 0 and "-" or "") .. s
+end
+
+local function isNum(v) return v:IsA("IntValue") or v:IsA("NumberValue") end
+
+-- cari nilai rebirth: leaderstats.Rebirths dulu, lalu nama apa pun yang mengandung "rebirth" di pemain
+local function findRebirthObj()
+	local ls = LocalPlayer:FindFirstChild("leaderstats")
+	local direct = ls and ls:FindFirstChild("Rebirths")
+	if direct and isNum(direct) then return direct end
+	for _, root in ipairs({ls, LocalPlayer}) do
+		if root then
+			for _, d in ipairs(root:GetDescendants()) do
+				if isNum(d) and d.Name:lower():find("rebirth", 1, true) then return d end
+			end
+		end
+	end
+	return nil
 end
 
 ---------------------------------------------------------------------
--- UTILITAS SISI KLIEN: Anti AFK, Anti Lag, Hide Popups, Render 3D Off, FPS Limiter, Hide Players
----------------------------------------------------------------------
-local VirtualUser = game:GetService("VirtualUser")
-local Lighting = game:GetService("Lighting")
-local LocalPlayer = Players.LocalPlayer
-
-local StatsInfo = {
-	afkOn = false, afkSince = 0, afkPings = 0, afkIdled = 0, afkLast = 0,
-	lagOn = false, lagCount = 0,
-	popOn = false, popCount = 0, popLast = "-",
-	fpsNote = "", fps = 0,
-}
-
--- ANTI AFK
-do
-	local afk = {conn = nil, token = 0}
-
-	local function poke(kind)
-		local ok = pcall(function()
-			VirtualUser:CaptureController()
-			VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame)
-		end)
-		if ok then
-			StatsInfo.afkPings += 1
-			StatsInfo.afkLast = os.clock()
-			if kind == "idled" then StatsInfo.afkIdled += 1 end
-		end
-	end
-
-	Callbacks.AntiAFK = function(state)
-		afk.token += 1
-		if afk.conn then afk.conn:Disconnect() afk.conn = nil end
-		StatsInfo.afkOn = state
-		if not state then return end
-
-		StatsInfo.afkSince, StatsInfo.afkPings, StatsInfo.afkIdled, StatsInfo.afkLast = os.clock(), 0, 0, 0
-		afk.conn = LocalPlayer.Idled:Connect(function() poke("idled") end)
-
-		local my = afk.token
-		task.spawn(function()
-			while afk.token == my do
-				for _ = 1, 60 do
-					if afk.token ~= my then return end
-					task.wait(1)
-				end
-				poke("timer")
-			end
-		end)
-	end
-end
-
--- ANTI LAG: matikan efek visual (reversibel, nilai asli disimpan)
-do
-	local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}),
-		lighting = nil, quality = nil, terrain = nil, token = 0}
-
-	local EMITTERS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true,
-		Sparkles = true, PointLight = true, SpotLight = true, SurfaceLight = true, Highlight = true}
-	local POST = {BloomEffect = true, BlurEffect = true, SunRaysEffect = true,
-		ColorCorrectionEffect = true, DepthOfFieldEffect = true}
-
-	local function dampen(obj)
-		if antiLag.saved[obj] then return end
-		local cls = obj.ClassName
-		if EMITTERS[cls] or POST[cls] then
-			antiLag.saved[obj] = {kind = "enabled", v = obj.Enabled}
-			obj.Enabled = false
-			StatsInfo.lagCount += 1
-		elseif cls == "ForceField" then
-			antiLag.saved[obj] = {kind = "ff", v = obj.Visible}
-			obj.Visible = false
-			StatsInfo.lagCount += 1
-		elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
-			local s = {kind = "part", mat = obj.Material, refl = obj.Reflectance, shadow = obj.CastShadow}
-			if obj:IsA("MeshPart") then
-				s.fid = obj.RenderFidelity
-				obj.RenderFidelity = Enum.RenderFidelity.Performance
-			end
-			antiLag.saved[obj] = s
-			obj.Material = Enum.Material.SmoothPlastic
-			obj.Reflectance = 0
-			obj.CastShadow = false
-			StatsInfo.lagCount += 1
-		elseif obj:IsA("Decal") or obj:IsA("Texture") then
-			antiLag.saved[obj] = {kind = "decal", v = obj.Transparency}
-			obj.Transparency = 1
-			StatsInfo.lagCount += 1
-		end
-	end
-
-	local function restore(obj, s)
-		if s.kind == "enabled" then obj.Enabled = s.v
-		elseif s.kind == "ff" then obj.Visible = s.v
-		elseif s.kind == "part" then
-			obj.Material, obj.Reflectance, obj.CastShadow = s.mat, s.refl, s.shadow
-			if s.fid then obj.RenderFidelity = s.fid end
-		elseif s.kind == "decal" then obj.Transparency = s.v
-		elseif s.kind == "atm" then obj.Density, obj.Haze = s.d, s.h end
-	end
-
-	Callbacks.AntiLag = function(state)
-		if state == antiLag.on then return end
-		antiLag.on = state
-		StatsInfo.lagOn = state
-		antiLag.token += 1
-		local my = antiLag.token
-
-		if state then
-			StatsInfo.lagCount = 0
-			antiLag.lighting = {GlobalShadows = Lighting.GlobalShadows,
-				EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-				EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
-				Brightness = Lighting.Brightness}
-			pcall(function() antiLag.quality = settings().Rendering.QualityLevel end)
-			Lighting.GlobalShadows = false
-			Lighting.EnvironmentDiffuseScale = 0
-			Lighting.EnvironmentSpecularScale = 0
-			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
-
-			pcall(function()
-				local t = workspace.Terrain
-				antiLag.terrain = {WaterWaveSize = t.WaterWaveSize, WaterWaveSpeed = t.WaterWaveSpeed,
-					WaterReflectance = t.WaterReflectance}
-				t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance = 0, 0, 0
-			end)
-
-			for _, d in ipairs(Lighting:GetDescendants()) do pcall(dampen, d) end
-			local atm = Lighting:FindFirstChildOfClass("Atmosphere")
-			if atm then
-				antiLag.saved[atm] = {kind = "atm", d = atm.Density, h = atm.Haze}
-				atm.Density, atm.Haze = 0, 0
-			end
-
-			antiLag.conn = workspace.DescendantAdded:Connect(function(d)
-				if antiLag.on then pcall(dampen, d) end
-			end)
-
-			task.spawn(function()
-				local n = 0
-				for _, d in ipairs(workspace:GetDescendants()) do
-					if antiLag.token ~= my then return end
-					pcall(dampen, d)
-					n += 1
-					if n % 300 == 0 then RunService.Heartbeat:Wait() end
-				end
-			end)
-		else
-			if antiLag.conn then antiLag.conn:Disconnect() antiLag.conn = nil end
-			for k, v in pairs(antiLag.lighting or {}) do pcall(function() Lighting[k] = v end) end
-			for k, v in pairs(antiLag.terrain or {}) do pcall(function() workspace.Terrain[k] = v end) end
-			if antiLag.quality then
-				pcall(function() settings().Rendering.QualityLevel = antiLag.quality end)
-			end
-			local list = antiLag.saved
-			antiLag.saved = setmetatable({}, {__mode = "k"})
-			task.spawn(function()
-				local n = 0
-				for obj, s in pairs(list) do
-					pcall(restore, obj, s)
-					n += 1
-					if n % 300 == 0 then RunService.Heartbeat:Wait() end
-				end
-			end)
-		end
-	end
-end
-
--- RENDER 3D OFF
-Callbacks.Render3D = function(state)
-	pcall(function() RunService:Set3dRenderingEnabled(not state) end)
-end
-
--- FPS LIMITER (butuh setfpscap dari executor)
-Callbacks.FPSCap = function(state)
-	if type(setfpscap) == "function" then
-		pcall(setfpscap, state and 20 or 60)
-		StatsInfo.fpsNote = state and "FPS cap 20" or ""
-	else
-		StatsInfo.fpsNote = "executor tidak mendukung setfpscap"
-	end
-end
-
--- HIDE POPUPS
-do
-	local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce", "stateffects"}
-	local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar", "quest", "mission", "misi",
-		"shop", "store", "inventory", "settings", "trade", "index", "rewardlist", "codes"}
-
-	local popup = {on = false, token = 0, conns = {},
-		hidden = setmetatable({}, {__mode = "k"}),
-		baseline = setmetatable({}, {__mode = "k"}),
-		labelSet = setmetatable({}, {__mode = "k"}),
-		seen = setmetatable({}, {__mode = "k"}),
-		counted = setmetatable({}, {__mode = "k"}),
-		spawn = setmetatable({}, {__mode = "k"})}
-
-	local function gainText(t)
-		return t ~= "" and t:match("^%s*[%+%-]%s*%d") ~= nil
-	end
-
-	local function ignored(o)
-		if o.Name == "MuhavesUI" or o:FindFirstAncestor("MuhavesUI") then return true end
-		local a = o
-		while a and a ~= workspace and not a:IsA("PlayerGui") do
-			local n = a.Name:lower()
-			for _, k in ipairs(POPUP_IGNORE) do
-				if n:find(k, 1, true) then return true end
-			end
-			a = a.Parent
-		end
-		return false
-	end
-
-	local function layouty(p)
-		return p:IsA("ScrollingFrame") or p:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
-	end
-
-	local function inScrolling(o)
-		local a = o.Parent
-		while a and not a:IsA("PlayerGui") and a ~= workspace do
-			if a:IsA("ScrollingFrame") then return true end
-			a = a.Parent
-		end
-		return false
-	end
-
-	local function unhide(o)
-		local s = popup.hidden[o]
-		if not s then return end
-		popup.hidden[o] = nil
-		for _, c in ipairs({s.conn, s.conn2, s.conn3}) do if c then c:Disconnect() end end
-		pcall(function() o[s.prop] = s.v end)
-	end
-
-	local function hideTarget(o, why, srcLabel)
-		if popup.hidden[o] or ignored(o) or inScrolling(o) then return end
-		local prop = o:IsA("LayerCollector") and "Enabled" or "Visible"
-		local s = {prop = prop, v = o[prop]}
-		popup.hidden[o] = s
-		o[prop] = false
-		if not popup.counted[o] then
-			popup.counted[o] = true
-			StatsInfo.popCount += 1
-		end
-		local full = o:GetFullName():gsub("^.-PlayerGui%.", "")
-		StatsInfo.popLast = why .. ": " .. full:sub(-46)
-		s.conn = o:GetPropertyChangedSignal(prop):Connect(function()
-			if popup.on and o[prop] == true then o[prop] = false end
-		end)
-		s.conn2 = o.Destroying:Connect(function()
-			popup.hidden[o] = nil
-			if s.conn then s.conn:Disconnect() end
-			if s.conn3 then s.conn3:Disconnect() end
-		end)
-		if srcLabel then
-			s.conn3 = srcLabel:GetPropertyChangedSignal("Text"):Connect(function()
-				if not gainText(srcLabel.Text) then
-					popup.seen[srcLabel] = nil
-					unhide(o)
-				end
-			end)
-		end
-	end
-
-	local function pickTarget(lbl)
-		local t, p = lbl, lbl.Parent
-		while p and p:IsA("GuiObject") and not popup.baseline[p] and not layouty(p) do
-			t, p = p, p.Parent
-		end
-		if p and p:IsA("LayerCollector") and not popup.baseline[p] then
-			return p
-		end
-		if t == lbl and popup.baseline[lbl] and p and p:IsA("GuiObject")
-			and not layouty(p) and #p:GetChildren() <= 4 then
-			t = p
-		end
-		return t
-	end
-
-	local function checkLabel(lbl)
-		if not popup.on or popup.hidden[lbl] then return end
-		local seenT = popup.seen[lbl]
-		if seenT and popup.hidden[seenT] then return end
-		if not lbl.Visible or not gainText(lbl.Text) or inScrolling(lbl) then return end
-		local t = pickTarget(lbl)
-		popup.seen[lbl] = t
-		hideTarget(t, "gain", lbl)
-	end
-
-	local function nameHit(o)
-		if not o:IsA("GuiObject") and not o:IsA("LayerCollector") then return false end
-		if o:IsA("GuiButton") then return false end
-		local n = o.Name:lower()
-		for _, k in ipairs(POPUP_NAMES) do
-			if n:find(k, 1, true) then return true end
-		end
-		return false
-	end
-
-	local function spawnCheck(d)
-		if not d:IsA("GuiObject") or d:IsA("GuiButton") then return end
-		local parent = d.Parent
-		if not parent or not (parent:IsA("GuiObject") or parent:IsA("LayerCollector")) then return end
-		if layouty(parent) then return end
-		local now = os.clock()
-		local s = popup.spawn[parent]
-		if not s then s = {short = 0, flag = false, lastShort = 0}; popup.spawn[parent] = s end
-		if s.flag and now - s.lastShort > 20 then s.flag = false; s.short = 0 end
-		d.Destroying:Connect(function()
-			local t = os.clock()
-			if t - now < 4 then
-				s.short += 1
-				s.lastShort = t
-				if s.short >= 3 then s.flag = true end
-			end
-		end)
-		if s.flag then hideTarget(d, "spawn") end
-	end
-
-	Callbacks.HidePopups = function(state)
-		if state == popup.on then return end
-		popup.on = state
-		StatsInfo.popOn = state
-		popup.token += 1
-		local my = popup.token
-		local pg = LocalPlayer:WaitForChild("PlayerGui")
-
-		if state then
-			StatsInfo.popCount, StatsInfo.popLast = 0, "-"
-			for _, d in ipairs(pg:GetDescendants()) do
-				popup.baseline[d] = true
-				if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
-			end
-			for _, d in ipairs(pg:GetDescendants()) do
-				if nameHit(d) then pcall(hideTarget, d, "name") end
-			end
-
-			table.insert(popup.conns, pg.DescendantAdded:Connect(function(d)
-				if not popup.on then return end
-				if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
-				task.defer(function()
-					if not popup.on or not d.Parent then return end
-					pcall(function()
-						if nameHit(d) then hideTarget(d, "name") return end
-						spawnCheck(d)
-						if d:IsA("TextLabel") or d:IsA("TextButton") then checkLabel(d) end
-					end)
-				end)
-			end))
-
-			table.insert(popup.conns, workspace.DescendantAdded:Connect(function(d)
-				if popup.on and d:IsA("TextLabel") then
-					task.delay(0.15, function()
-						if popup.on and d.Parent and gainText(d.Text) then
-							local bb = d:FindFirstAncestorWhichIsA("BillboardGui") or d:FindFirstAncestorWhichIsA("SurfaceGui")
-							if bb then pcall(hideTarget, bb, "world") end
-						end
-					end)
-				end
-			end))
-
-			task.spawn(function()
-				while popup.token == my do
-					local n = 0
-					for lbl in pairs(popup.labelSet) do
-						if lbl.Parent then pcall(checkLabel, lbl) end
-						n += 1
-						if n % 600 == 0 then RunService.Heartbeat:Wait() end
-					end
-					task.wait(0.25)
-				end
-			end)
-		else
-			for _, c in ipairs(popup.conns) do c:Disconnect() end
-			popup.conns = {}
-			for o in pairs(popup.hidden) do unhide(o) end
-			popup.hidden = setmetatable({}, {__mode = "k"})
-			popup.baseline = setmetatable({}, {__mode = "k"})
-			popup.labelSet = setmetatable({}, {__mode = "k"})
-			popup.seen = setmetatable({}, {__mode = "k"})
-			popup.spawn = setmetatable({}, {__mode = "k"})
-			popup.counted = setmetatable({}, {__mode = "k"})
-		end
-	end
-end
-
--- HIDE PLAYERS
-do
-	local hidePl = {on = false, conns = {}, saved = setmetatable({}, {__mode = "k"})}
-
-	local function hpHide(d)
-		if hidePl.saved[d] then return end
-		if d:IsA("BasePart") then
-			hidePl.saved[d] = {k = "p", v = d.LocalTransparencyModifier}
-			d.LocalTransparencyModifier = 1
-		elseif d:IsA("Decal") or d:IsA("Texture") then
-			hidePl.saved[d] = {k = "d", v = d.Transparency}
-			d.Transparency = 1
-		elseif d:IsA("BillboardGui") then
-			hidePl.saved[d] = {k = "b", v = d.Enabled}
-			d.Enabled = false
-		end
-	end
-
-	local function hpChar(char)
-		for _, d in ipairs(char:GetDescendants()) do pcall(hpHide, d) end
-		table.insert(hidePl.conns, char.DescendantAdded:Connect(function(d)
-			if hidePl.on then task.defer(pcall, hpHide, d) end
-		end))
-	end
-
-	local function hpPlayer(pl)
-		if pl == LocalPlayer then return end
-		if pl.Character then hpChar(pl.Character) end
-		table.insert(hidePl.conns, pl.CharacterAdded:Connect(function(c)
-			if not hidePl.on then return end
-			task.wait(0.5)
-			if hidePl.on then hpChar(c) end
-		end))
-	end
-
-	Callbacks.HidePlayers = function(state)
-		if state == hidePl.on then return end
-		hidePl.on = state
-		if state then
-			for _, pl in ipairs(Players:GetPlayers()) do pcall(hpPlayer, pl) end
-			table.insert(hidePl.conns, Players.PlayerAdded:Connect(function(pl) pcall(hpPlayer, pl) end))
-		else
-			for _, c in ipairs(hidePl.conns) do c:Disconnect() end
-			hidePl.conns = {}
-			local list = hidePl.saved
-			hidePl.saved = setmetatable({}, {__mode = "k"})
-			for d, s in pairs(list) do
-				pcall(function()
-					if s.k == "p" then d.LocalTransparencyModifier = s.v
-					elseif s.k == "d" then d.Transparency = s.v
-					else d.Enabled = s.v end
-				end)
-			end
-		end
-	end
-end
-
----------------------------------------------------------------------
--- FPS counter live (untuk panel status)
-local fpsConn
-do
-	local n, t0 = 0, os.clock()
-	fpsConn = RunService.Heartbeat:Connect(function()
-		n += 1
-		local now = os.clock()
-		if now - t0 >= 1 then
-			StatsInfo.fps = math.floor(n / (now - t0) + 0.5)
-			n, t0 = 0, now
-		end
-	end)
-end
-StatsInfo.fps = 0
-
----------------------------------------------------------------------
--- Simpan pengaturan (aman jika executor tak punya writefile)
-local HttpService = game:GetService("HttpService")
+-- Simpan pengaturan tampilan (zoom). Aman jika executor tak punya writefile.
 local SAVE_FILE = "MuhavesSettings_MuscleLegends.json"
 local Saved = {}
 pcall(function()
@@ -642,13 +101,9 @@ local function saveSettings()
 		if writefile then writefile(SAVE_FILE, HttpService:JSONEncode(Saved)) end
 	end)
 end
-local PERSIST = {["Hide Popups"] = true, ["Anti AFK"] = true, ["Anti Lag"] = true,
-	["Hide Players"] = true, ["FPS Limiter"] = true}
 
 ---------------------------------------------------------------------
--- Helper (ukuran kartu dihitung dari panjang teks)
-local TextService = game:GetService("TextService")
-
+-- Helper (ukuran kartu dihitung dari panjang teks, jadi tidak ada ruang kosong)
 local function new(class, props, parent)
 	local o = Instance.new(class)
 	for k, v in pairs(props) do o[k] = v end
@@ -681,7 +136,45 @@ local function text(p, t, size, x, cy, w, color, font, align)
 		BackgroundTransparency = 1, Text = t, TextSize = size, Font = font or F.Gotham,
 		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(w, h),
 		TextColor3 = color or TX, TextXAlignment = align or LEFT, TextYAlignment = Enum.TextYAlignment.Center,
+		AutoLocalize = false,
 	}, p)
+end
+
+-- Label dipaksa satu baris (TextScaled/TextWrapped dimatikan, dijaga walau script lain menyalakannya),
+-- dan ukuran dihitung dari teks yang benar-benar tampil (ContentText, termasuk terjemahan otomatis).
+local function autoFit(lbl, maxSize, minSize, avail)
+	minSize = minSize or 8
+	avail = avail or lbl.Size.X.Offset
+	local target = maxSize
+	lbl.TextTruncate = Enum.TextTruncate.AtEnd
+	lbl.TextWrapped = false
+	lbl.TextScaled = false
+	local function shown()
+		local ok, ct = pcall(function() return lbl.ContentText end)
+		if ok and type(ct) == "string" and ct ~= "" then return ct end
+		return lbl.Text
+	end
+	local function apply()
+		if avail <= 0 then return end
+		local txt, sz = shown(), maxSize
+		while sz > minSize and tw(txt, sz, lbl.Font) > avail do sz -= 1 end
+		target = sz
+		if lbl.TextSize ~= sz then lbl.TextSize = sz end
+	end
+	lbl:GetPropertyChangedSignal("Text"):Connect(apply)
+	pcall(function() lbl:GetPropertyChangedSignal("ContentText"):Connect(apply) end)
+	lbl:GetPropertyChangedSignal("TextScaled"):Connect(function()
+		if lbl.TextScaled then lbl.TextScaled = false end
+		apply()
+	end)
+	lbl:GetPropertyChangedSignal("TextWrapped"):Connect(function()
+		if lbl.TextWrapped then lbl.TextWrapped = false end
+	end)
+	lbl:GetPropertyChangedSignal("TextSize"):Connect(function()
+		if lbl.TextSize ~= target then lbl.TextSize = target end
+	end)
+	apply()
+	return lbl
 end
 
 local function hline(p, x, y, w)
@@ -729,14 +222,17 @@ local function toggle(p, x, cy, initial, cb)
 		BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225), BorderSizePixel = 0,
 	}, tr)
 	round(kn, 10)
-	tr.MouseButton1Click:Connect(function()
-		state = not state
+	-- set(v, silent): ubah tampilan toggle; silent = true -> tidak memanggil callback
+	local function set(v, silent)
+		state = v
 		local i = TweenInfo.new(0.15)
 		TweenService:Create(tr, i, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
 		TweenService:Create(kn, i, {Position = UDim2.fromOffset(state and 21 or 3, 3),
 			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
-		cb(state)
-	end)
+		if not silent then cb(state) end
+	end
+	tr.MouseButton1Click:Connect(function() set(not state) end)
+	return set
 end
 
 local function numberBox(p, x, y, w, h, value, cb)
@@ -784,11 +280,15 @@ local function pill(p, x, y, t, dot, wOverride)
 			BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
 		round(d, 7)
 	end
-	return text(f, t, 14, dot and 34 or 13, 16, w, TX, F.GothamMedium), w
+	local tx = dot and 34 or 13
+	local lbl = text(f, t, 14, tx, 16, w - tx - 6, TX, F.GothamMedium)
+	autoFit(lbl, 14, 9, w - tx - 12)
+	return lbl, w
 end
 
 local PAD, GAP, HH, SW = 14, 10, 78, 200
-local CX, CY = PAD + SW + PAD, HH + PAD
+-- Koordinat halaman ada di dalam ScrollingFrame (body), yang mulai tepat di bawah header.
+local CX, CY = PAD + SW + PAD, PAD
 local CONTENT_Y = PAD + 44 + GAP
 
 local function cardHeader(card, icon, title, sub, status, extra)
@@ -813,17 +313,20 @@ end
 ---------------------------------------------------------------------
 -- Jendela
 do
-	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local pg = LocalPlayer:WaitForChild("PlayerGui")
 	local old = pg:FindFirstChild("MuhavesUI")
 	if old then old:Destroy() end
 end
 
-local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
+local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 10,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LocalPlayer:WaitForChild("PlayerGui"))
+pcall(function() gui.AutoLocalize = false end)
+
 
 local win = new("Frame", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
+	ClipsDescendants = true,
 }, gui)
 round(win, 20)
 stroke(win, Color3.fromRGB(55, 55, 58))
@@ -831,12 +334,28 @@ stroke(win, Color3.fromRGB(55, 55, 58))
 local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
-local function fit()
+
+-- Skala otomatis hanya mengikuti LEBAR layar dan tidak lebih kecil dari MINSCALE.
+-- Kalau layar masih kurang, isi jendela di-scroll (bukan dikecilkan lagi).
+-- Tombol - / + di header mengatur zoom manual (disimpan), mentok MAXSCALE.
+local MINSCALE, MAXSCALE = 0.85, 2.5
+local userScale = tonumber(Saved.Zoom)
+if userScale then userScale = math.clamp(userScale, 0.5, MAXSCALE) end
+local body, minimized = nil, false
+
+local function layoutWindow(animate)
 	local v = cam.ViewportSize
-	scale.Scale = math.min(1, (v.X - 16) / cur.w, (v.Y - 16) / cur.h)
+	local s = userScale or math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
+	scale.Scale = s
+	local W = math.max(320, math.min(cur.w, (v.X - 16) / s))
+	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
+	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
+	if animate then
+		TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(W, H)}):Play()
+	else
+		win.Size = UDim2.fromOffset(W, H)
+	end
 end
-fit()
-cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 
 -- Header
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
@@ -846,32 +365,52 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v19 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
-verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
+local verLbl = text(header, "v21 • Farming", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 
-local body = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1}, win)
+-- Tombol zoom: "-" mengecilkan, "+" membesarkan (isi jendela tetap bisa di-scroll)
+local function zbtn(txt, x)
+	return new("TextButton", {Text = txt, TextSize = 24, Font = F.GothamBold, TextColor3 = MUTED, BackgroundTransparency = 1,
+		Position = UDim2.new(1, x, 0, 20), Size = UDim2.fromOffset(34, 34), AutoLocalize = false}, header)
+end
+local zoomOutBtn, zoomInBtn = zbtn("-", -172), zbtn("+", -136)
 
-local minimized = false
+-- Isi jendela: ScrollingFrame di bawah header (geser atas/bawah, dan kiri/kanan kalau layar sempit)
+body = new("ScrollingFrame", {
+	Name = "Body", Position = UDim2.fromOffset(0, HH), Size = UDim2.new(1, 0, 1, -HH),
+	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
+	CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH),
+	ScrollingDirection = Enum.ScrollingDirection.XY,
+	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+}, win)
+
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end)
+layoutWindow(false)
+
 minBtn.MouseButton1Click:Connect(function()
 	minimized = not minimized
 	body.Visible = not minimized
-	TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(cur.w, minimized and HH or cur.h)}):Play()
+	layoutWindow(true)
 end)
 
--- Tutup UI: matikan semua utilitas dulu supaya pengaturan game kembali normal
+local function zoomBy(d)
+	local base = userScale or math.clamp((cam.ViewportSize.X - 16) / cur.w, MINSCALE, 1)
+	userScale = math.clamp(math.floor((base + d) * 20 + 0.5) / 20, 0.5, MAXSCALE)
+	Saved.Zoom = userScale
+	saveSettings()
+	layoutWindow(true)
+end
+zoomOutBtn.MouseButton1Click:Connect(function() zoomBy(-0.1) end)
+zoomInBtn.MouseButton1Click:Connect(function() zoomBy(0.1) end)
+
 closeBtn.MouseButton1Click:Connect(function()
-	pcall(Callbacks.AntiAFK, false)
-	pcall(Callbacks.AntiLag, false)
-	pcall(Callbacks.HidePopups, false)
-	pcall(Callbacks.Render3D, false)
-	pcall(Callbacks.FPSCap, false)
-	pcall(Callbacks.HidePlayers, false)
-	if fpsConn then fpsConn:Disconnect() end
 	gui:Destroy()
 end)
 
@@ -896,8 +435,9 @@ end
 local pages, sizes = {}, {}
 local SIDEMIN = 300
 local CHAR_MAX_H = 424
+local PAGE_MAX_H = 470 -- tinggi maksimal area halaman; kalau konten lebih tinggi, halaman di-scroll
 
-local sidebar = box(body, PAD, HH + PAD, SW, 400, BLACK, 16)
+local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
 local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
 local navBtns = {}
 local charImg
@@ -911,16 +451,19 @@ local function selectNav(idx, instant)
 		pages[i].Visible = on
 	end
 	local sz = sizes[idx]
+	local viewH = math.min(sz.h, PAGE_MAX_H)
 	local W = CX + sz.w + PAD
-	local H = math.max(HH + PAD + sz.h + PAD, HH + PAD + SIDEMIN + PAD)
+	local H = math.max(HH + PAD + viewH + PAD, HH + PAD + SIDEMIN + PAD)
 	cur.w, cur.h = W, H
+	pages[idx].Size = UDim2.fromOffset(sz.w + 8, viewH)
+	pages[idx].CanvasSize = UDim2.fromOffset(0, sz.h)
+	pages[idx].CanvasPosition = Vector2.new(0, 0)
 	local sideH = H - HH - 2 * PAD
 	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
 		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
 	end
 	local goals = {
-		{win, {Size = UDim2.fromOffset(W, H)}},
 		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
 	}
 	if charImg then table.insert(goals, {charImg, {Size = UDim2.fromOffset(SW - 16, charH)}}) end
@@ -933,14 +476,15 @@ local function selectNav(idx, instant)
 	end
 	minimized = false
 	body.Visible = true
-	fit()
+	body.CanvasPosition = Vector2.new(0, 0)
+	layoutWindow(not instant)
 end
 
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
 		Text = "            " .. n[2], TextSize = 17, Font = F.GothamBold, TextXAlignment = LEFT, AutoButtonColor = false,
 		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
-		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0, AutoLocalize = false,
 	}, sidebar)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
@@ -952,8 +496,14 @@ end
 charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
 
 local function newPage()
-	local f = new("Frame", {Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
-		BackgroundTransparency = 1, Visible = false}, body)
+	local f = new("ScrollingFrame", {
+		Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, Active = true,
+		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+		VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+	}, body)
 	table.insert(pages, f)
 	return f
 end
@@ -979,11 +529,16 @@ local function rowsW(rows)
 end
 local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
-local rbNameW = math.max(tw("Rebirths", 15), tw("Gained", 15), tw("Pace / Hour", 15), tw("Pace / Day", 15))
-local rbStatsMin = 14 + 30 + rbNameW + 16 + 70 + 16 + 64 + 14
+local RB_VW = 84 -- lebar kolom angka di Rebirth Stats
+local rbNameW = math.max(tw("Rebirths", 15, F.GothamMedium), tw("Gained", 15, F.GothamMedium),
+	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium),
+	tw("Kelahiran Kembali", 15, F.GothamMedium)) -- ruang cadangan kalau game menerjemahkan "Rebirths"
+local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 16 + 64 + 14
 local PACE = "-- /s | -- / min | -- /h | -- /d"
-local fsNameW = tw("Dura Average", 13)
-local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE, 13) + 10 + 14
+local fsNameW = tw("Dura Average", 13, F.GothamMedium)
+-- lebar kolom pace dihitung dari contoh angka sungguhan (bukan "--") supaya tidak kepotong
+local PACE_LONG = "000.00M/s | 00.00B/m | 0.00T/h | 00.00T/d"
+local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE_LONG, 13) + 10 + 14
 
 local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
 local cardW1 = inner1 + 2 * PAD
@@ -997,25 +552,27 @@ local rbCard = box(p1, 0, 0, cardW1, CARD_H, SEC, 16)
 local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive")
 
 local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, BOX_H, CARD, 12)
-optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], false, late("AutoRebirth"))
+optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], false, function(s) Callbacks.AutoRebirth(s) end)
 hline(rbOpts, 14, RH, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, late("EquipRebirthPets"))
+optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, function(s) Callbacks.EquipRebirthPets(s) end)
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "5.000", late("RebirthTarget"))
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "0", function(v) Callbacks.RebirthTarget(v) end)
 
-local function srow(parent, icon, name, value, cy, vx, vw, size, align, font)
+-- Baris stat: nama (lebar dibatasi supaya tidak menabrak angka) + angka (font otomatis mengecil kalau panjang)
+local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, nameW)
 	text(parent, icon, size + 2, 10, cy, 28, MUTED, F.Gotham, CENTER)
-	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208), F.GothamMedium)
-	return text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT)
+	autoFit(text(parent, name, size, 44, cy, nameW or 220, Color3.fromRGB(205, 205, 208), F.GothamMedium), size, 8)
+	return autoFit(text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT), size, 8)
 end
 
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
 text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamBold)
-local rvx = rbStatsW - 14 - 64 - 16 - 70
-local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT, F.GothamBold)
+local rvx = rbStatsW - 14 - 64 - 16 - RB_VW
+local rnW = rvx - 44 - 4
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
 image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
 
 -- Strength
@@ -1026,42 +583,44 @@ fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
 fsRuntime.Size = UDim2.new(1, 0, 0, fsRuntime.Size.Y.Offset)
 
 local fsOpts = box(fsCard, PAD, CONTENT_Y, fsOptsW, BOX_H, CARD, 12)
-optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, late("AutoFarmStrength"))
+optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, function(s) Callbacks.AutoFarmStrength(s) end)
 hline(fsOpts, 14, RH, fsOptsW - 28)
-optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, late("ControlledSpeed"))
+optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, function(s) Callbacks.ControlledSpeed(s) end)
 hline(fsOpts, 14, RH * 2, fsOptsW - 28)
-optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "659", late("MaxReps"))
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "0", function(v) Callbacks.MaxReps(v) end)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
 text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
-local paceW = tw(PACE, 13) + 10
-local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold)
-local fsStrG = text(fsStats, "+0", 13, vx + 90, 46, 70, TX)
-local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold)
-local fsDurG = text(fsStats, "+0", 13, vx + 90, 69, 70, TX)
-local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13)
-local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13)
-local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13)
-local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13)
+local vnW = vx - 48
+local paceW = fsStatsW - vx - 14 -- pakai seluruh sisa lebar kotak untuk baris pace
+local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold, vnW)
+local fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 46, paceW - 90, TX), 13, 8)
+local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
+local fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
+local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13, nil, nil, vnW)
+local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, nil, vnW)
+local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
+local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
 
 sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
 
 ---------------------------------------------------------------------
--- HALAMAN 2: Other
+-- HALAMAN 2: Other (semua toggle hanya tampilan; fungsinya diisi lewat tabel Callbacks)
 local p2 = newPage()
+local Toggles = {} -- setter tiap toggle di tab Other, dipakai untuk saling mematikan
 local tiles = {
-	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, late("EatEggs")},
-	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, late("EatShake")},
-	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, late("SpinWheel")},
-	{"Eat All Boosts", "Makan semua boost (lag).", false, late("EatAllBoosts")},
-	{"Hide Pets", "Sembunyikan pet dari game.", true, late("HidePets")},
+	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, function(st) Callbacks.EatEggs(st) end},
+	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, function(st) Callbacks.EatShake(st) end},
+	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, function(st) Callbacks.SpinWheel(st) end},
+	{"Eat All Boosts", "Makan semua boost (lag).", false, function(st) Callbacks.EatAllBoosts(st) end},
+	{"Hide Pets", "Sembunyikan pet dari game.", true, function(st) Callbacks.HidePets(st) end},
 	{"Hide Popups", "Sembunyikan teks +gain & efek.", false, function(st) Callbacks.HidePopups(st) end},
-	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
-	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
-	{"Render 3D Off", "Layar dunia kosong, hemat besar.", false, function(st) Callbacks.Render3D(st) end},
-	{"FPS Limiter", "Batasi FPS ke 20 (hemat CPU).", false, function(st) Callbacks.FPSCap(st) end},
+	{"Anti AFK", "Cegah kick karena diam.", true, function(st) Callbacks.AntiAFK(st) end},
 	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
+	{"Low Resource Mode", "3D off + FPS 20 + layar hitam.", false, function(st) Callbacks.LowResource(st) end},
+	{"Equip Reps Pets", "Prioritas pet rep speed.", false, function(st) Callbacks.EquipRepsPets(st) end},
+	{"Equip Strength Pets", "Prioritas pet strength.", false, function(st) Callbacks.EquipStrengthPets(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -1072,59 +631,22 @@ local TILE_H = 108
 local inner2 = 4 * tileW + 3 * GAP
 local cardW2 = inner2 + 2 * PAD
 local ROWS2 = math.ceil(#tiles / 4)
-local STATUS_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
-local cardH2 = STATUS_Y + 68 + PAD
+local NOTE_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
+local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
-local restoreList = {}
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
 for i, t in ipairs(tiles) do
 	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
-	local init, cb = t[3], t[4]
-	if PERSIST[t[1]] then
-		if Saved[t[1]] ~= nil then init = Saved[t[1]] end
-		local base = t[4]
-		cb = function(st)
-			base(st)
-			Saved[t[1]] = st
-			saveSettings()
-		end
-		if init then table.insert(restoreList, base) end
-	end
-	toggle(tile, 14, 27, init, cb)
+	local inRow = math.min(4, #tiles - row * 4) -- jumlah tombol di baris ini
+	local xoff = (4 - inRow) * (tileW + GAP) / 2 -- baris yang tidak penuh ditaruh di tengah
+	local tile = box(otCard, PAD + xoff + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
+	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
-
--- Panel status live
-local stBox = box(otCard, PAD, STATUS_Y, inner2, 68, CARD, 10)
-local st1 = text(stBox, "", 12, 12, 15, inner2 - 24, MUTED, F.GothamMedium)
-local st2 = text(stBox, "", 12, 12, 34, inner2 - 24, MUTED, F.GothamMedium)
-local st3 = text(stBox, "", 12, 12, 53, inner2 - 24, MUTED, F.GothamMedium)
-for _, l in ipairs({st1, st2, st3}) do l.TextTruncate = Enum.TextTruncate.AtEnd end
-
-task.defer(function()
-	for _, f in ipairs(restoreList) do pcall(f, true) end
-end)
-
-task.spawn(function()
-	while gui.Parent do
-		local S, now = StatsInfo, os.clock()
-		local a, l, p = "AFK: OFF", "Lag: OFF", "Popup: OFF"
-		if S.afkOn then
-			local up = math.floor(now - S.afkSince)
-			local last = S.afkLast > 0 and (math.floor(now - S.afkLast) .. "d lalu") or "menunggu (maks 60d)"
-			a = string.format("AFK: ON %02d:%02d • ping %d • terakhir %s", up // 60, up % 60, S.afkPings, last)
-		end
-		if S.lagOn then l = "Lag: ON • " .. S.lagCount .. " objek" end
-		if S.popOn then p = "Popup: ON • " .. S.popCount .. " disembunyikan • " .. S.popLast end
-		st1.Text = "FPS " .. S.fps .. "   |   " .. a
-		st2.Text = l .. (S.fpsNote ~= "" and ("   |   " .. S.fpsNote) or "")
-		st3.Text = p
-		task.wait(1)
-	end
-end)
+text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + layar hitam.", 12, PAD, NOTE_Y + 10,
+	inner2, SUB, F.GothamMedium, CENTER)
 
 sizes[2] = {w = cardW2, h = cardH2}
 
@@ -1182,6 +704,47 @@ image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32
 sizes[3] = {w = cardW3, h = cardH3}
 
 ---------------------------------------------------------------------
+-- Tampilan rebirth live: Rebirths (total, angka penuh), Gained (sejak script dijalankan), Pace per jam / hari.
+-- Hanya membaca nilai, tidak mengubah apa pun di game.
+do
+	local rbObj, startVal, startT, tries = nil, nil, 0, 0
+	task.spawn(function()
+		while gui.Parent do
+			if not (rbObj and rbObj.Parent) then
+				rbObj = nil
+				if tries % 6 == 0 then pcall(function() rbObj = findRebirthObj() end) end
+				tries += 1
+			end
+			local n
+			if rbObj then
+				n = tonumber(rbObj.Value)
+			else
+				local a = LocalPlayer:GetAttribute("Rebirths")
+				if type(a) == "number" then n = a end
+			end
+
+			if n then
+				if not startVal then startVal, startT = n, os.clock() end
+				local gained = n - startVal
+				rbRebirths.Text = full(n)
+				rbGained.Text = abbr(gained)
+				local elapsed = os.clock() - startT
+				if elapsed >= 10 then
+					local perHour = gained / elapsed * 3600
+					rbHour.Text = abbr(perHour)
+					rbDay.Text = abbr(perHour * 24)
+				else
+					rbHour.Text, rbDay.Text = "--", "--"
+				end
+			else
+				rbRebirths.Text, rbGained.Text, rbHour.Text, rbDay.Text = "N/A", "--", "--", "--"
+			end
+			task.wait(0.5)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
 selectNav(1, true)
 
 return {
@@ -1191,579 +754,695 @@ return {
 		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime},
 	Other = {Status = otStatus},
 	Callbacks = Callbacks,
+	Toggles = Toggles,
+}
+end)()
+
+---------------------------------------------------------------------
+-- FARMING: logika dari script farming, disambung ke UI lewat UI.Callbacks
+-- (UI di atas dibungkus function supaya batas 200 local variable tidak jebol)
+local services = {
+	players = game:GetService("Players"),
+	replicatedstorage = game:GetService("ReplicatedStorage"),
+	runservice = game:GetService("RunService"),
+	virtualinputmanager = game:GetService("VirtualInputManager"),
+	lighting = game:GetService("Lighting"),
+}
+local lp = services.players.LocalPlayer
+local gui = UI.Gui
+local Callbacks = UI.Callbacks
+
+local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
+
+-- Session guard: eksekusi ulang script mematikan semua loop versi lama.
+-- Menutup UI (tombol X) juga menghentikan semua loop.
+local SESSION_ID = (_G.MuhavesFarmingSession or 0) + 1
+_G.MuhavesFarmingSession = SESSION_ID
+local function alive()
+	return _G.MuhavesFarmingSession == SESSION_ID and gui.Parent ~= nil
+end
+
+if _G.MuhavesFarmingConns then
+	for _, c in ipairs(_G.MuhavesFarmingConns) do
+		pcall(function() c:Disconnect() end)
+	end
+end
+_G.MuhavesFarmingConns = {}
+local function track(conn)
+	table.insert(_G.MuhavesFarmingConns, conn)
+	return conn
+end
+
+local flag = {antiAfk = true, eggs = false, shake = false, spin = false, boosts = false}
+
+-- Anti AFK (toggle di tab Other)
+track(lp.Idled:Connect(function()
+	if not alive() or not flag.antiAfk then return end
+	services.virtualinputmanager:SendKeyEvent(true, Enum.KeyCode.Y, false, game)
+	task.wait(0.05)
+	services.virtualinputmanager:SendKeyEvent(false, Enum.KeyCode.Y, false, game)
+end))
+
+-- Hapus RobloxForwardPortals (iklan)
+for _, portal in ipairs(game:GetDescendants()) do
+	if portal.Name == "RobloxForwardPortals" then portal:Destroy() end
+end
+if _G.ads then
+	pcall(function() _G.ads:Disconnect() end)
+	_G.ads = nil
+end
+_G.ads = track(game.DescendantAdded:Connect(function(d)
+	if alive() and d.Name == "RobloxForwardPortals" then d:Destroy() end
+end))
+
+if lp.Character and lp.Character:FindFirstChild("bodyMovementScript") then
+	lp.Character.bodyMovementScript:Destroy()
+end
+
+local muscleEvent = lp:WaitForChild("muscleEvent")
+
+local function formatNumber(num)
+	local sign = ""
+	if num < 0 then sign, num = "-", -num end
+	if num >= 1e18 then return sign .. string.format("%.2fQi", num / 1e18) end
+	if num >= 1e15 then return sign .. string.format("%.2fQa", num / 1e15) end
+	if num >= 1e12 then return sign .. string.format("%.2fT", num / 1e12) end
+	if num >= 1e9 then return sign .. string.format("%.2fB", num / 1e9) end
+	if num >= 1e6 then return sign .. string.format("%.2fM", num / 1e6) end
+	if num >= 1e3 then return sign .. string.format("%.2fK", num / 1e3) end
+	return sign .. string.format("%.0f", num)
+end
+
+local function formatPace(r)
+	return formatNumber(r) .. "/s | " .. formatNumber(r * 60) .. "/m | "
+		.. formatNumber(r * 3600) .. "/h | " .. formatNumber(r * 86400) .. "/d"
+end
+
+local function findTool(name)
+	local char, bp = lp.Character, lp:FindFirstChild("Backpack")
+	return (char and char:FindFirstChild(name)) or (bp and bp:FindFirstChild(name))
+end
+
+---------------------------------------------------------------------
+-- PETS
+local PETS = {
+	["Omega Overlord"]    = {repSpeed = 20, strength = 0,  durability = 0,  rebirth = 0},
+	["Swift Samurai"]     = {repSpeed = 15, strength = 0,  durability = 0,  rebirth = 0},
+	["Powercore Hound"]   = {repSpeed = 0,  strength = 25, durability = 15, rebirth = 0},
+	["Titanium Hydra"]    = {repSpeed = 0,  strength = 0,  durability = 0,  rebirth = 2},
+	["Tribal Overlord"]   = {repSpeed = 0,  strength = 0,  durability = 0,  rebirth = 2},
+	["Inferno Unicorn"]   = {repSpeed = 0,  strength = 25, durability = 25, rebirth = 0},
+	["Common Boss Pet"]   = {repSpeed = 5,  strength = 0,  durability = 0,  rebirth = 0},
+	["Rare Boss Pet"]     = {repSpeed = 7,  strength = 0,  durability = 0,  rebirth = 0},
+	["Epic Boss Pet"]     = {repSpeed = 10, strength = 0,  durability = 0,  rebirth = 0},
+	["Rainbow Boss Pet"]  = {repSpeed = 10, strength = 7,  durability = 0,  rebirth = 0},
+	["Legendary Boss Pet"] = {repSpeed = 10, strength = 10, durability = 0,  rebirth = 0},
+	["Mythic Boss Pet"]   = {repSpeed = 10, strength = 20, durability = 0,  rebirth = 0},
+	["Inferno Drake"]     = {repSpeed = 40, strength = 0,  durability = 0,  rebirth = 0},
 }
 
+local MAX_PET_SLOTS = 12
+local TARGET_REP_SPEED = 100
+
+local function unequipConfiguredPets()
+	for _, folder in ipairs(lp.petsFolder:GetChildren()) do
+		if folder:IsA("Folder") then
+			for _, pet in ipairs(folder:GetChildren()) do
+				services.replicatedstorage.rEvents.equipPetEvent:FireServer("unequipPet", pet)
+			end
+		end
+	end
+	task.wait(0.1)
 end
 
-notify("Membuat UI...")
-local okLoad, UI = pcall(buildLibrary)
-if not okLoad or type(UI) ~= "table" then
-    notify("Gagal membuat UI: " .. tostring(UI), true)
-    return
-end
-local R, S, O, CB = UI.Rebirth, UI.Strength, UI.Other, UI.Callbacks
-notify("UI berhasil dibuat")
-
-local okMain, errMain = pcall(function()
-
-local function setText(lbl, text)
-    if lbl and lbl.Parent then lbl.Text = text end
+local function equipConfiguredPet(pet)
+	services.replicatedstorage.rEvents.equipPetEvent:FireServer("equipPet", pet)
 end
 
--- Teks stat bisa lebih panjang dari placeholder: kecilkan otomatis agar muat
-local function fit(lbl, maxSize)
-    if not lbl then return end
-    lbl.TextScaled = true
-    local c = Instance.new("UITextSizeConstraint")
-    c.MaxTextSize = maxSize
-    c.MinTextSize = 8
-    c.Parent = lbl
-end
-for _, l in ipairs({ S.StrPace, S.DuraPace, S.StrAverage, S.DuraAverage, S.Strength,
-    S.StrengthGain, S.Durability, S.DurabilityGain }) do fit(l, 13) end
-for _, l in ipairs({ R.Rebirths, R.Gained, R.PaceHour, R.PaceDay }) do fit(l, 15) end
-fit(S.Runtime, 14)
-
--- Berhenti total saat UI ditutup (tombol X)
-UI.Gui.Destroying:Connect(function()
-    _G.MuhavesFarmingSession = SESSION_ID + 1
-end)
-
-----------------------------------------------------------------------
--- Remotes & values
-----------------------------------------------------------------------
-local function need(parent, name)
-    local o = parent:WaitForChild(name, 15)
-    if not o then
-        notify("Tidak ketemu: " .. name .. " (bukan di Muscle Legends / belum selesai load?)", true)
-        error("missing " .. name)
-    end
-    return o
-end
-
-local muscleEvent = need(player, "muscleEvent")
-local rEvents = need(ReplicatedStorage, "rEvents")
-local equipPetEvent = need(rEvents, "equipPetEvent")
-local rebirthRemote = need(rEvents, "rebirthRemote")
-local showPetsEvent = need(rEvents, "showPetsEvent")
-local leaderstats = need(player, "leaderstats")
-local strengthVal = need(leaderstats, "Strength")
-local rebirthVal = need(leaderstats, "Rebirths")
-local durabilityVal = need(player, "Durability")
-
-local function fireRep(n)
-    for _ = 1, n do
-        muscleEvent:FireServer("rep")
-    end
-end
-
-----------------------------------------------------------------------
--- Formatter
-----------------------------------------------------------------------
-local SUFFIXES = {
-    { 1e18, "Qi" }, { 1e15, "Qa" }, { 1e12, "T" },
-    { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" },
-}
-local function fmt(n)
-    local sign = n < 0 and "-" or ""
-    n = math.abs(n)
-    for _, s in ipairs(SUFFIXES) do
-        if n >= s[1] then
-            return string.format("%s%.2f%s", sign, n / s[1], s[2])
-        end
-    end
-    return string.format("%s%.0f", sign, n)
-end
-
-local function paceText(perSecond)
-    return string.format("%s/s | %s/m | %s/h | %s/d",
-        fmt(perSecond), fmt(perSecond * 60), fmt(perSecond * 3600), fmt(perSecond * 86400))
-end
-
-local function duration(sec)
-    return string.format("%dd %dh %dm %ds",
-        math.floor(sec / 86400), math.floor((sec % 86400) / 3600),
-        math.floor((sec % 3600) / 60), math.floor(sec % 60))
-end
-
-----------------------------------------------------------------------
--- Pets
-----------------------------------------------------------------------
-local function eachPet(fn)
-    local petsFolder = player:FindFirstChild("petsFolder")
-    if not petsFolder then return end
-    for _, folder in ipairs(petsFolder:GetChildren()) do
-        if folder:IsA("Folder") then
-            for _, pet in ipairs(folder:GetChildren()) do fn(pet) end
-        end
-    end
-end
-
-local function unequipAllPets()
-    eachPet(function(pet) equipPetEvent:FireServer("unequipPet", pet) end)
-    task.wait(0.1)
-end
-
-local function getOwnedPets()
-    local owned = {}
-    eachPet(function(pet)
-        local cfg = PETS[pet.Name]
-        if cfg then
-            table.insert(owned, {
-                instance = pet,
-                repSpeed = cfg.repSpeed or 0,
-                strength = cfg.strength or 0,
-                durability = cfg.durability or 0,
-                rebirth = cfg.rebirth or 0,
-            })
-        end
-    end)
-    return owned
+local function getOwnedConfiguredPets()
+	local owned = {}
+	for _, folder in ipairs(lp.petsFolder:GetChildren()) do
+		if folder:IsA("Folder") then
+			for _, pet in ipairs(folder:GetChildren()) do
+				local config = PETS[pet.Name]
+				if config then
+					table.insert(owned, {
+						instance = pet, name = pet.Name,
+						repSpeed = config.repSpeed or 0, strength = config.strength or 0,
+						durability = config.durability or 0, rebirth = config.rebirth or 0,
+					})
+				end
+			end
+		end
+	end
+	return owned
 end
 
 local function equipBestFarmingPets()
-    unequipAllPets()
-    local pets = getOwnedPets()
-    local equipped, count, rep = {}, 0, 0
+	unequipConfiguredPets()
+	local pets = getOwnedConfiguredPets()
+	local equipped, equippedCount, currentRepSpeed = {}, 0, 0
 
-    table.sort(pets, function(a, b) return a.repSpeed > b.repSpeed end)
-    for _, p in ipairs(pets) do
-        if count >= MAX_PET_SLOTS or rep >= TARGET_REP_SPEED then break end
-        if p.repSpeed > 0 then
-            equipPetEvent:FireServer("equipPet", p.instance)
-            equipped[p.instance] = true
-            count = count + 1
-            rep = rep + p.repSpeed
-        end
-    end
+	table.sort(pets, function(a, b) return a.repSpeed > b.repSpeed end)
+	for _, pet in ipairs(pets) do
+		if equippedCount >= MAX_PET_SLOTS or currentRepSpeed >= TARGET_REP_SPEED then break end
+		if pet.repSpeed > 0 then
+			equipConfiguredPet(pet.instance)
+			equipped[pet.instance] = true
+			equippedCount += 1
+			currentRepSpeed += pet.repSpeed
+		end
+	end
 
-    local rest = {}
-    for _, p in ipairs(pets) do
-        if not equipped[p.instance] then table.insert(rest, p) end
-    end
-    table.sort(rest, function(a, b)
-        return (a.strength + a.durability) > (b.strength + b.durability)
-    end)
-    for _, p in ipairs(rest) do
-        if count >= MAX_PET_SLOTS then break end
-        if p.strength > 0 or p.durability > 0 then
-            equipPetEvent:FireServer("equipPet", p.instance)
-            count = count + 1
-        end
-    end
+	local remaining = {}
+	for _, pet in ipairs(pets) do
+		if not equipped[pet.instance] then table.insert(remaining, pet) end
+	end
+	table.sort(remaining, function(a, b) return a.strength + a.durability > b.strength + b.durability end)
+	for _, pet in ipairs(remaining) do
+		if equippedCount >= MAX_PET_SLOTS then break end
+		if pet.strength > 0 or pet.durability > 0 then
+			equipConfiguredPet(pet.instance)
+			equipped[pet.instance] = true
+			equippedCount += 1
+		end
+	end
+	return currentRepSpeed, equippedCount
 end
 
 local function equipBestRebirthPets()
-    unequipAllPets()
-    local pets = getOwnedPets()
-    table.sort(pets, function(a, b) return a.rebirth > b.rebirth end)
-    local count = 0
-    for _, p in ipairs(pets) do
-        if count >= MAX_PET_SLOTS then break end
-        if p.rebirth > 0 then
-            equipPetEvent:FireServer("equipPet", p.instance)
-            count = count + 1
-        end
-    end
+	unequipConfiguredPets()
+	local pets = getOwnedConfiguredPets()
+	table.sort(pets, function(a, b) return a.rebirth > b.rebirth end)
+	local equippedCount, total = 0, 0
+	for _, pet in ipairs(pets) do
+		if equippedCount >= MAX_PET_SLOTS then break end
+		if pet.rebirth > 0 then
+			equipConfiguredPet(pet.instance)
+			equippedCount += 1
+			total += pet.rebirth
+		end
+	end
+	return total, equippedCount
 end
 
-----------------------------------------------------------------------
--- Fast Rebirth
-----------------------------------------------------------------------
-do
-    local st = {
-        running = false, workerActive = false, hasStarted = false,
-        timerStarted = false, startedAt = 0, totalElapsed = 0,
-        gained = 0, lastSeen = rebirthVal.Value,
-        paceReady = false, lastAt = tick(), lastValue = rebirthVal.Value,
-        avgStartAt = 0, avgStartGained = 0,
-        petMode = nil,
-        base = 5000,           -- dari "Rebirth Target"
-        useRebirthPets = true, -- dari "Equip Rebirth Pets"
-    }
+-- Versi Strength: pet strength + durability dulu, sisa slot diisi pet rep speed
+local function equipBestStrengthPets()
+	unequipConfiguredPets()
+	local pets = getOwnedConfiguredPets()
+	local equipped, count = {}, 0
 
-    local function refresh()
-        setText(R.Rebirths, fmt(rebirthVal.Value))
-        setText(R.Gained, fmt(st.gained))
-    end
-    refresh()
+	table.sort(pets, function(a, b) return a.strength + a.durability > b.strength + b.durability end)
+	for _, pet in ipairs(pets) do
+		if count >= MAX_PET_SLOTS then break end
+		if pet.strength > 0 or pet.durability > 0 then
+			equipConfiguredPet(pet.instance)
+			equipped[pet.instance] = true
+			count += 1
+		end
+	end
 
-    local function updatePace()
-        if not st.running then return end
-        local now = tick()
-        if not st.paceReady then
-            st.paceReady = true
-            st.timerStarted = true
-            st.startedAt = now
-            st.lastAt, st.lastValue = now, rebirthVal.Value
-            st.avgStartAt, st.avgStartGained = now, st.gained
-            return
-        end
-        if rebirthVal.Value <= st.lastValue then return end
-
-        local secondsPer = (now - st.lastAt) / (rebirthVal.Value - st.lastValue)
-        setText(R.PaceHour, fmt(3600 / secondsPer))
-        setText(R.PaceDay, fmt(86400 / secondsPer))
-        st.lastAt, st.lastValue = now, rebirthVal.Value
-    end
-
-    track(rebirthVal:GetPropertyChangedSignal("Value"):Connect(function()
-        if not alive() then return end
-        local v = rebirthVal.Value
-        if st.running then st.gained = st.gained + (v - st.lastSeen) end
-        st.lastSeen = v
-        refresh()
-        updatePace()
-    end))
-
-    local function performRebirth()
-        local target = st.base + rebirthVal.Value * 2550
-        local burst = player.MembershipType == Enum.MembershipType.Premium and 6 or 12
-
-        while st.running and alive() and strengthVal.Value < target do
-            fireRep(burst)
-            task.wait(0.02)
-        end
-        if not (st.running and alive() and strengthVal.Value >= target) then return end
-
-        if st.useRebirthPets then
-            equipBestRebirthPets()
-            st.petMode = "rebirth"
-            task.wait(0.25)
-        end
-
-        local before = rebirthVal.Value
-        local startedTry = tick()
-        repeat
-            rebirthRemote:InvokeServer("rebirthRequest")
-            task.wait(0.05)
-        until rebirthVal.Value > before
-            or not st.running
-            or not alive()
-            or tick() - startedTry > 10
-    end
-
-    local function startWorker()
-        if st.workerActive then return end
-        st.workerActive = true
-        task.spawn(function()
-            while st.running and alive() do
-                if st.petMode ~= "farm" then
-                    equipBestFarmingPets()
-                    st.petMode = "farm"
-                end
-                local ok, err = pcall(performRebirth)
-                if not ok then warn("[Rebirth] " .. tostring(err)) task.wait(1) end
-                task.wait(0.5)
-            end
-            st.workerActive = false
-        end)
-    end
-
-    CB.AutoRebirth = function(state)
-        st.running = state
-        if state then
-            st.hasStarted = true
-            st.lastSeen = rebirthVal.Value
-            st.startedAt, st.timerStarted = 0, false
-            st.lastAt, st.lastValue = tick(), rebirthVal.Value
-            st.paceReady = false
-            setText(R.Status, "Status: Rebirth")
-            startWorker()
-        else
-            if st.timerStarted and st.startedAt > 0 then
-                st.totalElapsed = st.totalElapsed + tick() - st.startedAt
-                st.startedAt, st.timerStarted = 0, false
-            end
-            setText(R.Status, st.hasStarted and "Status: Paused" or "Status: Inactive")
-        end
-    end
-
-    CB.EquipRebirthPets = function(state) st.useRebirthPets = state end
-    CB.RebirthTarget = function(v)
-        if type(v) == "number" and v > 0 then st.base = v end
-    end
+	local rest = {}
+	for _, pet in ipairs(pets) do
+		if not equipped[pet.instance] then table.insert(rest, pet) end
+	end
+	table.sort(rest, function(a, b) return a.repSpeed > b.repSpeed end)
+	for _, pet in ipairs(rest) do
+		if count >= MAX_PET_SLOTS then break end
+		if pet.repSpeed > 0 then
+			equipConfiguredPet(pet.instance)
+			count += 1
+		end
+	end
+	return count
 end
 
-----------------------------------------------------------------------
--- Fast Strength
-----------------------------------------------------------------------
-do
-    local st = {
-        running = false, workerActive = false,
-        timerStarted = false, startedAt = 0, totalElapsed = 0,
-        gainedStr = 0, gainedDur = 0,
-        lastSeenStr = strengthVal.Value, lastSeenDur = durabilityVal.Value,
-        calcInterval = 10, lastCalcAt = tick(), calcStr = 0, calcDur = 0,
-        controlled = true,
-    }
-    local a = {
-        initialRate = 200, maxRate = 659, rate = 200,
-        tokens = 0, maxBurst = 24, controlInterval = 0.5,
-        lastControlAt = tick(), lastStr = 0, lastDur = 0, stalled = 0,
-    }
-
-    local function refresh()
-        setText(S.Strength, fmt(strengthVal.Value))
-        setText(S.StrengthGain, "+" .. fmt(st.gainedStr))
-        setText(S.Durability, fmt(durabilityVal.Value))
-        setText(S.DurabilityGain, "+" .. fmt(st.gainedDur))
-    end
-    refresh()
-
-    local function resetSample()
-        st.lastCalcAt = tick()
-        st.calcStr, st.calcDur = st.gainedStr, st.gainedDur
-    end
-
-    local function onChanged()
-        local str, dur = strengthVal.Value, durabilityVal.Value
-        local dStr, dDur = str - st.lastSeenStr, dur - st.lastSeenDur
-        st.lastSeenStr, st.lastSeenDur = str, dur
-
-        if st.running then
-            st.gainedStr = st.gainedStr + dStr
-            st.gainedDur = st.gainedDur + dDur
-        end
-        refresh()
-
-        if not st.running or st.timerStarted then return end
-        if dStr == 0 and dDur == 0 then return end
-        st.timerStarted = true
-        st.startedAt = tick()
-        resetSample()
-    end
-    track(strengthVal:GetPropertyChangedSignal("Value"):Connect(function()
-        if alive() then onChanged() end
-    end))
-    track(durabilityVal:GetPropertyChangedSignal("Value"):Connect(function()
-        if alive() then onChanged() end
-    end))
-
-    local function updateRuntime()
-        local e = st.totalElapsed
-        if st.running and st.timerStarted then e = e + tick() - st.startedAt end
-        setText(S.Runtime, "🕒 " .. duration(e))
-    end
-
-    local function calculatePace()
-        if not st.running or not st.timerStarted then return end
-        local now = tick()
-        local dt = now - st.lastCalcAt
-        if dt < st.calcInterval then return end
-
-        local dStr, dDur = st.gainedStr - st.calcStr, st.gainedDur - st.calcDur
-        if dStr > 0 then setText(S.StrPace, paceText(dStr / dt)) end
-        if dDur > 0 then setText(S.DuraPace, paceText(dDur / dt)) end
-
-        local avgElapsed = st.totalElapsed + now - st.startedAt
-        if avgElapsed > 0 then
-            setText(S.StrAverage, paceText(st.gainedStr / avgElapsed))
-            setText(S.DuraAverage, paceText(st.gainedDur / avgElapsed))
-        end
-        resetSample()
-    end
-
-    loop(1, function()
-        updateRuntime()
-        calculatePace()
-    end)
-
-    local function resetControl()
-        a.rate = a.initialRate
-        a.tokens = 0
-        a.lastControlAt = tick()
-        a.lastStr, a.lastDur = strengthVal.Value, durabilityVal.Value
-        a.stalled = 0
-    end
-
-    local function updateAdaptiveRate()
-        local now = tick()
-        if now - a.lastControlAt < a.controlInterval then return end
-
-        local progress = strengthVal.Value > a.lastStr or durabilityVal.Value > a.lastDur
-        if progress then
-            a.stalled = 0
-            a.rate = math.min(a.maxRate, a.rate * 1.12)
-            setText(S.Status, "Status: Farming")
-        else
-            a.stalled = a.stalled + 1
-        end
-        if a.stalled >= 2 then
-            a.rate = math.max(a.initialRate, a.rate * 0.65)
-            a.tokens = 0
-            setText(S.Status, "Status: Slowing")
-        end
-
-        a.lastControlAt = now
-        a.lastStr, a.lastDur = strengthVal.Value, durabilityVal.Value
-    end
-
-    local function workerLoop()
-        local last = os.clock()
-        while st.running and alive() do
-            local now = os.clock()
-            local dt = math.min(0.1, now - last)
-            last = now
-
-            local rate
-            if st.controlled then
-                updateAdaptiveRate()
-                rate = a.rate
-            else
-                rate = a.maxRate
-            end
-
-            a.tokens = math.min(a.maxBurst, a.tokens + rate * dt)
-            local burstLimit = math.max(1, math.min(a.maxBurst, math.ceil(rate * 0.05)))
-            local count = math.min(math.floor(a.tokens), burstLimit)
-            fireRep(count)
-            a.tokens = a.tokens - count
-
-            RunService.Heartbeat:Wait()
-        end
-    end
-
-    local function startWorker()
-        if st.workerActive or not st.running or not alive() then return end
-        st.workerActive = true
-        task.spawn(function()
-            local ok, err = pcall(workerLoop)
-            if not ok then warn("[Strength] " .. tostring(err)) end
-            st.workerActive = false
-            if st.running and alive() then
-                task.wait(0.5)
-                startWorker()
-            end
-        end)
-    end
-
-    local hasStarted = false
-    CB.AutoFarmStrength = function(state)
-        st.running = state
-        if state then
-            hasStarted = true
-            st.lastSeenStr, st.lastSeenDur = strengthVal.Value, durabilityVal.Value
-            st.timerStarted, st.startedAt = false, 0
-            resetSample()
-            resetControl()
-            setText(S.Status, "Status: Farming")
-            startWorker()
-        else
-            if st.timerStarted and st.startedAt > 0 then
-                st.totalElapsed = st.totalElapsed + tick() - st.startedAt
-                st.startedAt, st.timerStarted = 0, false
-            end
-            a.tokens = 0
-            setText(S.Status, hasStarted and "Status: Paused" or "Status: Inactive")
-            updateRuntime()
-        end
-    end
-
-    CB.ControlledSpeed = function(state) st.controlled = state end
-    CB.MaxReps = function(v)
-        if type(v) ~= "number" then return end
-        a.maxRate = math.max(1, v)
-        a.rate = math.min(a.rate, a.maxRate)
-    end
+-- Versi Reps = equipBestFarmingPets (rep speed dulu sampai 100, sisanya strength)
+local petMode = "reps"     -- "reps" (default, sama seperti script lama) atau "strength"
+local petChosen = false    -- true kalau pemain pernah memilih salah satu di tab Other
+local function equipFarmingPets()
+	if petMode == "strength" then return equipBestStrengthPets() end
+	return equipBestFarmingPets()
 end
 
-----------------------------------------------------------------------
--- Other
-----------------------------------------------------------------------
-do
-    local function findTool(name)
-        local char = player.Character
-        local backpack = player:FindFirstChild("Backpack")
-        return (char and char:FindFirstChild(name))
-            or (backpack and backpack:FindFirstChild(name))
-    end
+---------------------------------------------------------------------
+-- REBIRTH (tombol Auto Rebirth / Equip Rebirth Pets / Rebirth Target)
+-- Statistik rebirth (Rebirths, Gained, Pace) dihitung oleh tampilan live di UI.
+local ls = lp:WaitForChild("leaderstats")
+local rb = {
+	rebirths = ls:WaitForChild("Rebirths"),
+	strength = ls:WaitForChild("Strength"),
+	running = false, workerActive = false,
+	usePets = true,      -- Equip Rebirth Pets
+	targetOverride = 0,  -- Rebirth Target: 0 = otomatis (5000 + rebirth x 2550)
+}
 
-    local function useTool(name, action, times)
-        local tool = findTool(name)
-        if not tool then return end
-        for _ = 1, times or 1 do
-            muscleEvent:FireServer(action, tool)
-        end
-    end
-
-    -- Eat eggs
-    local autoEgg = false
-    loop(0.5, function()
-        if autoEgg then useTool("Protein Egg", "proteinEgg", 10) end
-    end)
-    CB.EatEggs = function(state)
-        autoEgg = state
-        if state then useTool("Protein Egg", "proteinEgg", 10) end
-    end
-
-    -- Eat shake (tiap 150 detik)
-    local autoShake = false
-    task.spawn(function()
-        while alive() do
-            if autoShake then
-                pcall(useTool, "Tropical Shake", "tropicalShake", 1)
-                for _ = 1, 150 do
-                    if not autoShake or not alive() then break end
-                    task.wait(1)
-                end
-            else
-                task.wait(1)
-            end
-        end
-    end)
-    CB.EatShake = function(state) autoShake = state end
-
-    -- Fortune wheel (generation counter: tidak ada loop ganda)
-    local wheelGen = 0
-    CB.SpinWheel = function(on)
-        wheelGen = wheelGen + 1
-        local gen = wheelGen
-        if not on then return end
-        task.spawn(function()
-            local remote = rEvents:FindFirstChild("openFortuneWheelRemote")
-            local ok, chances = pcall(function()
-                return ReplicatedStorage.shared.catalogs.fortuneWheelChances["Fortune Wheel"]
-            end)
-            if not remote or not ok then return end
-            while alive() and gen == wheelGen do
-                pcall(function()
-                    remote:InvokeServer("openFortuneWheel", chances)
-                end)
-                task.wait(1)
-            end
-        end)
-    end
-
-    -- Eat all boosts
-    local eatAll = false
-    task.spawn(function()
-        while alive() do
-            if eatAll then
-                for _, b in ipairs(BOOSTS) do
-                    if not eatAll or not alive() then break end
-                    useTool(b[1], b[2], 10)
-                end
-                task.wait(0.1)
-            else
-                task.wait(1)
-            end
-        end
-    end)
-    CB.EatAllBoosts = function(state) eatAll = state end
-
-    -- Hide pets (di UI default-nya ON)
-    CB.HidePets = function(state)
-        showPetsEvent:FireServer(state and "hidePets" or "showPets")
-    end
-    CB.HidePets(true)
-
-    setText(O.Status, "Status: Ready")
+local function setRebirthStatus(text, color)
+	UI.Rebirth.Status.Text = text
+	UI.Rebirth.Status.TextColor3 = color
 end
+
+local function performRebirth()
+	local target = rb.targetOverride > 0 and rb.targetOverride or (5000 + rb.rebirths.Value * 2550)
+	local reps = lp.MembershipType == Enum.MembershipType.Premium and 6 or 12
+
+	while rb.running and alive() and rb.strength.Value < target do
+		for _ = 1, reps do muscleEvent:FireServer("rep") end
+		task.wait(0.02)
+	end
+
+	if rb.running and alive() and rb.strength.Value >= target then
+		if rb.usePets then
+			equipBestRebirthPets()
+			task.wait(0.25)
+		end
+		local before, started = rb.rebirths.Value, tick()
+		-- dibatasi 10 detik supaya tidak nembak InvokeServer selamanya kalau syaratnya meleset
+		repeat
+			services.replicatedstorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest")
+			task.wait(0.05)
+		until rb.rebirths.Value > before or not rb.running or not alive() or tick() - started > 10
+	end
+end
+
+local function startRebirthWorker()
+	if rb.workerActive then return end
+	rb.workerActive = true
+	task.spawn(function()
+		while rb.running and alive() do
+			equipFarmingPets()
+			performRebirth()
+			task.wait(0.5)
+		end
+		rb.workerActive = false
+	end)
+end
+
+Callbacks.AutoRebirth = function(state)
+	rb.running = state
+	if state then
+		setRebirthStatus("Status: Rebirthing", C_ON)
+		startRebirthWorker()
+	else
+		setRebirthStatus("Status: Paused", C_PAUSE)
+	end
+end
+Callbacks.EquipRebirthPets = function(state) rb.usePets = state end
+Callbacks.RebirthTarget = function(v) rb.targetOverride = math.max(0, math.floor(tonumber(v) or 0)) end
+
+---------------------------------------------------------------------
+-- STRENGTH (tombol Auto Farm Strength / Controlled Speed / Max Reps)
+local st = {
+	strength = ls:WaitForChild("Strength"),
+	durability = lp:WaitForChild("Durability"),
+	running = false, workerActive = false,
+	controlled = true,                 -- Controlled Speed
+	startedAt = 0, totalElapsed = 0, timerStarted = false, baselineSet = false,
+	calcInterval = 10,
+	maxRate = 659, initialRate = 200, rate = 200,
+	tokens = 0, maxBurst = 24,
+	ctrlInterval = 0.5, stalled = 0,
+}
+st.startStrength, st.startDurability = st.strength.Value, st.durability.Value
+st.lastCalcAt, st.lastCalcStr, st.lastCalcDura = tick(), st.strength.Value, st.durability.Value
+st.lastCtrlAt, st.lastCtrlStr, st.lastCtrlDura = tick(), st.strength.Value, st.durability.Value
+st.lastLoopAt = os.clock()
+
+local function setStrengthStatus(text, color)
+	UI.Strength.Status.Text = text
+	UI.Strength.Status.TextColor3 = color
+end
+
+local function updateRuntime()
+	local e = st.totalElapsed
+	if st.running and st.timerStarted then e += tick() - st.startedAt end
+	UI.Strength.Runtime.Text = string.format("🕒 %dd %dh %dm %ds",
+		math.floor(e / 86400), math.floor((e % 86400) / 3600), math.floor((e % 3600) / 60), math.floor(e % 60))
+end
+
+local function updateStats()
+	UI.Strength.Strength.Text = formatNumber(st.strength.Value)
+	UI.Strength.StrengthGain.Text = "+" .. formatNumber(st.strength.Value - st.startStrength)
+	UI.Strength.Durability.Text = formatNumber(st.durability.Value)
+	UI.Strength.DurabilityGain.Text = "+" .. formatNumber(st.durability.Value - st.startDurability)
+end
+
+-- timer baru mulai saat angka pertama kali naik
+local function updateTimer()
+	if not st.running or st.timerStarted then return end
+	if st.strength.Value == st.startStrength and st.durability.Value == st.startDurability then return end
+	st.timerStarted = true
+	st.startedAt = tick()
+	st.lastCalcAt = tick()
+	st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
+end
+
+local function calculatePace()
+	if not st.running or not st.timerStarted then return end
+	local elapsed = tick() - st.lastCalcAt
+	if elapsed < st.calcInterval then return end
+
+	local dS = st.strength.Value - st.lastCalcStr
+	local dD = st.durability.Value - st.lastCalcDura
+	if dS > 0 then UI.Strength.StrPace.Text = formatPace(dS / elapsed) end
+	if dD > 0 then UI.Strength.DuraPace.Text = formatPace(dD / elapsed) end
+
+	local avgElapsed = st.totalElapsed + tick() - st.startedAt
+	if avgElapsed > 0 then
+		UI.Strength.StrAverage.Text = formatPace((st.strength.Value - st.startStrength) / avgElapsed)
+		UI.Strength.DuraAverage.Text = formatPace((st.durability.Value - st.startDurability) / avgElapsed)
+	end
+
+	st.lastCalcAt = tick()
+	st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
+end
+
+-- Controlled Speed: naik pelan-pelan selama server menerima, turun kalau server macet
+local function updateAdaptiveRate()
+	local now = tick()
+	if now - st.lastCtrlAt < st.ctrlInterval then return end
+
+	local progress = st.strength.Value > st.lastCtrlStr or st.durability.Value > st.lastCtrlDura
+	if progress then
+		st.stalled = 0
+		st.rate = math.min(st.maxRate, st.rate * 1.12)
+		setStrengthStatus("Status: Farming", C_ON)
+	else
+		st.stalled += 1
+	end
+	if st.stalled >= 2 then
+		st.rate = math.max(st.initialRate, st.rate * 0.65)
+		st.tokens = 0
+		setStrengthStatus("Status: Slowing", C_PAUSE)
+	end
+
+	st.lastCtrlAt = now
+	st.lastCtrlStr, st.lastCtrlDura = st.strength.Value, st.durability.Value
+end
+
+local startStrengthWorker
+local function strengthLoop()
+	st.lastLoopAt = os.clock()
+	while st.running and alive() do
+		local now = os.clock()
+		local dt = math.min(0.1, now - st.lastLoopAt)
+		st.lastLoopAt = now
+
+		if st.controlled then updateAdaptiveRate() else st.rate = st.maxRate end
+
+		st.tokens = math.min(st.maxBurst, st.tokens + st.rate * dt)
+		local burstLimit = math.max(1, math.min(st.maxBurst, math.ceil(st.rate * 0.05)))
+		local n = math.min(math.floor(st.tokens), burstLimit)
+		for _ = 1, n do muscleEvent:FireServer("rep") end
+		st.tokens -= n
+
+		services.runservice.Heartbeat:Wait()
+	end
+	st.workerActive = false
+	if st.running and alive() then startStrengthWorker() end
+end
+
+startStrengthWorker = function()
+	if st.workerActive then return end
+	st.workerActive = true
+	task.spawn(strengthLoop)
+end
+
+Callbacks.AutoFarmStrength = function(state)
+	st.running = state
+	if state then
+		if not st.baselineSet then
+			st.startStrength, st.startDurability = st.strength.Value, st.durability.Value
+			st.baselineSet = true
+		end
+		st.timerStarted, st.startedAt = false, 0
+		st.lastCalcAt = tick()
+		st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
+		st.rate = st.initialRate
+		st.tokens = 0
+		st.lastLoopAt = os.clock()
+		st.lastCtrlAt = tick()
+		st.lastCtrlStr, st.lastCtrlDura = st.strength.Value, st.durability.Value
+		st.stalled = 0
+		setStrengthStatus("Status: Farming", C_ON)
+		if petChosen then task.spawn(equipFarmingPets) end
+		startStrengthWorker()
+	else
+		if st.timerStarted and st.startedAt > 0 then
+			st.totalElapsed += tick() - st.startedAt
+			st.startedAt, st.timerStarted = 0, false
+		end
+		st.tokens = 0
+		if st.baselineSet then setStrengthStatus("Status: Paused", C_PAUSE)
+		else setStrengthStatus("Status: Inactive", C_IDLE) end
+		updateRuntime()
+	end
+end
+
+Callbacks.ControlledSpeed = function(state)
+	st.controlled = state
+	st.stalled = 0
+	st.rate = math.min(st.rate, st.maxRate)
+end
+
+-- Max Reps / Second: 0 atau kosong = default 659
+Callbacks.MaxReps = function(v)
+	v = tonumber(v) or 0
+	if v <= 0 then v = 659 end
+	st.maxRate = math.max(1, v)
+	st.initialRate = math.min(200, st.maxRate)
+	st.rate = math.min(st.rate, st.maxRate)
+end
+
+-- angka di UI di-refresh 4x per detik (bukan tiap nilai berubah) supaya ringan
+task.spawn(function()
+	local tickCount = 0
+	while alive() do
+		updateStats()
+		updateTimer()
+		tickCount += 1
+		if tickCount % 4 == 0 then
+			updateRuntime()
+			calculatePace()
+		end
+		task.wait(0.25)
+	end
 end)
-if not okMain then
-    notify("ERROR: " .. tostring(errMain), true)
-else
-    notify("Semua fitur aktif")
-    task.delay(8, hideLog)
+
+---------------------------------------------------------------------
+-- OTHER
+local rEvents = services.replicatedstorage:WaitForChild("rEvents")
+local showPetsEvent = rEvents:WaitForChild("showPetsEvent", 10)
+local savePlayerSizeEvent = rEvents:WaitForChild("savePlayerSizeEvent", 10)
+
+local function eatEgg()
+	local tool = findTool("Protein Egg")
+	if tool then
+		for _ = 1, 10 do muscleEvent:FireServer("proteinEgg", tool) end
+	end
 end
+
+local function eatShake()
+	local tool = findTool("Tropical Shake")
+	if tool then muscleEvent:FireServer("tropicalShake", tool) end
+end
+
+task.spawn(function()
+	while alive() do
+		if flag.eggs then eatEgg() task.wait(0.5) else task.wait(1) end
+	end
+end)
+
+task.spawn(function()
+	while alive() do
+		if flag.shake then eatShake() task.wait(150) else task.wait(1) end
+	end
+end)
+
+task.spawn(function()
+	while alive() do
+		if flag.spin then
+			pcall(function()
+				local rs = services.replicatedstorage
+				rs.rEvents.openFortuneWheelRemote:InvokeServer(
+					"openFortuneWheel", rs.shared.catalogs.fortuneWheelChances["Fortune Wheel"])
+			end)
+		end
+		task.wait(1)
+	end
+end)
+
+local BOOSTS = {
+	{"Tropical Shake", "tropicalShake"}, {"Energy Shake", "energyShake"}, {"Protein Bar", "proteinBar"},
+	{"TOUGH Bar", "toughBar"}, {"Protein Shake", "proteinShake"}, {"ULTRA Shake", "ultraShake"},
+	{"Energy Bar", "energyBar"},
+}
+task.spawn(function()
+	while alive() do
+		if flag.boosts then
+			for _, b in ipairs(BOOSTS) do
+				if not (flag.boosts and alive()) then break end
+				local tool = findTool(b[1])
+				if tool then
+					for _ = 1, 10 do muscleEvent:FireServer(b[2], tool) end
+				end
+			end
+			task.wait(0.1)
+		else
+			task.wait(1)
+		end
+	end
+end)
+
+Callbacks.EatEggs = function(s) flag.eggs = s if s then eatEgg() end end
+Callbacks.EatShake = function(s) flag.shake = s if s then eatShake() end end
+Callbacks.SpinWheel = function(s) flag.spin = s end
+Callbacks.EatAllBoosts = function(s) flag.boosts = s end
+Callbacks.AntiAFK = function(s) flag.antiAfk = s end
+Callbacks.HidePets = function(s)
+	if showPetsEvent then showPetsEvent:FireServer(s and "hidePets" or "showPets") end
+end
+Callbacks.HidePopups = function()
+	-- event ini sifatnya toggle di sisi game
+	if savePlayerSizeEvent then savePlayerSizeEvent:FireServer("showPopupsOption") end
+end
+
+-- Equip Reps Pets / Equip Strength Pets: pilih set pet untuk farming (saling mematikan).
+-- Set yang dipilih juga dipakai Auto Rebirth dan Auto Farm Strength.
+Callbacks.EquipRepsPets = function(state)
+	if not state then return end
+	petMode, petChosen = "reps", true
+	if UI.Toggles["Equip Strength Pets"] then UI.Toggles["Equip Strength Pets"](false, true) end
+	task.spawn(equipBestFarmingPets)
+end
+Callbacks.EquipStrengthPets = function(state)
+	if not state then return end
+	petMode, petChosen = "strength", true
+	if UI.Toggles["Equip Reps Pets"] then UI.Toggles["Equip Reps Pets"](false, true) end
+	task.spawn(equipBestStrengthPets)
+end
+
+---------------------------------------------------------------------
+-- HIDE PLAYERS: sembunyikan karakter pemain lain (bisa dikembalikan)
+do
+	local on = false
+	local saved = setmetatable({}, {__mode = "k"})
+	local conns = {}
+
+	local function hideInst(d)
+		if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then
+			if saved[d] == nil then saved[d] = d.Transparency end
+			d.Transparency = 1
+		end
+	end
+	local function hideChar(c)
+		for _, d in ipairs(c:GetDescendants()) do hideInst(d) end
+		conns[#conns + 1] = c.DescendantAdded:Connect(function(d) if on then hideInst(d) end end)
+	end
+	local function watch(p)
+		if p == lp then return end
+		if p.Character then hideChar(p.Character) end
+		conns[#conns + 1] = p.CharacterAdded:Connect(function(c) if on then hideChar(c) end end)
+	end
+
+	Callbacks.HidePlayers = function(state)
+		if state == on then return end
+		on = state
+		if on then
+			for _, p in ipairs(services.players:GetPlayers()) do watch(p) end
+			conns[#conns + 1] = services.players.PlayerAdded:Connect(function(p) if on then watch(p) end end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for d, v in pairs(saved) do
+				if d.Parent then pcall(function() d.Transparency = v end) end
+			end
+			table.clear(saved)
+		end
+	end
+	gui.Destroying:Connect(function() Callbacks.HidePlayers(false) end)
+end
+
+---------------------------------------------------------------------
+-- LOW RESOURCE MODE: Render 3D Off + FPS limiter (20) + Anti Lag + layar hitam.
+-- Semua dikembalikan saat dimatikan atau UI ditutup.
+do
+	local active = false
+	local saved = setmetatable({}, {__mode = "k"})
+	local conns = {}
+	local overlay, origQuality, origShadows, origFps
+
+	local function dim(o)
+		if o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Beam") or o:IsA("Smoke")
+			or o:IsA("Fire") or o:IsA("Sparkles") or o:IsA("PostEffect") then
+			if saved[o] == nil then saved[o] = o.Enabled end
+			o.Enabled = false
+		end
+	end
+
+	local function setLowResource(on)
+		on = on and true or false
+		if on == active then return end
+		active = on
+		if on then
+			pcall(function() origQuality = settings().Rendering.QualityLevel end)
+			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+			origShadows = services.lighting.GlobalShadows
+			services.lighting.GlobalShadows = false
+			for _, root in ipairs({workspace, services.lighting}) do
+				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
+					if active then pcall(dim, o) end
+				end)
+			end
+			task.spawn(function()
+				for _, root in ipairs({workspace, services.lighting}) do
+					for i, o in ipairs(root:GetDescendants()) do
+						if not active then return end
+						pcall(dim, o)
+						if i % 400 == 0 then task.wait() end
+					end
+				end
+			end)
+			if getfpscap then pcall(function() origFps = getfpscap() end) end
+			if setfpscap then pcall(setfpscap, 20) end
+
+			overlay = Instance.new("ScreenGui")
+			overlay.Name = "MuhavesBlack"
+			overlay.ResetOnSpawn = false
+			overlay.IgnoreGuiInset = true
+			overlay.DisplayOrder = 5
+			local f = Instance.new("Frame")
+			f.Size = UDim2.fromScale(1, 1)
+			f.BackgroundColor3 = Color3.new(0, 0, 0)
+			f.BorderSizePixel = 0
+			f.Active = false
+			f.Parent = overlay
+			overlay.Parent = lp:WaitForChild("PlayerGui")
+
+			pcall(function() services.runservice:Set3dRenderingEnabled(false) end)
+		else
+			pcall(function() services.runservice:Set3dRenderingEnabled(true) end)
+			if overlay then overlay:Destroy() overlay = nil end
+			if setfpscap then
+				pcall(setfpscap, (type(origFps) == "number" and origFps > 0) and origFps or 60)
+			end
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for o, v in pairs(saved) do
+				if o.Parent then pcall(function() o.Enabled = v end) end
+			end
+			table.clear(saved)
+			if origShadows ~= nil then services.lighting.GlobalShadows = origShadows end
+			if origQuality then pcall(function() settings().Rendering.QualityLevel = origQuality end) end
+		end
+	end
+
+	Callbacks.LowResource = setLowResource
+	gui.Destroying:Connect(function() setLowResource(false) end)
+end
+
+---------------------------------------------------------------------
+-- Sinkronkan kondisi awal toggle di UI (Hide Pets = ON dari awal)
+task.spawn(function() Callbacks.HidePets(true) end)
+
+return UI
