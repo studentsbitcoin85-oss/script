@@ -1,10 +1,16 @@
 --[[
-    Muhaves Private Farming - UI + Farming (v22)
+    Muhaves Private Farming - UI + Farming (v23)
     LocalScript. Tabs: Fast Farming / Extras / Info.
 
     Single file: the UI (wrapped in a function) and the farming logic at the bottom.
     Every toggle is connected through the UI.Callbacks table. The script returns the UI table
     (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Callbacks).
+
+    v23:
+    - Header greeting is bigger and stretches all the way to the zoom buttons (never overlaps them), with "V1".
+    - Fast Farming cards use the MHV logo image as background.
+    - Info tab: Muhaves text image (logo box + footer), bolder fonts.
+    - Extras tab: tiles are back to a single row that scrolls sideways.
 ]]
 
 local UI = (function()
@@ -12,10 +18,11 @@ local UI = (function()
 local ASSETS = {
 	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
-	LogoInfo     = "91147250558427",
+	LogoInfo     = "122341159300890", -- gambar tulisan Muhaves
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
 	InfoBG       = "106276772809647", -- latar kartu Info
+	FarmBG       = "131699469923325", -- logo MHV, latar kartu Fast Farming
 }
 
 local Players = game:GetService("Players")
@@ -32,6 +39,7 @@ local CARD  = Color3.fromRGB(14, 14, 15)
 local LINE  = Color3.fromRGB(40, 40, 43)
 local TX    = Color3.fromRGB(240, 240, 240)
 local SUB   = Color3.fromRGB(150, 150, 156)
+local SUBB  = Color3.fromRGB(215, 215, 220) -- brighter gray, used in the Info tab so it is easy to read
 local MUTED = Color3.fromRGB(190, 190, 194)
 local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
@@ -216,6 +224,21 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 	return img
 end
 
+-- Image background for a card: fills the whole card (crop), covered by a dark shade so the text stays readable.
+-- Call it right after the card is created and BEFORE its content, so it stays behind everything.
+local function cardBG(card, id, shadeT)
+	local w, h = card.Size.X.Offset, card.Size.Y.Offset
+	local bg = image(card, id, 0, 0, w, h, "", 14)
+	if bg:IsA("ImageLabel") then
+		bg.ScaleType = Enum.ScaleType.Crop
+		round(bg, 16)
+		local shade = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = shadeT or 0.45, BorderSizePixel = 0}, card)
+		round(shade, 16)
+	end
+	return bg
+end
+
 local function toggle(p, x, cy, initial, cb)
 	local state = initial
 	local tr = new("TextButton", {
@@ -298,11 +321,12 @@ local PAD, GAP, HH, SW = 14, 10, 78, 200
 local CX, CY = PAD + SW + PAD, PAD
 local CONTENT_Y = PAD + 44 + GAP
 
-local function cardHeader(card, icon, title, sub, status, extra)
+-- boldSub = true -> the subtitle uses a bolder font and a brighter color (used by the Info card)
+local function cardHeader(card, icon, title, sub, status, extra, boldSub)
 	local cw = card.Size.X.Offset
 	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
 	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamBold)
-	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB, F.GothamMedium)
+	text(card, sub, 13, PAD + 44, PAD + 36, 600, boldSub and SUBB or SUB, boldSub and F.GothamBold or F.GothamMedium)
 	local sLbl, eLbl
 	local x = cw - PAD
 	if status then
@@ -355,6 +379,21 @@ local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
 
+-- Header greeting ("Muhaves V1 | Fast Farming - Hey, username!").
+-- It is as BIG as possible (up to GREET_MAX) and stretches until just before the zoom buttons,
+-- so it never gets cut off or overlaps the buttons. It is re-fitted every time the window size changes.
+local greetLbl, greetX
+local GREET_MAX, GREET_MIN = 22, 9
+local BTN_ZONE = 186 -- space reserved on the right for the - / + / minimize / close buttons
+local function fitGreet(W)
+	if not greetLbl then return end
+	local avail = math.max(60, W - BTN_ZONE - greetX)
+	greetLbl.Size = UDim2.fromOffset(avail, 40)
+	local txt, sz = greetLbl.Text, GREET_MAX
+	while sz > GREET_MIN and tw(txt, sz, greetLbl.Font) > avail do sz -= 1 end
+	greetLbl.TextSize = sz
+end
+
 -- Auto scale only follows the screen WIDTH and never goes below MINSCALE.
 -- If the screen is still too small, the window content scrolls (it is not shrunk any further).
 -- The - / + buttons in the header set a manual zoom (saved), capped at MAXSCALE.
@@ -369,6 +408,7 @@ local function layoutWindow(animate)
 	local W = math.max(320, math.min(cur.w, (v.X - 16) / s))
 	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
 	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
+	fitGreet(W)
 	if animate then
 		-- both the scale and the size are tweened, so zooming and resizing glide smoothly
 		TweenService:Create(scale, SMOOTH, {Scale = s}):Play()
@@ -390,13 +430,21 @@ new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
--- One-line greeting next to PRIVATE FARMING (style: "Muhaves | Fast Farming - Hey, username!")
+-- One-line greeting next to PRIVATE FARMING (style: "Muhaves V1 | Fast Farming - Hey, username!")
 do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
 	new("Frame", {Position = UDim2.fromOffset(wx - 14, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-	local greet = text(header, "Muhaves | Fast Farming - Hey, " .. LocalPlayer.Name .. "!", 15, wx, 39, 380, TX, F.GothamBold)
-	autoFit(greet, 15, 9, 380)
+	greetX = wx
+	greetLbl = new("TextLabel", {
+		BackgroundTransparency = 1, Text = "Muhaves V1 | Fast Farming - Hey, " .. LocalPlayer.Name .. "!",
+		TextSize = 15, Font = F.GothamBold, TextColor3 = TX,
+		Position = UDim2.fromOffset(wx, 19), Size = UDim2.fromOffset(380, 40),
+		TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Center,
+		TextTruncate = Enum.TextTruncate.AtEnd, TextWrapped = false, TextScaled = false,
+		AutoLocalize = false,
+	}, header)
+	fitGreet(cur.w)
 end
 
 -- Colors make the buttons easy to tell apart: GREEN = minimize, RED = close (zoom - / + stay plain gray)
@@ -737,11 +785,19 @@ local CARD_H = CONTENT_Y + BOX_H + PAD
 local RB_H = RH * 5
 local RB_CARD_H = CONTENT_Y + RB_H + PAD
 
+-- Fast Farming background: the MHV logo behind the cards. The inner panels are a little see-through
+-- so the image shows through them. Make FARM_SHADE / PANEL_T bigger for a brighter picture
+-- (0 = solid, 1 = invisible), or smaller for a darker picture with easier-to-read text.
+local FARM_SHADE = 0.35
+local PANEL_T = 0.4
+
 -- Rebirth
 local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
+cardBG(rbCard, ASSETS.FarmBG, FARM_SHADE)
 local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
 
-local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RB_H, CARD, 12)
+local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RH * 5, CARD, 12)
+rbOpts.BackgroundTransparency = PANEL_T
 optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], nil, nil, "🔄", "0", function(v) Callbacks.RebirthTarget(v) end)
 hline(rbOpts, 14, RH, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], false, function(s) Callbacks.AutoRebirth(s) end)
@@ -760,6 +816,7 @@ local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, na
 end
 
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, RB_H, CARD, 12)
+rbStats.BackgroundTransparency = PANEL_T
 text(rbStats, "Rebirth Stats", 17, 14, 28, 220, TX, F.GothamBold)
 local rvx = rbStatsW - 14 - RB_VW
 local rnW = rvx - 44 - 4
@@ -770,12 +827,14 @@ local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15
 
 -- Strength
 local fsCard = box(p1, 0, RB_CARD_H + GAP, cardW1, CARD_H, SEC, 16)
+cardBG(fsCard, ASSETS.FarmBG, FARM_SHADE)
 local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Strength farming with detailed stats.", "Status: Inactive", "🕒 0d 0h 0m 0s")
 fsRuntime.TextXAlignment = CENTER
 fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
 fsRuntime.Size = UDim2.new(1, 0, 0, fsRuntime.Size.Y.Offset)
 
 local fsOpts = box(fsCard, PAD, CONTENT_Y, fsOptsW, BOX_H, CARD, 12)
+fsOpts.BackgroundTransparency = PANEL_T
 optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, function(s) Callbacks.AutoFarmStrength(s) end)
 hline(fsOpts, 14, RH, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, function(s) Callbacks.ControlledSpeed(s) end)
@@ -783,6 +842,7 @@ hline(fsOpts, 14, RH * 2, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "0", function(v) Callbacks.MaxReps(v) end)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
+fsStats.BackgroundTransparency = PANEL_T
 text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
 local vnW = vx - 48
@@ -800,6 +860,7 @@ sizes[1] = {w = cardW1, h = RB_CARD_H + CARD_H + GAP}
 
 ---------------------------------------------------------------------
 -- PAGE 2: Extras (all toggles are visual only; their functions are filled in through the Callbacks table)
+-- The tiles are ONE row that scrolls sideways (swipe / drag left and right).
 local p2 = newPage()
 local tiles = {
 	{"Eat Eggs (Auto)", "Automatically eats protein eggs.", false, function(st) Callbacks.EatEggs(st) end},
@@ -820,21 +881,27 @@ tileW = tileW + 2 * PAD
 local TILE_H = 108
 local cardW2 = cardW1 -- same width as the Farming card
 local rowViewW = cardW2 - 2 * PAD
--- tiles fill the card width in a grid; if there are too many rows the whole page scrolls up/down
-local COLS = math.max(1, math.floor((rowViewW + GAP) / (tileW + GAP)))
-local tileFullW = math.floor((rowViewW - (COLS - 1) * GAP) / COLS)
-local ROWS2 = math.ceil(#tiles / COLS)
-local NOTE_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
+local ROW_VIEW_H = TILE_H + 12 -- a little extra room at the bottom for the sideways scroll bar
+local NOTE_Y = CONTENT_Y + ROW_VIEW_H + GAP
 local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
+
+local tileRow = new("ScrollingFrame", {
+	Name = "TileRow", Position = UDim2.fromOffset(PAD, CONTENT_Y), Size = UDim2.fromOffset(rowViewW, ROW_VIEW_H),
+	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
+	ScrollingDirection = Enum.ScrollingDirection.X,
+	CanvasSize = UDim2.fromOffset(#tiles * (tileW + GAP) - GAP, 0),
+	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+}, otCard)
 for i, t in ipairs(tiles) do
-	local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
-	local tile = box(otCard, PAD + col * (tileFullW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileFullW, TILE_H, CARD, 12)
+	local tile = box(tileRow, (i - 1) * (tileW + GAP), 0, tileW, TILE_H, CARD, 12)
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
-	text(tile, t[1], 17, 14, 61, tileFullW - 20, TX, F.GothamBold)
-	text(tile, t[2], 12, 14, 85, tileFullW - 20, SUB, F.GothamMedium)
+	text(tile, t[1], 17, 14, 61, tileW - 20, TX, F.GothamBold)
+	text(tile, t[2], 12, 14, 85, tileW - 20, SUB, F.GothamMedium)
 end
 text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
 	rowViewW, SUB, F.GothamMedium, CENTER)
@@ -842,16 +909,17 @@ text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black scre
 sizes[2] = {w = cardW2, h = cardH2}
 
 ---------------------------------------------------------------------
--- PAGE 3: Info
+-- PAGE 3: Info (all text is bold and brighter so it is easy to read)
 local p3 = newPage()
-local w1 = math.max(190, tw("Private Farming", 19, F.GothamMedium)) + 2 * PAD
-local lblW = math.max(tw("Made by", 14, F.GothamMedium), tw("Game", 14, F.GothamMedium), tw("Status", 14, F.GothamMedium))
-local workW = tw("Working", 18, F.GothamMedium)
-local valW = math.max(tw("MuhavesDevs", 18, F.GothamMedium), tw("Muscle Legends", 18, F.GothamMedium), workW + 34)
+local BLD = F.GothamBold
+local w1 = math.max(190, tw("Private Farming", 19, BLD)) + 2 * PAD
+local lblW = math.max(tw("Made by", 14, BLD), tw("Game", 14, BLD), tw("Status", 14, BLD))
+local workW = tw("Working", 18, BLD)
+local valW = math.max(tw("MuhavesDevs", 18, BLD), tw("Muscle Legends", 18, BLD), workW + 34)
 local w2 = 14 + lblW + 20 + valW + 14
 local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups"}
 local colW = 0
-for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15, F.GothamMedium)) end
+for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15, BLD)) end
 colW = colW + 32
 local w3 = 14 + colW * 2 + 20 + 14
 local inner3 = w1 + w2 + w3 + 2 * GAP
@@ -861,46 +929,42 @@ local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
 local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
-do -- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
-	local bg = image(inCard, ASSETS.InfoBG, 0, 0, cardW3, cardH3, "", 14)
-	if bg:IsA("ImageLabel") then
-		bg.ScaleType = Enum.ScaleType.Crop
-		round(bg, 16)
-		local shade = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = 0.45, BorderSizePixel = 0}, inCard)
-		round(shade, 16)
-	end
-end
-cardHeader(inCard, "ℹ", "Info", "About this script.")
+-- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
+cardBG(inCard, ASSETS.InfoBG, 0.45)
+cardHeader(inCard, "ℹ", "Info", "About this script.", nil, nil, true)
 
+-- logo box: the Muhaves text image, big, with the name + version under it
 local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
-image(lg, ASSETS.LogoInfo, (w1 - 190) / 2, 18, 190, 86, "Muhaves", 30)
-text(lg, "Private Farming", 19, 0, 130, w1, TX, F.GothamMedium, CENTER)
-text(lg, "v1.0.0", 13, 0, 156, w1, SUB, F.GothamMedium, CENTER)
+image(lg, ASSETS.LogoInfo, 12, 10, w1 - 24, 100, "Muhaves", 30)
+text(lg, "Private Farming", 19, 0, 132, w1, TX, BLD, CENTER)
+text(lg, "v1.0.0", 13, 0, 158, w1, SUBB, BLD, CENTER)
 
 local dt = box(inCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
 local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
 for i, r in ipairs(kv) do
 	local cy = 30 + (i - 1) * 60
-	text(dt, r[1], 14, 14, cy, lblW + 10, SUB, F.GothamMedium)
-	text(dt, r[2], 18, 14 + lblW + 20, cy, valW, TX, F.GothamMedium)
+	text(dt, r[1], 14, 14, cy, lblW + 10, SUBB, BLD)
+	text(dt, r[2], 18, 14 + lblW + 20, cy, valW, TX, BLD)
 	if i < 3 then hline(dt, 14, cy + 30, w2 - 28) end
 end
 text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
 
 local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
-text(ft, "Key Features", 17, 14, 24, 250, TX, F.GothamBold)
+text(ft, "Key Features", 17, 14, 24, 250, TX, BLD)
 for i, f in ipairs(feats) do
 	local col = i <= 3 and 0 or 1
 	local idx = i <= 3 and i or (i - 3)
 	local cy = 62 + (idx - 1) * 32
 	local x = 14 + col * (colW + 20)
 	text(ft, "✅", 15, x, cy, 26, TX, F.Gotham, CENTER)
-	text(ft, f, 15, x + 32, cy, colW, MUTED, F.GothamMedium)
+	text(ft, f, 15, x + 32, cy, colW, TX, BLD)
 end
 
-text(inCard, "\"Progress is not luck, it's a system.\"", 15, PAD, footY + 22, inner3, SUB, F.GothamMedium, CENTER)
-text(inCard, "- Muhaves", 13, PAD, footY + 48, inner3, SUB, F.GothamMedium, CENTER)
+-- footer: the Muhaves text image (replaces the old quote), centered between the card edges
+do
+	local fw = math.max(120, math.min(260, cardW3 - 2 * (56 + PAD + 10)))
+	image(inCard, ASSETS.LogoInfo, cardW3 / 2 - fw / 2, footY + 2, fw, 62, "Muhaves", 24)
+end
 image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
 
