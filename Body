@@ -688,9 +688,6 @@ local tiles = {
 	{"Hide Pets", "Sembunyikan pet dari game.", true, function(st) Callbacks.HidePets(st) end},
 	{"Hide Popups", "Sembunyikan teks +gain & efek.", false, function(st) Callbacks.HidePopups(st) end},
 	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
-	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
-	{"Render 3D Off", "Layar dunia kosong, hemat besar.", false, function(st) Callbacks.Render3D(st) end},
-	{"FPS Limiter", "Batasi FPS ke 20 (hemat CPU).", false, function(st) Callbacks.FPSCap(st) end},
 	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
 	{"Low Resource Mode", "3D off + FPS 20 + layar hitam.", false, function(st) Callbacks.LowResource(st) end},
 }
