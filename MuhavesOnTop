@@ -18,11 +18,12 @@ local UI = (function()
 local ASSETS = {
 	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
-	LogoInfo     = "121277958659021", -- gambar tulisan Muhaves
+	LogoInfo     = "131866689269133", -- gambar tulisan Muhaves (logo & footer tab Info)
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
 	InfoBG       = "106276772809647", -- latar kartu Info
 	FarmBG       = "131699469923325", -- logo MHV, latar kartu Fast Farming
+	ExtrasBG     = "79313300337438",  -- latar kartu Extras
 }
 
 local Players = game:GetService("Players")
@@ -353,6 +354,15 @@ local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGu
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LocalPlayer:WaitForChild("PlayerGui"))
 pcall(function() gui.AutoLocalize = false end)
 
+-- Connections to objects that outlive the window (camera, UserInputService) are collected here and
+-- disconnected when the UI is destroyed (X button or re-execution), so nothing keeps running after the UI is gone.
+local outerConns = {}
+local function keep(c) outerConns[#outerConns + 1] = c return c end
+gui.Destroying:Connect(function()
+	for _, c in ipairs(outerConns) do pcall(function() c:Disconnect() end) end
+	table.clear(outerConns)
+end)
+
 
 local win = new("Frame", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -478,7 +488,7 @@ body = new("ScrollingFrame", {
 	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
 }, win)
 
-cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end)
+keep(cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end))
 layoutWindow(false)
 
 -- Minimize: the window is hidden and a small ≡ button appears (tap = reopen, hold + drag = move).
@@ -593,7 +603,7 @@ do
 			end)
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(i)
+	keep(UserInputService.InputChanged:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - start
 			if d.Magnitude > 8 then moved = true end
@@ -601,7 +611,7 @@ do
 				mini.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 			end
 		end
-	end)
+	end))
 end
 
 local function zoomBy(d)
@@ -627,12 +637,12 @@ do -- drag by the header
 			i.Changed:Connect(function() if i.UserInputState == Enum.UserInputState.End then dragging = false end end)
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(i)
+	keep(UserInputService.InputChanged:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - start
 			win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 		end
-	end)
+	end))
 end
 
 ---------------------------------------------------------------------
@@ -893,6 +903,7 @@ local NOTE_Y = CONTENT_Y + ROW_VIEW_H + GAP
 local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
+cardBG(otCard, ASSETS.ExtrasBG, 0.4) -- background image behind the whole Extras card
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
 
 local tileRow = new("ScrollingFrame", {
@@ -906,6 +917,7 @@ local tileRow = new("ScrollingFrame", {
 }, otCard)
 for i, t in ipairs(tiles) do
 	local tile = box(tileRow, (i - 1) * (tileW + GAP), 0, tileW, TILE_H, CARD, 12)
+	tile.BackgroundTransparency = 0.4 -- a little see-through so the background image shows
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
 	text(tile, t[1], 17, 14, 61, tileW - 20, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW - 20, SUB, F.GothamMedium)
@@ -1007,6 +1019,7 @@ do
 
 			if n then
 				if not startVal then startVal, startT = n, os.clock() end
+				if n < startVal then startVal = n end -- the count went down (reset): start again from here, never a negative Gained
 				local gained = n - startVal
 				rbRebirths.Text = full(n)
 				rbGained.Text = abbr(gained)
@@ -1093,6 +1106,16 @@ _G.MuhavesFarmingConns = {}
 local function track(conn)
 	table.insert(_G.MuhavesFarmingConns, conn)
 	return conn
+end
+-- When the UI is closed (X) or replaced, the connections made here are disconnected too
+-- (before, only the loops stopped; Idled / DescendantAdded / value listeners stayed connected).
+do
+	local mine = _G.MuhavesFarmingConns
+	gui.Destroying:Connect(function()
+		for _, c in ipairs(mine) do pcall(function() c:Disconnect() end) end
+		table.clear(mine)
+		if _G.MuhavesFarmingConns == mine then _G.ads = nil end
+	end)
 end
 
 local flag = {antiAfk = true, eggs = false, shake = false, spin = false, boosts = false}
@@ -1381,66 +1404,92 @@ Callbacks.RebirthTarget = function(v) rb.targetCount = math.max(0, math.floor(to
 local st = {
 	strength = ls:WaitForChild("Strength"),
 	durability = lp:WaitForChild("Durability"),
-	running = false, workerActive = false,
+	running = false,
+	runId = 0,                         -- every start/stop gets a new id, so an old loop can never keep running
 	controlled = true,                 -- Controlled Speed
 	startedAt = 0, totalElapsed = 0, timerStarted = false, baselineSet = false,
 	calcInterval = 10,
 	maxRate = 650, initialRate = 200, rate = 200,
 	tokens = 0, maxBurst = 24,
 	ctrlInterval = 0.5, stalled = 0,
+	-- Statistics are built only from POSITIVE changes of the values: a rebirth that resets Strength to 0 is never
+	-- counted as a negative gain, and every change is counted exactly once.
+	last = {str = 0, dura = 0},        -- last value seen
+	gain = {str = 0, dura = 0},        -- gained since the first Auto Farm start (never negative)
+	run  = {str = 0, dura = 0},        -- gained while farming, after the timer started (used for Pace / Average)
+	win  = {str = 0, dura = 0},        -- value of `run` at the last Pace calculation
+	prog = 0, lastCtrlProg = 0,        -- counts gains; Controlled Speed uses it to see whether the server accepts reps
+	lastCalcAt = 0, lastCtrlAt = 0, lastLoopAt = 0,
 }
-st.startStrength, st.startDurability = st.strength.Value, st.durability.Value
-st.lastCalcAt, st.lastCalcStr, st.lastCalcDura = tick(), st.strength.Value, st.durability.Value
-st.lastCtrlAt, st.lastCtrlStr, st.lastCtrlDura = tick(), st.strength.Value, st.durability.Value
-st.lastLoopAt = os.clock()
+st.last.str, st.last.dura = st.strength.Value, st.durability.Value
+st.lastCalcAt, st.lastCtrlAt, st.lastLoopAt = tick(), tick(), os.clock()
 
 local function setStrengthStatus(text, color)
 	UI.Strength.Status.Text = text
 	UI.Strength.Status.TextColor3 = color
 end
 
-local function updateRuntime()
+-- Called on every change of Strength / Durability (cheap: only a few additions).
+local function onValue(key, new)
+	local d = new - st.last[key]
+	st.last[key] = new
+	if d <= 0 then return end          -- no change, or a reset (rebirth): not a gain
+	st.gain[key] += d
+	st.prog += 1
+	if not st.running then return end
+	if not st.timerStarted then
+		-- the first gain only starts the timer (its time was not measured), so it is not counted in Pace / Average
+		st.timerStarted = true
+		st.startedAt = tick()
+		st.lastCalcAt = st.startedAt
+		st.win.str, st.win.dura = st.run.str, st.run.dura
+	else
+		st.run[key] += d
+	end
+end
+track(st.strength.Changed:Connect(function(v) onValue("str", v) end))
+track(st.durability.Changed:Connect(function(v) onValue("dura", v) end))
+
+-- farming time in seconds (paused time is not counted)
+local function runElapsed()
 	local e = st.totalElapsed
 	if st.running and st.timerStarted then e += tick() - st.startedAt end
+	return e
+end
+
+local function updateRuntime()
+	local e = runElapsed()
 	UI.Strength.Runtime.Text = string.format("🕒 %dd %dh %dm %ds",
 		math.floor(e / 86400), math.floor((e % 86400) / 3600), math.floor((e % 3600) / 60), math.floor(e % 60))
 end
 
 local function updateStats()
 	UI.Strength.Strength.Text = formatNumber(st.strength.Value)
-	UI.Strength.StrengthGain.Text = "+" .. formatNumber(st.strength.Value - st.startStrength)
+	UI.Strength.StrengthGain.Text = "+" .. formatNumber(st.gain.str)
 	UI.Strength.Durability.Text = formatNumber(st.durability.Value)
-	UI.Strength.DurabilityGain.Text = "+" .. formatNumber(st.durability.Value - st.startDurability)
+	UI.Strength.DurabilityGain.Text = "+" .. formatNumber(st.gain.dura)
 end
 
--- the timer only starts the first time the numbers increase
-local function updateTimer()
-	if not st.running or st.timerStarted then return end
-	if st.strength.Value == st.startStrength and st.durability.Value == st.startDurability then return end
-	st.timerStarted = true
-	st.startedAt = tick()
-	st.lastCalcAt = tick()
-	st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
+-- Average = everything gained while farming / farming time (the same data and the same clock)
+local function updateAverages()
+	local e = runElapsed()
+	if e < 1 then return end
+	UI.Strength.StrAverage.Text = formatPace(st.run.str / e)
+	UI.Strength.DuraAverage.Text = formatPace(st.run.dura / e)
 end
 
+-- Pace = gain in the last window / the real length of that window (also shows 0 when nothing was gained)
 local function calculatePace()
 	if not st.running or not st.timerStarted then return end
-	local elapsed = tick() - st.lastCalcAt
+	local now = tick()
+	local elapsed = now - st.lastCalcAt
 	if elapsed < st.calcInterval then return end
 
-	local dS = st.strength.Value - st.lastCalcStr
-	local dD = st.durability.Value - st.lastCalcDura
-	if dS > 0 then UI.Strength.StrPace.Text = formatPace(dS / elapsed) end
-	if dD > 0 then UI.Strength.DuraPace.Text = formatPace(dD / elapsed) end
-
-	local avgElapsed = st.totalElapsed + tick() - st.startedAt
-	if avgElapsed > 0 then
-		UI.Strength.StrAverage.Text = formatPace((st.strength.Value - st.startStrength) / avgElapsed)
-		UI.Strength.DuraAverage.Text = formatPace((st.durability.Value - st.startDurability) / avgElapsed)
-	end
-
-	st.lastCalcAt = tick()
-	st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
+	UI.Strength.StrPace.Text = formatPace((st.run.str - st.win.str) / elapsed)
+	UI.Strength.DuraPace.Text = formatPace((st.run.dura - st.win.dura) / elapsed)
+	st.win.str, st.win.dura = st.run.str, st.run.dura
+	st.lastCalcAt = now
+	updateAverages()
 end
 
 -- Controlled Speed: slowly ramps up while the server accepts, slows down when the server stalls
@@ -1448,7 +1497,8 @@ local function updateAdaptiveRate()
 	local now = tick()
 	if now - st.lastCtrlAt < st.ctrlInterval then return end
 
-	local progress = st.strength.Value > st.lastCtrlStr or st.durability.Value > st.lastCtrlDura
+	-- progress = at least one gain since the last check (a rebirth reset is not seen as a stall)
+	local progress = st.prog ~= st.lastCtrlProg
 	if progress then
 		st.stalled = 0
 		st.rate = math.min(st.maxRate, st.rate * 1.12)
@@ -1463,13 +1513,14 @@ local function updateAdaptiveRate()
 	end
 
 	st.lastCtrlAt = now
-	st.lastCtrlStr, st.lastCtrlDura = st.strength.Value, st.durability.Value
+	st.lastCtrlProg = st.prog
 end
 
-local startStrengthWorker
-local function strengthLoop()
+-- The loop belongs to one run id. When the toggle is switched off (or on again) the id changes,
+-- so the old loop stops at its next frame and two loops can never run at the same time.
+local function strengthLoop(myId)
 	st.lastLoopAt = os.clock()
-	while st.running and alive() do
+	while st.running and st.runId == myId and alive() do
 		local now = os.clock()
 		local dt = math.min(0.1, now - st.lastLoopAt)
 		st.lastLoopAt = now
@@ -1484,41 +1535,38 @@ local function strengthLoop()
 
 		services.runservice.Heartbeat:Wait()
 	end
-	st.workerActive = false
-	if st.running and alive() then startStrengthWorker() end
-end
-
-startStrengthWorker = function()
-	if st.workerActive then return end
-	st.workerActive = true
-	task.spawn(strengthLoop)
 end
 
 Callbacks.AutoFarmStrength = function(state)
+	state = state and true or false
+	if state == st.running then return end  -- already in that state: never start a second loop
 	st.running = state
+	st.runId += 1
 	if state then
 		if not st.baselineSet then
-			st.startStrength, st.startDurability = st.strength.Value, st.durability.Value
+			-- the start of the stats is recorded ONCE, on the first start
+			st.gain.str, st.gain.dura = 0, 0
 			st.baselineSet = true
 		end
 		st.timerStarted, st.startedAt = false, 0
+		st.win.str, st.win.dura = st.run.str, st.run.dura
 		st.lastCalcAt = tick()
-		st.lastCalcStr, st.lastCalcDura = st.strength.Value, st.durability.Value
 		st.rate = st.initialRate
 		st.tokens = 0
 		st.lastLoopAt = os.clock()
 		st.lastCtrlAt = tick()
-		st.lastCtrlStr, st.lastCtrlDura = st.strength.Value, st.durability.Value
+		st.lastCtrlProg = st.prog
 		st.stalled = 0
 		setStrengthStatus("Status: Farming", C_ON)
 		if petChosen then task.spawn(equipFarmingPets) end
-		startStrengthWorker()
+		task.spawn(strengthLoop, st.runId)
 	else
 		if st.timerStarted and st.startedAt > 0 then
 			st.totalElapsed += tick() - st.startedAt
-			st.startedAt, st.timerStarted = 0, false
 		end
+		st.startedAt, st.timerStarted = 0, false
 		st.tokens = 0
+		updateAverages()
 		if st.baselineSet then setStrengthStatus("Status: Paused", C_PAUSE)
 		else setStrengthStatus("Status: Inactive", C_IDLE) end
 		updateRuntime()
@@ -1530,6 +1578,13 @@ Callbacks.ControlledSpeed = function(state)
 	st.stalled = 0
 	st.rate = math.min(st.rate, st.maxRate)
 end
+
+-- closing the UI also switches both farming workers off (a new run id makes any running loop exit at once)
+gui.Destroying:Connect(function()
+	st.running = false
+	st.runId += 1
+	rb.running = false
+end)
 
 -- Max Reps / Second: 0 or empty = default 650 (above 650 = lag)
 Callbacks.MaxReps = function(v)
@@ -1545,7 +1600,6 @@ task.spawn(function()
 	local tickCount = 0
 	while alive() do
 		updateStats()
-		updateTimer()
 		tickCount += 1
 		if tickCount % 4 == 0 then
 			updateRuntime()
@@ -1919,10 +1973,11 @@ do
 end
 
 ---------------------------------------------------------------------
--- LOW RESOURCE MODE: Render 3D Off + FPS limiter (20) + Anti Lag + black screen.
--- Everything is restored when it is turned off or the UI is closed.
+-- LOW RESOURCE MODE = Render 3D Off + FPS cap (20) + Anti Lag + black screen.
+-- Each part is its own callback (Callbacks.AntiLag / FPSCap / Render3D) that can be switched and restored on its own,
+-- and Callbacks.LowResource simply calls all of them. Everything is restored when it is turned off or the UI is closed.
 do
-	local active = false
+	local on = {anti = false, fps = false, black = false, r3d = true, low = false}
 	local saved = setmetatable({}, {__mode = "k"})
 	local conns = {}
 	local overlay, origQuality, origShadows, origFps
@@ -1935,32 +1990,69 @@ do
 		end
 	end
 
-	local function setLowResource(on)
-		on = on and true or false
-		if on == active then return end
-		active = on
-		if on then
+	-- Anti Lag: lowest graphics quality, no shadows, no particles / trails / beams / post effects
+	Callbacks.AntiLag = function(state)
+		state = state and true or false
+		if state == on.anti then return end
+		on.anti = state
+		if state then
 			pcall(function() origQuality = settings().Rendering.QualityLevel end)
 			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
 			origShadows = services.lighting.GlobalShadows
 			services.lighting.GlobalShadows = false
 			for _, root in ipairs({workspace, services.lighting}) do
 				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
-					if active then pcall(dim, o) end
+					if on.anti then pcall(dim, o) end
 				end)
 			end
 			task.spawn(function()
 				for _, root in ipairs({workspace, services.lighting}) do
 					for i, o in ipairs(root:GetDescendants()) do
-						if not active then return end
+						if not on.anti then return end
 						pcall(dim, o)
 						if i % 400 == 0 then task.wait() end
 					end
 				end
 			end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for o, v in pairs(saved) do
+				if o.Parent then pcall(function() o.Enabled = v end) end
+			end
+			table.clear(saved)
+			if origShadows ~= nil then services.lighting.GlobalShadows = origShadows end
+			if origQuality then pcall(function() settings().Rendering.QualityLevel = origQuality end) end
+		end
+	end
+
+	-- FPS cap: true = limit to 20 FPS, false = back to the original cap
+	Callbacks.FPSCap = function(state)
+		state = state and true or false
+		if state == on.fps then return end
+		on.fps = state
+		if state then
 			if getfpscap then pcall(function() origFps = getfpscap() end) end
 			if setfpscap then pcall(setfpscap, 20) end
+		elseif setfpscap then
+			pcall(setfpscap, (type(origFps) == "number" and origFps > 0) and origFps or 60)
+		end
+	end
 
+	-- Render 3D: true = 3D rendering enabled (normal), false = disabled
+	Callbacks.Render3D = function(enabled)
+		enabled = enabled and true or false
+		if enabled == on.r3d then return end
+		on.r3d = enabled
+		pcall(function() services.runservice:Set3dRenderingEnabled(enabled) end)
+	end
+
+	-- black screen on top of the game (not a public callback, only used by Low Resource Mode)
+	local function setBlack(state)
+		state = state and true or false
+		if state == on.black then return end
+		on.black = state
+		if state then
 			overlay = Instance.new("ScreenGui")
 			overlay.Name = "MuhavesBlack"
 			overlay.ResetOnSpawn = false
@@ -1973,27 +2065,29 @@ do
 			f.Active = false
 			f.Parent = overlay
 			overlay.Parent = lp:WaitForChild("PlayerGui")
-
-			pcall(function() services.runservice:Set3dRenderingEnabled(false) end)
-		else
-			pcall(function() services.runservice:Set3dRenderingEnabled(true) end)
-			if overlay then overlay:Destroy() overlay = nil end
-			if setfpscap then
-				pcall(setfpscap, (type(origFps) == "number" and origFps > 0) and origFps or 60)
-			end
-			for _, c in ipairs(conns) do c:Disconnect() end
-			table.clear(conns)
-			for o, v in pairs(saved) do
-				if o.Parent then pcall(function() o.Enabled = v end) end
-			end
-			table.clear(saved)
-			if origShadows ~= nil then services.lighting.GlobalShadows = origShadows end
-			if origQuality then pcall(function() settings().Rendering.QualityLevel = origQuality end) end
+		elseif overlay then
+			overlay:Destroy()
+			overlay = nil
 		end
 	end
 
-	Callbacks.LowResource = setLowResource
-	gui.Destroying:Connect(function() setLowResource(false) end)
+	Callbacks.LowResource = function(state)
+		state = state and true or false
+		if state == on.low then return end
+		on.low = state
+		if state then
+			Callbacks.AntiLag(true)
+			Callbacks.FPSCap(true)
+			setBlack(true)
+			Callbacks.Render3D(false)
+		else
+			Callbacks.Render3D(true)
+			setBlack(false)
+			Callbacks.FPSCap(false)
+			Callbacks.AntiLag(false)
+		end
+	end
+	gui.Destroying:Connect(function() Callbacks.LowResource(false) end)
 end
 
 ---------------------------------------------------------------------
