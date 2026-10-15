@@ -3,6 +3,13 @@
     LocalScript. Tab: Fast Farming / Other / Info.
     Aktif & berfungsi: Anti AFK, Anti Lag, Hide Popups.
     Fitur lain masih berupa kerangka (isi di tabel Callbacks).
+
+    Perubahan terbaru:
+    - Isi jendela sekarang bisa di-scroll (atas/bawah, dan kiri/kanan kalau layar sempit),
+      jendela tidak lagi dikecilkan mengikuti tinggi layar. Atur MINSCALE untuk batas pengecilan.
+    - Teks di stat otomatis mengecil kalau angkanya panjang (autoFit), tidak meluap/menumpuk.
+    - AutoLocalize dimatikan supaya teks tidak diterjemahkan otomatis oleh Roblox
+      (terjemahan bikin teks lebih panjang dan merusak tata letak).
 ]]
 
 local ASSETS = {
@@ -559,7 +566,25 @@ local function text(p, t, size, x, cy, w, color, font, align)
 		BackgroundTransparency = 1, Text = t, TextSize = size, Font = font or F.Gotham,
 		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(w, h),
 		TextColor3 = color or TX, TextXAlignment = align or LEFT, TextYAlignment = Enum.TextYAlignment.Center,
+		AutoLocalize = false,
 	}, p)
+end
+
+-- Kecilkan ukuran font otomatis supaya teks (angka stat dsb.) selalu muat di lebar yang tersedia.
+-- Jalan lagi setiap kali Text diubah dari luar, jadi aman untuk angka yang terus berubah.
+local function autoFit(lbl, maxSize, minSize, avail)
+	minSize = minSize or 8
+	avail = avail or lbl.Size.X.Offset
+	lbl.TextTruncate = Enum.TextTruncate.AtEnd
+	local function apply()
+		if avail <= 0 then return end
+		local sz = maxSize
+		while sz > minSize and tw(lbl.Text, sz, lbl.Font) > avail do sz -= 1 end
+		lbl.TextSize = sz
+	end
+	lbl:GetPropertyChangedSignal("Text"):Connect(apply)
+	apply()
+	return lbl
 end
 
 local function hline(p, x, y, w)
@@ -662,11 +687,15 @@ local function pill(p, x, y, t, dot, wOverride)
 			BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
 		round(d, 7)
 	end
-	return text(f, t, 14, dot and 34 or 13, 16, w, TX, F.GothamMedium), w
+	local tx = dot and 34 or 13
+	local lbl = text(f, t, 14, tx, 16, w - tx - 6, TX, F.GothamMedium)
+	autoFit(lbl, 14, 9, w - tx - 12)
+	return lbl, w
 end
 
 local PAD, GAP, HH, SW = 14, 10, 78, 200
-local CX, CY = PAD + SW + PAD, HH + PAD
+-- Koordinat halaman ada di dalam ScrollingFrame (body), yang mulai tepat di bawah header.
+local CX, CY = PAD + SW + PAD, PAD
 local CONTENT_Y = PAD + 44 + GAP
 
 local function cardHeader(card, icon, title, sub, status, extra)
@@ -698,10 +727,12 @@ end
 
 local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
+pcall(function() gui.AutoLocalize = false end)
 
 local win = new("Frame", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
+	ClipsDescendants = true,
 }, gui)
 round(win, 20)
 stroke(win, Color3.fromRGB(55, 55, 58))
@@ -709,12 +740,25 @@ stroke(win, Color3.fromRGB(55, 55, 58))
 local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
-local function fit()
+
+-- Jendela hanya dikecilkan (UIScale) mengikuti LEBAR layar, dan tidak lebih kecil dari MINSCALE.
+-- Kalau tinggi/lebar layar masih kurang, isi jendela di-scroll, bukan dikecilkan lagi.
+local MINSCALE = 0.75
+local body, minimized = nil, false
+
+local function layoutWindow(animate)
 	local v = cam.ViewportSize
-	scale.Scale = math.min(1, (v.X - 16) / cur.w, (v.Y - 16) / cur.h)
+	local s = math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
+	scale.Scale = s
+	local W = math.min(cur.w, (v.X - 16) / s)
+	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
+	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
+	if animate then
+		TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(W, H)}):Play()
+	else
+		win.Size = UDim2.fromOffset(W, H)
+	end
 end
-fit()
-cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 
 -- Header
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
@@ -732,13 +776,24 @@ local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, 
 local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 
-local body = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1}, win)
+-- Isi jendela: ScrollingFrame di bawah header (geser atas/bawah, dan kiri/kanan kalau layar sempit)
+body = new("ScrollingFrame", {
+	Name = "Body", Position = UDim2.fromOffset(0, HH), Size = UDim2.new(1, 0, 1, -HH),
+	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
+	CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH),
+	ScrollingDirection = Enum.ScrollingDirection.XY,
+	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+}, win)
 
-local minimized = false
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end)
+layoutWindow(false)
+
 minBtn.MouseButton1Click:Connect(function()
 	minimized = not minimized
 	body.Visible = not minimized
-	TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(cur.w, minimized and HH or cur.h)}):Play()
+	layoutWindow(true)
 end)
 
 -- Tutup UI: matikan semua utilitas dulu supaya pengaturan game kembali normal
@@ -775,7 +830,7 @@ local pages, sizes = {}, {}
 local SIDEMIN = 300
 local CHAR_MAX_H = 424
 
-local sidebar = box(body, PAD, HH + PAD, SW, 400, BLACK, 16)
+local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
 local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
 local navBtns = {}
 local charImg
@@ -798,7 +853,6 @@ local function selectNav(idx, instant)
 		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
 	end
 	local goals = {
-		{win, {Size = UDim2.fromOffset(W, H)}},
 		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
 	}
 	if charImg then table.insert(goals, {charImg, {Size = UDim2.fromOffset(SW - 16, charH)}}) end
@@ -811,14 +865,15 @@ local function selectNav(idx, instant)
 	end
 	minimized = false
 	body.Visible = true
-	fit()
+	body.CanvasPosition = Vector2.new(0, 0)
+	layoutWindow(not instant)
 end
 
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
 		Text = "            " .. n[2], TextSize = 17, Font = F.GothamBold, TextXAlignment = LEFT, AutoButtonColor = false,
 		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
-		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0,
+		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0, AutoLocalize = false,
 	}, sidebar)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
@@ -857,10 +912,12 @@ local function rowsW(rows)
 end
 local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
-local rbNameW = math.max(tw("Rebirths", 15), tw("Gained", 15), tw("Pace / Hour", 15), tw("Pace / Day", 15))
-local rbStatsMin = 14 + 30 + rbNameW + 16 + 70 + 16 + 64 + 14
+local RB_VW = 84 -- lebar kolom angka di Rebirth Stats
+local rbNameW = math.max(tw("Rebirths", 15, F.GothamMedium), tw("Gained", 15, F.GothamMedium),
+	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium))
+local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 16 + 64 + 14
 local PACE = "-- /s | -- / min | -- /h | -- /d"
-local fsNameW = tw("Dura Average", 13)
+local fsNameW = tw("Dura Average", 13, F.GothamMedium)
 local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE, 13) + 10 + 14
 
 local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
@@ -881,19 +938,21 @@ optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, Callbacks.EquipReb
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "5.000", Callbacks.RebirthTarget)
 
-local function srow(parent, icon, name, value, cy, vx, vw, size, align, font)
+-- Baris stat: nama (lebar dibatasi supaya tidak menabrak angka) + angka (font otomatis mengecil kalau panjang)
+local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, nameW)
 	text(parent, icon, size + 2, 10, cy, 28, MUTED, F.Gotham, CENTER)
-	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208), F.GothamMedium)
-	return text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT)
+	autoFit(text(parent, name, size, 44, cy, nameW or 220, Color3.fromRGB(205, 205, 208), F.GothamMedium), size, 8)
+	return autoFit(text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT), size, 8)
 end
 
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
 text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamBold)
-local rvx = rbStatsW - 14 - 64 - 16 - 70
-local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT, F.GothamBold)
-local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT, F.GothamBold)
+local rvx = rbStatsW - 14 - 64 - 16 - RB_VW
+local rnW = rvx - 44 - 4
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
 image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
 
 -- Strength
@@ -913,15 +972,16 @@ optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "6
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
 text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
-local paceW = tw(PACE, 13) + 10
-local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold)
-local fsStrG = text(fsStats, "+0", 13, vx + 90, 46, 70, TX)
-local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold)
-local fsDurG = text(fsStats, "+0", 13, vx + 90, 69, 70, TX)
-local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13)
-local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13)
-local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13)
-local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13)
+local vnW = vx - 48
+local paceW = fsStatsW - vx - 14 -- pakai seluruh sisa lebar kotak untuk baris pace
+local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold, vnW)
+local fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 46, paceW - 90, TX), 13, 8)
+local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
+local fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
+local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13, nil, nil, vnW)
+local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, nil, vnW)
+local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
+local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
 
 sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
 
