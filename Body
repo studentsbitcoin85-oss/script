@@ -1,9 +1,8 @@
 --[[
-    Muhaves Private Farming - UI ONLY (per tab)
-    LocalScript. Tiap tab di sidebar punya halaman sendiri:
-    Fast Rebirth / Fast Strength / Other / Info.
-    Isi ASSETS dengan ID gambar hasil upload (folder assets). Kosong = teks pengganti.
-    Semua aksi ada di tabel Callbacks (kosong).
+    Muhaves Private Farming - UI + Utilities (merged)
+    LocalScript. Tab: Fast Farming / Other / Info.
+    Aktif & berfungsi: Anti AFK, Anti Lag, Hide Popups.
+    Fitur lain masih berupa kerangka (isi di tabel Callbacks).
 ]]
 
 local ASSETS = {
@@ -17,9 +16,8 @@ local ASSETS = {
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
--- Warna latar gambar yang di-upload hampir hitam murni (sekitar 2,2,3).
--- BLACK dipakai di semua tempat yang menampung gambar supaya menyatu.
 local BLACK = Color3.fromRGB(2, 2, 3)
 local WIN   = BLACK
 local SEC   = Color3.fromRGB(8, 8, 9)
@@ -43,89 +41,202 @@ local Callbacks = {
 }
 
 ---------------------------------------------------------------------
--- Utilitas sisi klien: Anti AFK & Anti Lag (hanya pengaturan lokal, bisa dibatalkan)
+-- UTILITAS SISI KLIEN v2: Anti AFK, Anti Lag, Hide Popups
+---------------------------------------------------------------------
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 
--- Anti AFK: respon sinyal Idled supaya tidak di-kick karena diam
-local afkConn
+-- ANTI AFK: respon Idled + ping cadangan tiap 4 menit
+local afk = {conn = nil, token = 0}
+
+local function poke()
+	pcall(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame)
+	end)
+end
+
 Callbacks.AntiAFK = function(state)
-	if afkConn then afkConn:Disconnect() afkConn = nil end
-	if state then
-		afkConn = Players.LocalPlayer.Idled:Connect(function()
-			pcall(function()
-				VirtualUser:CaptureController()
-				VirtualUser:ClickButton2(Vector2.new())
-			end)
-		end)
+	afk.token += 1
+	if afk.conn then afk.conn:Disconnect() afk.conn = nil end
+	if not state then return end
+
+	afk.conn = Players.LocalPlayer.Idled:Connect(poke)
+
+	local my = afk.token
+	task.spawn(function()
+		while afk.token == my do
+			for _ = 1, 240 do
+				if afk.token ~= my then return end
+				task.wait(1)
+			end
+			poke()
+		end
+	end)
+end
+
+-- ANTI LAG: matikan efek visual, semua nilai asli disimpan & dipulihkan
+local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}),
+	lighting = nil, quality = nil, terrain = nil, token = 0}
+
+local EMITTERS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true,
+	Smoke = true, Sparkles = true, PointLight = true, SpotLight = true, SurfaceLight = true}
+local POST = {BloomEffect = true, BlurEffect = true, SunRaysEffect = true,
+	ColorCorrectionEffect = true, DepthOfFieldEffect = true}
+
+local function dampen(obj)
+	if antiLag.saved[obj] then return end
+	local cls = obj.ClassName
+	if EMITTERS[cls] or POST[cls] then
+		antiLag.saved[obj] = {kind = "enabled", v = obj.Enabled}
+		obj.Enabled = false
+	elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
+		local s = {kind = "part", mat = obj.Material, refl = obj.Reflectance, shadow = obj.CastShadow}
+		if obj:IsA("MeshPart") then
+			s.fid = obj.RenderFidelity
+			obj.RenderFidelity = Enum.RenderFidelity.Performance
+		end
+		antiLag.saved[obj] = s
+		obj.Material = Enum.Material.SmoothPlastic
+		obj.Reflectance = 0
+		obj.CastShadow = false
+	elseif obj:IsA("Decal") or obj:IsA("Texture") then
+		antiLag.saved[obj] = {kind = "decal", v = obj.Transparency}
+		obj.Transparency = 1
 	end
 end
 
--- Anti Lag: matikan efek visual (partikel, cahaya, bayangan) tanpa menghapus apa pun.
--- Semua nilai asli disimpan dan dikembalikan saat dimatikan.
-local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}), lighting = nil, quality = nil}
-local EFFECTS = {
-	ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true,
-	PointLight = true, SpotLight = true, SurfaceLight = true,
-}
-
-local function dampen(obj)
-	if EFFECTS[obj.ClassName] then
-		antiLag.saved[obj] = {effect = true, enabled = obj.Enabled}
-		obj.Enabled = false
-	elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
-		antiLag.saved[obj] = {material = obj.Material, reflectance = obj.Reflectance}
-		obj.Material = Enum.Material.SmoothPlastic
-		obj.Reflectance = 0
+local function restore(obj, s)
+	if s.kind == "enabled" then
+		obj.Enabled = s.v
+	elseif s.kind == "part" then
+		obj.Material, obj.Reflectance, obj.CastShadow = s.mat, s.refl, s.shadow
+		if s.fid then obj.RenderFidelity = s.fid end
+	elseif s.kind == "decal" then
+		obj.Transparency = s.v
+	elseif s.kind == "atm" then
+		obj.Density, obj.Haze = s.d, s.h
 	end
 end
 
 Callbacks.AntiLag = function(state)
 	if state == antiLag.on then return end
 	antiLag.on = state
+	antiLag.token += 1
+	local my = antiLag.token
+
 	if state then
-		antiLag.lighting = {
-			GlobalShadows = Lighting.GlobalShadows,
+		antiLag.lighting = {GlobalShadows = Lighting.GlobalShadows,
 			EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
-		}
+			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale}
 		pcall(function() antiLag.quality = settings().Rendering.QualityLevel end)
 		Lighting.GlobalShadows = false
 		Lighting.EnvironmentDiffuseScale = 0
 		Lighting.EnvironmentSpecularScale = 0
 		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
 
+		pcall(function()
+			local t = workspace.Terrain
+			antiLag.terrain = {WaterWaveSize = t.WaterWaveSize, WaterWaveSpeed = t.WaterWaveSpeed,
+				WaterReflectance = t.WaterReflectance}
+			t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance = 0, 0, 0
+		end)
+
+		for _, d in ipairs(Lighting:GetDescendants()) do pcall(dampen, d) end
+		local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+		if atm then
+			antiLag.saved[atm] = {kind = "atm", d = atm.Density, h = atm.Haze}
+			atm.Density, atm.Haze = 0, 0
+		end
+
 		antiLag.conn = workspace.DescendantAdded:Connect(function(d)
 			if antiLag.on then pcall(dampen, d) end
 		end)
+
 		task.spawn(function()
 			local n = 0
 			for _, d in ipairs(workspace:GetDescendants()) do
-				if not antiLag.on then return end
+				if antiLag.token ~= my then return end
 				pcall(dampen, d)
 				n += 1
-				if n % 400 == 0 then task.wait() end
+				if n % 300 == 0 then RunService.Heartbeat:Wait() end
 			end
 		end)
 	else
 		if antiLag.conn then antiLag.conn:Disconnect() antiLag.conn = nil end
-		if antiLag.lighting then
-			for k, v in pairs(antiLag.lighting) do pcall(function() Lighting[k] = v end) end
-		end
+		for k, v in pairs(antiLag.lighting or {}) do pcall(function() Lighting[k] = v end) end
+		for k, v in pairs(antiLag.terrain or {}) do pcall(function() workspace.Terrain[k] = v end) end
 		if antiLag.quality then
 			pcall(function() settings().Rendering.QualityLevel = antiLag.quality end)
 		end
-		for obj, info in pairs(antiLag.saved) do
-			pcall(function()
-				if info.effect then
-					obj.Enabled = info.enabled
-				else
-					obj.Material = info.material
-					obj.Reflectance = info.reflectance
-				end
-			end)
-		end
+		local list = antiLag.saved
 		antiLag.saved = setmetatable({}, {__mode = "k"})
+		task.spawn(function()
+			local n = 0
+			for obj, s in pairs(list) do
+				pcall(restore, obj, s)
+				n += 1
+				if n % 300 == 0 then RunService.Heartbeat:Wait() end
+			end
+		end)
+	end
+end
+
+-- HIDE POPUPS: sembunyikan GUI game yang namanya cocok kata kunci.
+-- Nama GUI Muscle Legends tidak bisa saya verifikasi dari sini, jadi tiap objek
+-- yang disembunyikan dicetak di Output (F9) supaya kamu bisa menyetel daftar ini.
+local POPUP_KEYWORDS = {
+	"popup", "pop_up", "notification", "notif", "toast", "alert", "announce",
+	"reward", "gift", "offer", "sale", "welcome", "daily",
+}
+local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar"} -- jangan disentuh
+local popup = {on = false, conns = {}, hidden = setmetatable({}, {__mode = "k"}), log = true}
+
+local function isPopup(o)
+	if not (o:IsA("GuiObject") or o:IsA("ScreenGui")) then return false end
+	if o:FindFirstAncestor("MuhavesUI") or o.Name == "MuhavesUI" then return false end
+	local n = o.Name:lower()
+	for _, k in ipairs(POPUP_IGNORE) do
+		if n:find(k, 1, true) then return false end
+	end
+	for _, k in ipairs(POPUP_KEYWORDS) do
+		if n:find(k, 1, true) then return true end
+	end
+	return false
+end
+
+local function hidePopup(o)
+	if popup.hidden[o] then return end
+	local prop = o:IsA("ScreenGui") and "Enabled" or "Visible"
+	popup.hidden[o] = {prop = prop, v = o[prop]}
+	o[prop] = false
+	if popup.log then print("[MuhavesUI] HidePopups menyembunyikan:", o:GetFullName()) end
+	table.insert(popup.conns, o:GetPropertyChangedSignal(prop):Connect(function()
+		if popup.on and o[prop] == true then o[prop] = false end
+	end))
+end
+
+Callbacks.HidePopups = function(state)
+	if state == popup.on then return end
+	popup.on = state
+	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	if state then
+		for _, d in ipairs(pg:GetDescendants()) do
+			if isPopup(d) then pcall(hidePopup, d) end
+		end
+		table.insert(popup.conns, pg.DescendantAdded:Connect(function(d)
+			if popup.on and isPopup(d) then
+				task.defer(function() pcall(hidePopup, d) end)
+			end
+		end))
+	else
+		for _, c in ipairs(popup.conns) do c:Disconnect() end
+		popup.conns = {}
+		for o, s in pairs(popup.hidden) do
+			pcall(function() o[s.prop] = s.v end)
+		end
+		popup.hidden = setmetatable({}, {__mode = "k"})
 	end
 end
 
@@ -142,7 +253,6 @@ end
 local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
 local function stroke(o, c, t) new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
 
--- lebar teks (px)
 local function tw(t, size, font)
 	local ok, v = pcall(function()
 		return TextService:GetTextSize(t, size, font or F.Gotham, Vector2.new(10000, 1000)).X
@@ -160,7 +270,6 @@ local function box(p, x, y, w, h, bg, r, noStroke)
 	return f
 end
 
--- x = kiri, cy = titik tengah vertikal
 local function text(p, t, size, x, cy, w, color, font, align)
 	local h = size + 10
 	return new("TextLabel", {
@@ -175,8 +284,6 @@ local function hline(p, x, y, w)
 		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
 end
 
--- Loader gambar: ImageLabel langsung tampil. Urutan percobaan tiap 4 detik kalau belum termuat:
--- Thumbs -> rbxassetid -> rbxthumb.
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
 local function image(p, id, x, y, w, h, fallback, fsize, holder)
@@ -243,7 +350,6 @@ local function numberBox(p, x, y, w, h, value, cb)
 	end)
 end
 
--- Baris opsi (toggle/ikon di kiri, judul + deskripsi, kotak angka opsional di kanan)
 local RH = 58
 local function rowW(title, sub, icon, num)
 	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamBold), tw(sub, 13, F.GothamMedium)) + 14
@@ -264,7 +370,6 @@ local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
 	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb) end
 end
 
--- Pill status
 local function pillW(t, dot) return tw(t, 14, F.GothamMedium) + (dot and 52 or 26) end
 local function pill(p, x, y, t, dot, wOverride)
 	local w = wOverride or pillW(t, dot)
@@ -278,10 +383,9 @@ local function pill(p, x, y, t, dot, wOverride)
 end
 
 local PAD, GAP, HH, SW = 14, 10, 78, 200
-local CX, CY = PAD + SW + PAD, HH + PAD -- asal halaman di dalam jendela
-local CONTENT_Y = PAD + 44 + GAP        -- isi kartu mulai di bawah header kartu
+local CX, CY = PAD + SW + PAD, HH + PAD
+local CONTENT_Y = PAD + 44 + GAP
 
--- Header kartu: ikon + judul + subjudul, pill di kanan (status, lalu extra)
 local function cardHeader(card, icon, title, sub, status, extra)
 	local cw = card.Size.X.Offset
 	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
@@ -337,9 +441,8 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v12 • clean", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v13 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
-print("[MuhavesUI] v12 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
@@ -354,7 +457,14 @@ minBtn.MouseButton1Click:Connect(function()
 	body.Visible = not minimized
 	TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(cur.w, minimized and HH or cur.h)}):Play()
 end)
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- Tutup UI: matikan semua utilitas dulu supaya pengaturan game kembali normal
+closeBtn.MouseButton1Click:Connect(function()
+	pcall(Callbacks.AntiAFK, false)
+	pcall(Callbacks.AntiLag, false)
+	pcall(Callbacks.HidePopups, false)
+	gui:Destroy()
+end)
 
 do -- drag lewat header
 	local dragging, start, startPos
@@ -375,8 +485,8 @@ end
 ---------------------------------------------------------------------
 -- Sidebar + navigasi
 local pages, sizes = {}, {}
-local SIDEMIN = 300      -- tinggi minimum area isi (sebelumnya 410, dikecilkan supaya tidak ada ruang kosong)
-local CHAR_MAX_H = 424   -- tinggi maksimum gambar karakter
+local SIDEMIN = 300
+local CHAR_MAX_H = 424
 
 local sidebar = box(body, PAD, HH + PAD, SW, 400, BLACK, 16)
 local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
@@ -430,7 +540,6 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
--- gambar karakter tepat di bawah menu, diregangkan memanjang
 charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
 
 local function newPage()
@@ -441,7 +550,7 @@ local function newPage()
 end
 
 ---------------------------------------------------------------------
--- HALAMAN 1: Fast Farming (Fast Rebirth + Fast Strength)
+-- HALAMAN 1: Fast Farming
 local p1 = newPage()
 
 local rbRows = {
@@ -538,7 +647,7 @@ local tiles = {
 	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, Callbacks.SpinWheel},
 	{"Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts},
 	{"Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets},
-	{"Hide Popups", "Sembunyikan notifikasi popup.", true, Callbacks.HidePopups},
+	{"Hide Popups", "Sembunyikan notifikasi popup.", false, function(st) Callbacks.HidePopups(st) end},
 	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
 	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
 }
