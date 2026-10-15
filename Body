@@ -52,7 +52,7 @@ local StatsInfo = {
 	afkOn = false, afkSince = 0, afkPings = 0, afkIdled = 0, afkLast = 0,
 	lagOn = false, lagCount = 0,
 	popOn = false, popCount = 0, popLast = "-",
-	fpsNote = "",
+	fpsNote = "", fps = 0,
 }
 
 ---------------------------------------------------------------------
@@ -415,6 +415,118 @@ end
 
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
+-- HIDE PLAYERS: sembunyikan karakter pemain lain (lokal, reversibel). Pengurang lag besar di server ramai.
+local hidePl = {on = false, conns = {}, saved = setmetatable({}, {__mode = "k"})}
+
+local function hpHide(d)
+	if hidePl.saved[d] then return end
+	if d:IsA("BasePart") then
+		hidePl.saved[d] = {k = "p", v = d.LocalTransparencyModifier}
+		d.LocalTransparencyModifier = 1
+	elseif d:IsA("Decal") or d:IsA("Texture") then
+		hidePl.saved[d] = {k = "d", v = d.Transparency}
+		d.Transparency = 1
+	elseif d:IsA("BillboardGui") then
+		hidePl.saved[d] = {k = "b", v = d.Enabled}
+		d.Enabled = false
+	end
+end
+
+local function hpChar(char)
+	for _, d in ipairs(char:GetDescendants()) do pcall(hpHide, d) end
+	table.insert(hidePl.conns, char.DescendantAdded:Connect(function(d)
+		if hidePl.on then task.defer(pcall, hpHide, d) end
+	end))
+end
+
+local function hpPlayer(pl)
+	if pl == LocalPlayer then return end
+	if pl.Character then hpChar(pl.Character) end
+	table.insert(hidePl.conns, pl.CharacterAdded:Connect(function(c)
+		if not hidePl.on then return end
+		task.wait(0.5)
+		if hidePl.on then hpChar(c) end
+	end))
+end
+
+Callbacks.HidePlayers = function(state)
+	if state == hidePl.on then return end
+	hidePl.on = state
+	if state then
+		for _, pl in ipairs(Players:GetPlayers()) do pcall(hpPlayer, pl) end
+		table.insert(hidePl.conns, Players.PlayerAdded:Connect(function(pl) pcall(hpPlayer, pl) end))
+	else
+		for _, c in ipairs(hidePl.conns) do c:Disconnect() end
+		hidePl.conns = {}
+		local list = hidePl.saved
+		hidePl.saved = setmetatable({}, {__mode = "k"})
+		for d, s in pairs(list) do
+			pcall(function()
+				if s.k == "p" then d.LocalTransparencyModifier = s.v
+				elseif s.k == "d" then d.Transparency = s.v
+				else d.Enabled = s.v end
+			end)
+		end
+	end
+end
+
+---------------------------------------------------------------------
+-- AUTO REJOIN: kalau kena disconnect/kick, coba masuk lagi (server yang sama dulu, lalu server lain).
+-- Catatan: setelah teleport, script harus dijalankan lagi (atau taruh di folder autoexecute Delta).
+local rejoin = {conn = nil, on = false, busy = false}
+Callbacks.AutoRejoin = function(state)
+	rejoin.on = state
+	if rejoin.conn then rejoin.conn:Disconnect() rejoin.conn = nil end
+	if not state then return end
+	local GuiService = game:GetService("GuiService")
+	local TeleportService = game:GetService("TeleportService")
+	rejoin.conn = GuiService.ErrorMessageChanged:Connect(function(msg)
+		if not rejoin.on or rejoin.busy or msg == "" then return end
+		rejoin.busy = true
+		task.spawn(function()
+			task.wait(2)
+			pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end)
+			task.wait(8)
+			pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+			task.wait(10)
+			rejoin.busy = false
+		end)
+	end)
+end
+
+---------------------------------------------------------------------
+-- FPS counter live (untuk panel status)
+local fpsConn
+do
+	local n, t0 = 0, os.clock()
+	fpsConn = RunService.Heartbeat:Connect(function()
+		n += 1
+		local now = os.clock()
+		if now - t0 >= 1 then
+			StatsInfo.fps = math.floor(n / (now - t0) + 0.5)
+			n, t0 = 0, now
+		end
+	end)
+end
+StatsInfo.fps = 0
+
+---------------------------------------------------------------------
+-- Simpan pengaturan (otomatis aktif lagi saat script dijalankan ulang). Aman jika executor tak punya writefile.
+local HttpService = game:GetService("HttpService")
+local SAVE_FILE = "MuhavesSettings_MuscleLegends.json"
+local Saved = {}
+pcall(function()
+	if isfile and isfile(SAVE_FILE) then Saved = HttpService:JSONDecode(readfile(SAVE_FILE)) end
+end)
+local function saveSettings()
+	pcall(function()
+		if writefile then writefile(SAVE_FILE, HttpService:JSONEncode(Saved)) end
+	end)
+end
+local PERSIST = {["Hide Popups"] = true, ["Anti AFK"] = true, ["Anti Lag"] = true,
+	["Hide Players"] = true, ["Auto Rejoin"] = true, ["FPS Limiter"] = true}
+
+---------------------------------------------------------------------
 -- Helper (ukuran kartu dihitung dari panjang teks, jadi tidak ada ruang kosong)
 local TextService = game:GetService("TextService")
 
@@ -615,7 +727,7 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v14 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v15 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
@@ -639,6 +751,9 @@ closeBtn.MouseButton1Click:Connect(function()
 	pcall(Callbacks.HidePopups, false)
 	pcall(Callbacks.Render3D, false)
 	pcall(Callbacks.FPSCap, false)
+	pcall(Callbacks.HidePlayers, false)
+	pcall(Callbacks.AutoRejoin, false)
+	if fpsConn then fpsConn:Disconnect() end
 	gui:Destroy()
 end)
 
@@ -828,6 +943,8 @@ local tiles = {
 	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
 	{"Render 3D Off", "Layar dunia kosong, hemat besar.", false, function(st) Callbacks.Render3D(st) end},
 	{"FPS Limiter", "Batasi FPS ke 20 (hemat CPU).", false, function(st) Callbacks.FPSCap(st) end},
+	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
+	{"Auto Rejoin", "Masuk lagi jika disconnect.", false, function(st) Callbacks.AutoRejoin(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -839,24 +956,42 @@ local inner2 = 4 * tileW + 3 * GAP
 local cardW2 = inner2 + 2 * PAD
 local ROWS2 = math.ceil(#tiles / 4)
 local STATUS_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
-local cardH2 = STATUS_Y + 50 + PAD
+local cardH2 = STATUS_Y + 68 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
+local restoreList = {}
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
 for i, t in ipairs(tiles) do
 	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
 	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
-	toggle(tile, 14, 27, t[3], t[4])
+	local init, cb = t[3], t[4]
+	if PERSIST[t[1]] then
+		if Saved[t[1]] ~= nil then init = Saved[t[1]] end
+		local base = t[4]
+		cb = function(st)
+			base(st)
+			Saved[t[1]] = st
+			saveSettings()
+		end
+		if init then table.insert(restoreList, base) end
+	end
+	toggle(tile, 14, 27, init, cb)
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
 
--- Panel status live (bukti Anti AFK / Anti Lag / Hide Popups bekerja)
-local stBox = box(otCard, PAD, STATUS_Y, inner2, 50, CARD, 10)
-local st1 = text(stBox, "", 12, 12, 16, inner2 - 24, MUTED, F.GothamMedium)
-local st2 = text(stBox, "", 12, 12, 35, inner2 - 24, MUTED, F.GothamMedium)
-st1.TextTruncate = Enum.TextTruncate.AtEnd
-st2.TextTruncate = Enum.TextTruncate.AtEnd
+-- Panel status live (bukti fitur bekerja)
+local stBox = box(otCard, PAD, STATUS_Y, inner2, 68, CARD, 10)
+local st1 = text(stBox, "", 12, 12, 15, inner2 - 24, MUTED, F.GothamMedium)
+local st2 = text(stBox, "", 12, 12, 34, inner2 - 24, MUTED, F.GothamMedium)
+local st3 = text(stBox, "", 12, 12, 53, inner2 - 24, MUTED, F.GothamMedium)
+for _, l in ipairs({st1, st2, st3}) do l.TextTruncate = Enum.TextTruncate.AtEnd end
+
+-- aktifkan kembali pengaturan yang tersimpan
+task.defer(function()
+	for _, f in ipairs(restoreList) do pcall(f, true) end
+end)
+
 task.spawn(function()
 	while gui.Parent do
 		local S, now = StatsInfo, os.clock()
@@ -868,8 +1003,9 @@ task.spawn(function()
 		end
 		if S.lagOn then l = "Lag: ON • " .. S.lagCount .. " objek" end
 		if S.popOn then p = "Popup: ON • " .. S.popCount .. " disembunyikan • " .. S.popLast end
-		st1.Text = a .. "   |   " .. l .. (S.fpsNote ~= "" and ("   |   " .. S.fpsNote) or "")
-		st2.Text = p
+		st1.Text = "FPS " .. S.fps .. "   |   " .. a
+		st2.Text = l .. (S.fpsNote ~= "" and ("   |   " .. S.fpsNote) or "")
+		st3.Text = p
 		task.wait(1)
 	end
 end)
