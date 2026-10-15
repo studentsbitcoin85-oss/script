@@ -636,7 +636,9 @@ local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
 for i, t in ipairs(tiles) do
 	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
+	local inRow = math.min(4, #tiles - row * 4) -- jumlah tombol di baris ini
+	local xoff = (4 - inRow) * (tileW + GAP) / 2 -- baris yang tidak penuh ditaruh di tengah
+	local tile = box(otCard, PAD + xoff + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
 	toggle(tile, 14, 27, t[3], t[4])
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
