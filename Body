@@ -335,12 +335,12 @@ local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparen
 new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
 image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
 new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-text(header, "PRIVATE FARMING", 15, 214, 28, 400, TX, F.Michroma)
+text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v10 • premium font", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
+local verLbl = text(header, "v11 • bold header", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
-print("[MuhavesUI] v10 dimuat")
+print("[MuhavesUI] v11 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
