@@ -87,6 +87,15 @@ local function loop(interval, fn)
     end)
 end
 
+local function notify(text)
+    warn("[Muhaves] " .. tostring(text))
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Muhaves", Text = tostring(text), Duration = 10,
+        })
+    end)
+end
+
 ----------------------------------------------------------------------
 -- Anti AFK (selalu aktif, tidak bergantung toggle di UI)
 ----------------------------------------------------------------------
@@ -121,17 +130,86 @@ track(player.CharacterAdded:Connect(function(char)
 end))
 
 ----------------------------------------------------------------------
+-- Load library UI (PERTAMA, supaya UI selalu muncul)
+----------------------------------------------------------------------
+local function readSource()
+    if LIB_URL:match("^https?://") then
+        return game:HttpGet(LIB_URL)
+    end
+    if type(readfile) == "function" and type(isfile) == "function" and isfile(LIB_URL) then
+        return readfile(LIB_URL)
+    end
+    error("LIB_URL belum diisi atau file tidak ditemukan: " .. tostring(LIB_URL))
+end
+
+local function loadLibrary()
+    local src = readSource()
+    local total = 0
+    for _, name in ipairs(LATE) do
+        local n
+        src, n = src:gsub("Callbacks%." .. name .. "%f[%W]",
+            'function(...) local f = Callbacks["' .. name .. '"] if f then return f(...) end end')
+        total = total + n
+    end
+    if total == 0 then
+        warn("[Connector] Patch callback tidak menemukan referensi (library mungkin sudah diperbaiki).")
+    end
+    local fn, err = loadstring(src)
+    if not fn then error("Library syntax error: " .. tostring(err)) end
+    return fn()
+end
+
+local okLoad, UI = pcall(loadLibrary)
+if not okLoad or type(UI) ~= "table" then
+    notify("Gagal load UI: " .. tostring(UI))
+    return
+end
+local R, S, O, CB = UI.Rebirth, UI.Strength, UI.Other, UI.Callbacks
+
+local function setText(lbl, text)
+    if lbl and lbl.Parent then lbl.Text = text end
+end
+
+-- Teks stat bisa lebih panjang dari placeholder: kecilkan otomatis agar muat
+local function fit(lbl, maxSize)
+    if not lbl then return end
+    lbl.TextScaled = true
+    local c = Instance.new("UITextSizeConstraint")
+    c.MaxTextSize = maxSize
+    c.MinTextSize = 8
+    c.Parent = lbl
+end
+for _, l in ipairs({ S.StrPace, S.DuraPace, S.StrAverage, S.DuraAverage, S.Strength,
+    S.StrengthGain, S.Durability, S.DurabilityGain }) do fit(l, 13) end
+for _, l in ipairs({ R.Rebirths, R.Gained, R.PaceHour, R.PaceDay }) do fit(l, 15) end
+fit(S.Runtime, 14)
+
+-- Berhenti total saat UI ditutup (tombol X)
+UI.Gui.Destroying:Connect(function()
+    _G.MuhavesFarmingSession = SESSION_ID + 1
+end)
+
+----------------------------------------------------------------------
 -- Remotes & values
 ----------------------------------------------------------------------
-local muscleEvent = player:WaitForChild("muscleEvent")
-local rEvents = ReplicatedStorage:WaitForChild("rEvents")
-local equipPetEvent = rEvents:WaitForChild("equipPetEvent")
-local rebirthRemote = rEvents:WaitForChild("rebirthRemote")
-local showPetsEvent = rEvents:WaitForChild("showPetsEvent")
-local leaderstats = player:WaitForChild("leaderstats")
-local strengthVal = leaderstats:WaitForChild("Strength")
-local rebirthVal = leaderstats:WaitForChild("Rebirths")
-local durabilityVal = player:WaitForChild("Durability")
+local function need(parent, name)
+    local o = parent:WaitForChild(name, 15)
+    if not o then
+        notify("Tidak ketemu: " .. name .. " (bukan di Muscle Legends / belum selesai load?)")
+        error("missing " .. name)
+    end
+    return o
+end
+
+local muscleEvent = need(player, "muscleEvent")
+local rEvents = need(ReplicatedStorage, "rEvents")
+local equipPetEvent = need(rEvents, "equipPetEvent")
+local rebirthRemote = need(rEvents, "rebirthRemote")
+local showPetsEvent = need(rEvents, "showPetsEvent")
+local leaderstats = need(player, "leaderstats")
+local strengthVal = need(leaderstats, "Strength")
+local rebirthVal = need(leaderstats, "Rebirths")
+local durabilityVal = need(player, "Durability")
 
 local function fireRep(n)
     for _ = 1, n do
@@ -167,51 +245,6 @@ local function duration(sec)
         math.floor(sec / 86400), math.floor((sec % 86400) / 3600),
         math.floor((sec % 3600) / 60), math.floor(sec % 60))
 end
-
-----------------------------------------------------------------------
--- Load library UI (dengan patch callback)
-----------------------------------------------------------------------
-local function loadLibrary()
-    local src = game:HttpGet(LIB_URL)
-    local total = 0
-    for _, name in ipairs(LATE) do
-        local n
-        src, n = src:gsub("Callbacks%." .. name .. "%f[%W]",
-            'function(...) local f = Callbacks["' .. name .. '"] if f then return f(...) end end')
-        total = total + n
-    end
-    if total == 0 then
-        warn("[Connector] Patch callback tidak menemukan referensi (library mungkin sudah diperbaiki).")
-    end
-    local fn = assert(loadstring(src))
-    return fn()
-end
-
-local UI = loadLibrary()
-local R, S, O, CB = UI.Rebirth, UI.Strength, UI.Other, UI.Callbacks
-
-local function setText(lbl, text)
-    if lbl and lbl.Parent then lbl.Text = text end
-end
-
--- Teks stat bisa lebih panjang dari placeholder: kecilkan otomatis agar muat
-local function fit(lbl, maxSize)
-    if not lbl then return end
-    lbl.TextScaled = true
-    local c = Instance.new("UITextSizeConstraint")
-    c.MaxTextSize = maxSize
-    c.MinTextSize = 8
-    c.Parent = lbl
-end
-for _, l in ipairs({ S.StrPace, S.DuraPace, S.StrAverage, S.DuraAverage, S.Strength,
-    S.StrengthGain, S.Durability, S.DurabilityGain }) do fit(l, 13) end
-for _, l in ipairs({ R.Rebirths, R.Gained, R.PaceHour, R.PaceDay }) do fit(l, 15) end
-fit(S.Runtime, 14)
-
--- Berhenti total saat UI ditutup (tombol X)
-UI.Gui.Destroying:Connect(function()
-    _G.MuhavesFarmingSession = SESSION_ID + 1
-end)
 
 ----------------------------------------------------------------------
 -- Pets
