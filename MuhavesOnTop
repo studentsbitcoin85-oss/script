@@ -15,6 +15,7 @@ local ASSETS = {
 	LogoInfo     = "91147250558427",
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
+	InfoBG       = "106276772809647", -- latar kartu Info
 }
 
 local Players = game:GetService("Players")
@@ -867,6 +868,16 @@ local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
 local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
+do -- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
+	local bg = image(inCard, ASSETS.InfoBG, 0, 0, cardW3, cardH3, "", 14)
+	if bg:IsA("ImageLabel") then
+		bg.ScaleType = Enum.ScaleType.Crop
+		round(bg, 16)
+		local shade = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.45, BorderSizePixel = 0}, inCard)
+		round(shade, 16)
+	end
+end
 cardHeader(inCard, "ℹ", "Info", "About this script.")
 
 local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
