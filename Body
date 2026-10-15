@@ -226,13 +226,15 @@ end
 -- HIDE POPUPS v3: deteksi berdasarkan ISI teks (+angka ...) dan pola muncul-cepat,
 -- bukan cuma nama. Semua yang disembunyikan dipulihkan saat dimatikan.
 local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce"}
-local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar"}
+local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar", "quest", "mission", "misi",
+	"shop", "store", "inventory", "settings", "trade", "index", "rewardlist", "codes"}
 
 local popup = {on = false, token = 0, conns = {},
 	hidden = setmetatable({}, {__mode = "k"}),
 	baseline = setmetatable({}, {__mode = "k"}),
 	labelSet = setmetatable({}, {__mode = "k"}),
 	seen = setmetatable({}, {__mode = "k"}),
+	counted = setmetatable({}, {__mode = "k"}),
 	spawn = setmetatable({}, {__mode = "k"})}
 
 local function gainText(t)
@@ -256,6 +258,16 @@ local function layouty(p)
 	return p:IsA("ScrollingFrame") or p:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
 end
 
+-- daftar/menu (quest, shop, inventory) hampir selalu ada di ScrollingFrame: jangan disentuh
+local function inScrolling(o)
+	local a = o.Parent
+	while a and not a:IsA("PlayerGui") and a ~= workspace do
+		if a:IsA("ScrollingFrame") then return true end
+		a = a.Parent
+	end
+	return false
+end
+
 local function unhide(o)
 	local s = popup.hidden[o]
 	if not s then return end
@@ -265,12 +277,15 @@ local function unhide(o)
 end
 
 local function hideTarget(o, why, srcLabel)
-	if popup.hidden[o] or ignored(o) then return end
+	if popup.hidden[o] or ignored(o) or inScrolling(o) then return end
 	local prop = o:IsA("LayerCollector") and "Enabled" or "Visible"
 	local s = {prop = prop, v = o[prop]}
 	popup.hidden[o] = s
 	o[prop] = false
-	StatsInfo.popCount += 1
+	if not popup.counted[o] then
+		popup.counted[o] = true
+		StatsInfo.popCount += 1
+	end
 	local full = o:GetFullName():gsub("^.-PlayerGui%.", "")
 	StatsInfo.popLast = why .. ": " .. full:sub(-46)
 	s.conn = o:GetPropertyChangedSignal(prop):Connect(function()
@@ -312,7 +327,7 @@ local function checkLabel(lbl)
 	if not popup.on or popup.hidden[lbl] then return end
 	local seenT = popup.seen[lbl]
 	if seenT and popup.hidden[seenT] then return end
-	if not lbl.Visible or not gainText(lbl.Text) then return end
+	if not lbl.Visible or not gainText(lbl.Text) or inScrolling(lbl) then return end
 	local t = pickTarget(lbl)
 	popup.seen[lbl] = t
 	hideTarget(t, "gain", lbl)
@@ -410,6 +425,7 @@ Callbacks.HidePopups = function(state)
 		popup.labelSet = setmetatable({}, {__mode = "k"})
 		popup.seen = setmetatable({}, {__mode = "k"})
 		popup.spawn = setmetatable({}, {__mode = "k"})
+		popup.counted = setmetatable({}, {__mode = "k"})
 	end
 end
 
@@ -727,7 +743,7 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v15 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v16 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
