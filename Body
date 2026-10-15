@@ -225,7 +225,7 @@ end
 ---------------------------------------------------------------------
 -- HIDE POPUPS v3: deteksi berdasarkan ISI teks (+angka ...) dan pola muncul-cepat,
 -- bukan cuma nama. Semua yang disembunyikan dipulihkan saat dimatikan.
-local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce"}
+local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce", "stateffects"}
 local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar", "quest", "mission", "misi",
 	"shop", "store", "inventory", "settings", "trade", "index", "rewardlist", "codes"}
 
@@ -748,7 +748,7 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v17 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v18 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
