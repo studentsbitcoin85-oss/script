@@ -131,7 +131,9 @@ Callbacks.AntiLag = function(state)
 end
 
 ---------------------------------------------------------------------
--- Helper (semua posisi absolut pada kanvas 1536x1024)
+-- Helper (ukuran kartu dihitung dari panjang teks, jadi tidak ada ruang kosong)
+local TextService = game:GetService("TextService")
+
 local function new(class, props, parent)
 	local o = Instance.new(class)
 	for k, v in pairs(props) do o[k] = v end
@@ -141,9 +143,17 @@ end
 local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
 local function stroke(o, c, t) new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
 
-local function box(p, x1, y1, x2, y2, bg, r, noStroke)
+-- lebar teks (px)
+local function tw(t, size, font)
+	local ok, v = pcall(function()
+		return TextService:GetTextSize(t, size, font or F.Gotham, Vector2.new(10000, 1000)).X
+	end)
+	return math.ceil(ok and v or (#t * size * 0.6))
+end
+
+local function box(p, x, y, w, h, bg, r, noStroke)
 	local f = new("Frame", {
-		Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
 		BackgroundColor3 = bg, BorderSizePixel = 0,
 	}, p)
 	round(f, r or 12)
@@ -161,20 +171,20 @@ local function text(p, t, size, x, cy, w, color, font, align)
 	}, p)
 end
 
-local function hline(p, x1, x2, y)
-	new("Frame", {Position = UDim2.fromOffset(x1, y), Size = UDim2.fromOffset(x2 - x1, 1),
+local function hline(p, x, y, w)
+	new("Frame", {Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, 1),
 		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
 end
 
--- Loader gambar: ImageLabel langsung tampil (gambar tidak dimuat kalau disembunyikan).
--- Urutan percobaan tiap 4 detik kalau belum termuat: Thumbs -> rbxassetid -> rbxthumb.
+-- Loader gambar: ImageLabel langsung tampil. Urutan percobaan tiap 4 detik kalau belum termuat:
+-- Thumbs -> rbxassetid -> rbxthumb.
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
-local function image(p, id, x1, y1, x2, y2, fallback, fsize, holder)
-	if holder then box(p, x1 - 6, y1 - 6, x2 + 6, y2 + 6, BLACK, 10, true) end
+local function image(p, id, x, y, w, h, fallback, fsize, holder)
+	if holder then box(p, x - 6, y - 6, w + 12, h + 12, BLACK, 10, true) end
 	local numId = id ~= "" and id:match("%d+") or nil
 	if not numId then
-		return text(p, fallback, fsize or 20, x1, (y1 + y2) / 2, x2 - x1, TX, F.GothamBlack, CENTER)
+		return text(p, fallback, fsize or 20, x, y + h / 2, w, TX, F.GothamBlack, CENTER)
 	end
 	local urls = {
 		THUMB .. numId,
@@ -183,7 +193,7 @@ local function image(p, id, x1, y1, x2, y2, fallback, fsize, holder)
 	}
 	local img = new("ImageLabel", {
 		BackgroundTransparency = 1, Image = urls[1],
-		Position = UDim2.fromOffset(x1, y1), Size = UDim2.fromOffset(x2 - x1, y2 - y1),
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
 		ScaleType = Enum.ScaleType.Fit,
 	}, p)
 	task.spawn(function()
@@ -218,59 +228,82 @@ local function toggle(p, x, cy, initial, cb)
 	end)
 end
 
-local function numberBox(p, x1, y1, x2, y2, value, cb)
-	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(12, 12, 13), 8, true)
+local function numberBox(p, x, y, w, h, value, cb)
+	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
 	local tb = new("TextBox", {
-		BackgroundTransparency = 1, Text = value, TextSize = 17, Font = F.Gotham, TextColor3 = TX,
-		Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -36, 1, 0), TextXAlignment = LEFT,
+		BackgroundTransparency = 1, Text = value, TextSize = 16, Font = F.Gotham, TextColor3 = TX,
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -30, 1, 0), TextXAlignment = LEFT,
 		ClearTextOnFocus = false,
 	}, f)
-	text(f, "▲", 10, x2 - x1 - 22, 11, 14, MUTED, F.GothamBold, CENTER)
-	text(f, "▼", 10, x2 - x1 - 22, (y2 - y1) - 11, 14, MUTED, F.GothamBold, CENTER)
+	text(f, "▲", 8, w - 20, h / 2 - 6, 14, MUTED, F.GothamBold, CENTER)
+	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
 	tb.FocusLost:Connect(function()
 		local n = tonumber((tb.Text:gsub("%.", "")))
 		if n then cb(n) end
 	end)
 end
 
-local function toggleRow(p, tx, titleX, cy, title, sub, initial, cb)
-	toggle(p, tx, cy, initial, cb)
-	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
-	text(p, sub, 13, titleX, cy + 13, 400, SUB)
+-- Baris opsi (toggle/ikon di kiri, judul + deskripsi, kotak angka opsional di kanan)
+local RH = 58
+local function rowW(title, sub, icon, num)
+	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamMedium), tw(sub, 13)) + 14
+	if num then w = w + 98 end
+	return w
+end
+local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
+	local left = 14
+	if icon then
+		text(p, icon, 26, left - 2, y + RH / 2, 34, MUTED, F.GothamBold, CENTER)
+		left = left + 38
+	else
+		toggle(p, left, y + RH / 2, state, cb)
+		left = left + 56
+	end
+	text(p, title, 17, left, y + 20, 400, TX, F.GothamMedium)
+	text(p, sub, 13, left, y + 41, 400, SUB)
+	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb) end
 end
 
-local function iconRow(p, icon, ix, titleX, cy, title, sub)
-	text(p, icon, 30, ix, cy, 44, MUTED, F.GothamBold, CENTER)
-	text(p, title, 17, titleX, cy - 9, 300, TX, F.GothamMedium)
-	text(p, sub, 13, titleX, cy + 13, 400, SUB)
+-- Pill status
+local function pillW(t, dot) return tw(t, 14) + (dot and 52 or 26) end
+local function pill(p, x, y, t, dot, wOverride)
+	local w = wOverride or pillW(t, dot)
+	local f = box(p, x, y, w, 32, Color3.fromRGB(10, 10, 11), 16)
+	if dot then
+		local d = new("Frame", {Position = UDim2.fromOffset(12, 9), Size = UDim2.fromOffset(14, 14),
+			BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
+		round(d, 7)
+	end
+	return text(f, t, 14, dot and 34 or 13, 16, w, TX), w
 end
 
-local function pill(p, x1, y1, x2, y2, t)
-	local f = box(p, x1, y1, x2, y2, Color3.fromRGB(10, 10, 11), 16)
-	local d = new("Frame", {Position = UDim2.fromOffset(12, (y2 - y1) / 2 - 7), Size = UDim2.fromOffset(14, 14),
-		BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
-	round(d, 7)
-	return text(f, t, 15, 36, (y2 - y1) / 2, x2 - x1 - 40, TX)
-end
+local PAD, GAP, HH, SW = 14, 10, 78, 200
+local CX, CY = PAD + SW + PAD, HH + PAD -- asal halaman di dalam jendela
+local CONTENT_Y = PAD + 44 + GAP        -- isi kartu mulai di bawah header kartu
 
--- header halaman: ikon + judul + subjudul + pill status (kanan); dy = geser vertikal
-local function pageHeader(p, icon, title, sub, status, pillX1, dy)
-	dy = dy or 0
-	text(p, icon, 30, 326, 178 + dy, 44, TX, F.GothamBold, CENTER)
-	text(p, title, 25, 380, 168 + dy, 500, TX, F.GothamMedium)
-	text(p, sub, 15, 380, 193 + dy, 600, SUB)
-	if status then return pill(p, pillX1, 160 + dy, pillX1 + 141, 192 + dy, status) end
-end
-
-local function stat(p, icon, name, value, cy, ix, nx, vx, vw, size, align)
-	text(p, icon, size + 2, ix - 10, cy, 22, MUTED, F.Gotham, CENTER)
-	text(p, name, size, nx, cy, 170, Color3.fromRGB(205, 205, 208))
-	return text(p, value, size, vx, cy, vw, TX, F.Gotham, align or LEFT)
+-- Header kartu: ikon + judul + subjudul, pill di kanan (status, lalu extra)
+local function cardHeader(card, icon, title, sub, status, extra)
+	local cw = card.Size.X.Offset
+	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
+	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamMedium)
+	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB)
+	local sLbl, eLbl
+	local x = cw - PAD
+	if status then
+		x = x - pillW(status, true)
+		sLbl = pill(card, x, PAD + 6, status, true)
+	end
+	if extra then
+		local w = pillW(extra, false) + 30
+		x = x - 8 - w
+		eLbl = pill(card, x, PAD + 6, extra, false, w)
+	end
+	return sLbl, eLbl
 end
 
 ---------------------------------------------------------------------
--- ScreenGui + kanvas
+-- Jendela
 do
 	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
 	local old = pg:FindFirstChild("MuhavesUI")
@@ -280,76 +313,78 @@ end
 local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
 
-local W, H = 1536, 1024
-local root = new("Frame", {Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, gui)
+local win = new("Frame", {
+	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
+}, gui)
+round(win, 20)
+stroke(win, Color3.fromRGB(55, 55, 58))
+
+local cur = {w = 900, h = 600}
+local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
-local scale = new("UIScale", {}, root)
 local function fit()
 	local v = cam.ViewportSize
-	scale.Scale = math.min(1, (v.X - 16) / W, (v.Y - 16) / H)
+	scale.Scale = math.min(1, (v.X - 16) / cur.w, (v.Y - 16) / cur.h)
 end
 fit()
 cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 
-local win = box(root, 32, 32, 1504, 992, WIN, 24)
-stroke(win, Color3.fromRGB(55, 55, 58))
-
----------------------------------------------------------------------
 -- Header
-local header = new("Frame", {Position = UDim2.fromOffset(32, 32), Size = UDim2.fromOffset(1472, 93), BackgroundTransparency = 1}, root)
-hline(root, 32, 1504, 125)
-image(root, ASSETS.LogoHeader, 60, 32, 315, 125, "Muhaves", 44)
-new("Frame", {Position = UDim2.fromOffset(335, 62), Size = UDim2.fromOffset(1, 42), BackgroundColor3 = LINE, BorderSizePixel = 0}, root)
-text(root, "P R I V A T E   F A R M I N G", 19, 360, 72, 500, TX, F.GothamMedium)
-text(root, "Stronger   •   Faster   •   Better", 14, 374, 94, 400, SUB)
+local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
+new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
+new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamMedium)
+text(header, "Stronger   •   Faster   •   Better", 12, 220, 52, 400, SUB)
 
-text(root, "v7 • rapat", 12, 1150, 78, 230, SUB, F.Gotham, RIGHT)
-print("[MuhavesUI] v7 dimuat")
+local verLbl = text(header, "v9 • rapat otomatis", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
+verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
+print("[MuhavesUI] v9 dimuat")
 
-local minBtn = new("TextButton", {Text = "—", TextSize = 20, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1386, 58), Size = UDim2.fromOffset(40, 40)}, root)
-local closeBtn = new("TextButton", {Text = "X", TextSize = 22, Font = F.Gotham, TextColor3 = TX, BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(1440, 58), Size = UDim2.fromOffset(40, 40)}, root)
+local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
+local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
+	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 
-local body = new("Frame", {Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1}, root)
-minBtn.MouseButton1Click:Connect(function() body.Visible = not body.Visible end)
+local body = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1}, win)
+
+local minimized = false
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	body.Visible = not minimized
+	TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(cur.w, minimized and HH or cur.h)}):Play()
+end)
 closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
 
 do -- drag lewat header
 	local dragging, start, startPos
 	header.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			dragging, start, startPos = true, i.Position, root.Position
+			dragging, start, startPos = true, i.Position, win.Position
 			i.Changed:Connect(function() if i.UserInputState == Enum.UserInputState.End then dragging = false end end)
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - start
-			root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+			win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
 		end
 	end)
 end
 
 ---------------------------------------------------------------------
--- Halaman (satu per tab)
-local pages = {}
-for i = 1, 3 do
-	pages[i] = new("Frame", {Name = "Page" .. i, Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1, Visible = false}, body)
-end
+-- Sidebar + navigasi
+local pages, sizes = {}, {}
+local SIDEMIN = 300      -- tinggi minimum area isi (sebelumnya 410, dikecilkan supaya tidak ada ruang kosong)
+local CHAR_MAX_H = 424   -- tinggi maksimum gambar karakter
 
--- Sidebar
-local sidebar = box(body, 45, 140, 290, 978, BLACK, 16)
-local nav = {{"⚡", "Fast Farming", 181}, {"⚙", "Other", 247}, {"ℹ", "Info", 313}}
+local sidebar = box(body, PAD, HH + PAD, SW, 400, BLACK, 16)
+local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
 local navBtns = {}
 local charImg
 
--- Batas bawah sidebar per tab (jendela ikut menyesuaikan, tidak ada ruang kosong berlebih)
-local BOTTOMS = {978, 766, 766}
-local CHAR_MAX_H = 520 -- tinggi maksimum gambar karakter (diregangkan memanjang)
-
-local function selectNav(idx)
+local function selectNav(idx, instant)
 	for i, b in ipairs(navBtns) do
 		local on = i == idx
 		b.BackgroundTransparency = on and 0 or 1
@@ -357,90 +392,147 @@ local function selectNav(idx)
 		b:FindFirstChildOfClass("UIStroke").Enabled = on
 		pages[i].Visible = on
 	end
-	local bottom = BOTTOMS[idx]
-	local ti = TweenInfo.new(0.2)
-	TweenService:Create(win, ti, {Size = UDim2.fromOffset(1472, bottom + 14 - 32)}):Play()
-	TweenService:Create(sidebar, ti, {Size = UDim2.fromOffset(245, bottom - 140)}):Play()
-	if charImg then
-		TweenService:Create(charImg, ti, {Size = UDim2.fromOffset(233, math.min(CHAR_MAX_H, bottom - 372))}):Play()
+	local sz = sizes[idx]
+	local W = CX + sz.w + PAD
+	local H = math.max(HH + PAD + sz.h + PAD, HH + PAD + SIDEMIN + PAD)
+	cur.w, cur.h = W, H
+	local sideH = H - HH - 2 * PAD
+	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
+	if charImg and charImg:IsA("ImageLabel") then
+		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
 	end
+	local goals = {
+		{win, {Size = UDim2.fromOffset(W, H)}},
+		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
+	}
+	if charImg then table.insert(goals, {charImg, {Size = UDim2.fromOffset(SW - 16, charH)}}) end
+	for _, g in ipairs(goals) do
+		if instant then
+			for k, v in pairs(g[2]) do g[1][k] = v end
+		else
+			TweenService:Create(g[1], TweenInfo.new(0.2), g[2]):Play()
+		end
+	end
+	minimized = false
+	body.Visible = true
+	fit()
 end
+
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
-		Text = "             " .. n[2], TextSize = 19, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(57, n[3] - 29), Size = UDim2.fromOffset(227, 58),
-		BorderSizePixel = 0,
-	}, body)
+		Text = "            " .. n[2], TextSize = 17, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
+		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
+		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0,
+	}, sidebar)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
 	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
-	text(b, n[1], 26, 12, 29, 44, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
+	text(b, n[1], 22, 10, 22, 36, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
--- gambar karakter tepat di bawah menu (tanpa jarak), diregangkan memanjang
-charImg = image(body, ASSETS.Character, 51, 358, 284, 358 + CHAR_MAX_H, "", 14)
-if charImg:IsA("ImageLabel") then charImg.ScaleType = Enum.ScaleType.Stretch end
+-- gambar karakter tepat di bawah menu, diregangkan memanjang
+charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
+
+local function newPage()
+	local f = new("Frame", {Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1, Visible = false}, body)
+	table.insert(pages, f)
+	return f
+end
 
 ---------------------------------------------------------------------
--- TAB 1: Fast Farming (Fast Rebirth + Fast Strength dalam satu tab)
-local p1 = pages[1]
-box(p1, 305, 140, 1490, 440, SEC, 16)
-local rbStatus = pageHeader(p1, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive", 1332)
+-- HALAMAN 1: Fast Farming (Fast Rebirth + Fast Strength)
+local p1 = newPage()
 
-box(p1, 321, 215, 880, 425, CARD, 12)
-toggleRow(p1, 345, 410, 250, "Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi.", false, Callbacks.AutoRebirth)
-hline(p1, 335, 866, 285)
-toggleRow(p1, 345, 410, 320, "Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis.", true, Callbacks.EquipRebirthPets)
-hline(p1, 335, 866, 355)
-iconRow(p1, "🔄", 345, 410, 390, "Rebirth Target", "Target strength untuk rebirth.")
-numberBox(p1, 730, 370, 860, 410, "5.000", Callbacks.RebirthTarget)
+local rbRows = {
+	{"Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi."},
+	{"Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis."},
+	{"Rebirth Target", "Target strength untuk rebirth.", "🔄", true},
+}
+local fsRows = {
+	{"Auto Farm Strength", "Farming otomatis dengan sistem pintar."},
+	{"Controlled Speed", "Menyesuaikan kecepatan dengan ping."},
+	{"Max Reps / Second", "Batas maksimal reps per detik.", "🚀", true},
+}
+local function rowsW(rows)
+	local w = 0
+	for _, r in ipairs(rows) do w = math.max(w, rowW(r[1], r[2], r[3], r[4])) end
+	return w
+end
+local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
-box(p1, 895, 215, 1474, 425, CARD, 12)
-text(p1, "Rebirth Stats", 18, 920, 240, 250, TX, F.GothamMedium)
-local rbRebirths = stat(p1, "🔁", "Rebirths", "0", 285, 930, 955, 1110, 200, 15)
-local rbGained   = stat(p1, "📈", "Gained", "0", 325, 930, 955, 1110, 200, 15)
-local rbHour     = stat(p1, "🕒", "Pace / Hour", "--", 365, 930, 955, 1110, 200, 15)
-local rbDay      = stat(p1, "📅", "Pace / Day", "--", 405, 930, 955, 1110, 200, 15)
-image(p1, ASSETS.EmblemStats, 1360, 255, 1450, 345, "M", 44, true)
+local rbNameW = math.max(tw("Rebirths", 15), tw("Gained", 15), tw("Pace / Hour", 15), tw("Pace / Day", 15))
+local rbStatsMin = 14 + 30 + rbNameW + 16 + 70 + 16 + 64 + 14
+local PACE = "-- /s | -- / min | -- /h | -- /d"
+local fsNameW = tw("Dura Average", 13)
+local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE, 13) + 10 + 14
 
-local p2 = pages[1]
-box(p2, 305, 455, 1490, 965, SEC, 16)
-local fsStatus = pageHeader(p2, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", 1332, 315)
+local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
+local cardW1 = inner1 + 2 * PAD
+local rbStatsW = inner1 - rbOptsW - GAP
+local fsStatsW = inner1 - fsOptsW - GAP
+local BOX_H = RH * 3
+local CARD_H = CONTENT_Y + BOX_H + PAD
 
-box(p2, 321, 530, 760, 740, CARD, 12)
-toggleRow(p2, 345, 410, 565, "Auto Farm Strength", "Farming otomatis dengan sistem pintar.", false, Callbacks.AutoFarmStrength)
-hline(p2, 335, 746, 600)
-toggleRow(p2, 345, 410, 635, "Controlled Speed", "Menyesuaikan kecepatan dengan ping.", true, Callbacks.ControlledSpeed)
-hline(p2, 335, 746, 670)
-iconRow(p2, "🚀", 345, 410, 705, "Max Reps / Second", "Batas maksimal reps per detik.")
-numberBox(p2, 650, 685, 740, 725, "659", Callbacks.MaxReps)
+-- Rebirth
+local rbCard = box(p1, 0, 0, cardW1, CARD_H, SEC, 16)
+local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive")
 
-box(p2, 321, 755, 760, 955, CARD, 12)
-local ring = new("Frame", {Position = UDim2.fromOffset(355, 785), Size = UDim2.fromOffset(140, 140), BackgroundTransparency = 1}, p2)
-round(ring, 70)
-new("UIStroke", {Color = Color3.fromRGB(62, 62, 66), Thickness = 11}, ring)
-text(ring, "0%", 26, 0, 70, 140, TX, F.Gotham, CENTER)
-text(p2, "Runtime", 15, 530, 835, 220, SUB)
-local fsRuntime = text(p2, "0d 0h 0m 0s", 20, 530, 868, 220, TX, F.GothamMedium)
+local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, BOX_H, CARD, 12)
+optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], false, Callbacks.AutoRebirth)
+hline(rbOpts, 14, RH, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, Callbacks.EquipRebirthPets)
+hline(rbOpts, 14, RH * 2, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "5.000", Callbacks.RebirthTarget)
 
-box(p2, 775, 530, 1474, 955, CARD, 12)
-text(p2, "Strength Stats", 17, 800, 558, 250, TX, F.GothamMedium)
-local fsStr   = stat(p2, "🏋", "Strength", "0", 605, 820, 845, 1010, 200, 15)
-local fsStrG  = text(p2, "+0", 15, 1260, 605, 150, TX)
-local fsDura  = stat(p2, "🛡", "Durability", "0", 660, 820, 845, 1010, 200, 15)
-local fsDurG  = text(p2, "+0", 15, 1260, 660, 150, TX)
-local fsSP    = stat(p2, "🕒", "Str Pace", "-- /s | -- / min | -- /h | -- /d", 715, 820, 845, 1010, 440, 14)
-local fsDP    = stat(p2, "🕒", "Dura Pace", "-- /s | -- / min | -- /h | -- /d", 770, 820, 845, 1010, 440, 14)
-local fsSA    = stat(p2, "🕒", "Str Average", "-- /s | -- / min | -- /h | -- /d", 825, 820, 845, 1010, 440, 14)
-local fsDA    = stat(p2, "🕒", "Dura Average", "-- /s | -- / min | -- /h | -- /d", 880, 820, 845, 1010, 440, 14)
+local function srow(parent, icon, name, value, cy, vx, vw, size, align)
+	text(parent, icon, size + 2, 10, cy, 28, MUTED, F.Gotham, CENTER)
+	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208))
+	return text(parent, value, size, vx, cy, vw, TX, F.Gotham, align or LEFT)
+end
+
+local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
+text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamMedium)
+local rvx = rbStatsW - 14 - 64 - 16 - 70
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT)
+image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
+
+-- Strength
+local fsCard = box(p1, 0, CARD_H + GAP, cardW1, CARD_H, SEC, 16)
+local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", "🕒 0d 0h 0m 0s")
+fsRuntime.TextXAlignment = CENTER
+fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
+fsRuntime.Size = UDim2.new(1, 0, 0, fsRuntime.Size.Y.Offset)
+
+local fsOpts = box(fsCard, PAD, CONTENT_Y, fsOptsW, BOX_H, CARD, 12)
+optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, Callbacks.AutoFarmStrength)
+hline(fsOpts, 14, RH, fsOptsW - 28)
+optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, Callbacks.ControlledSpeed)
+hline(fsOpts, 14, RH * 2, fsOptsW - 28)
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "659", Callbacks.MaxReps)
+
+local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
+text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamMedium)
+local vx = 44 + fsNameW + 16
+local paceW = tw(PACE, 13) + 10
+local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13)
+local fsStrG = text(fsStats, "+0", 13, vx + 90, 46, 70, TX)
+local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13)
+local fsDurG = text(fsStats, "+0", 13, vx + 90, 69, 70, TX)
+local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13)
+local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13)
+local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13)
+local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13)
+
+sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
 
 ---------------------------------------------------------------------
--- TAB 3: Other
-local p3 = pages[2]
-box(p3, 305, 140, 1490, 766, SEC, 16)
-local otStatus = pageHeader(p3, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready", 1332)
-
+-- HALAMAN 2: Other
+local p2 = newPage()
 local tiles = {
 	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs},
 	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake},
@@ -451,73 +543,98 @@ local tiles = {
 	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
 	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
 }
+local tileW = 44
+for _, t in ipairs(tiles) do
+	tileW = math.max(tileW, tw(t[1], 17, F.GothamMedium), tw(t[2], 12))
+end
+tileW = tileW + 2 * PAD
+local TILE_H = 108
+local inner2 = 4 * tileW + 3 * GAP
+local cardW2 = inner2 + 2 * PAD
+local tpY = CONTENT_Y + 2 * TILE_H + 2 * GAP
+local cardH2 = tpY + 100 + PAD
+
+local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
+local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
 for i, t in ipairs(tiles) do
 	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-	local x1 = 321 + col * 292
-	local y1 = 215 + row * 145
-	box(p3, x1, y1, x1 + 277, y1 + 130, CARD, 12)
-	toggle(p3, x1 + 18, y1 + 34, t[3], t[4])
-	text(p3, t[1], 17, x1 + 18, y1 + 76, 245, TX, F.GothamMedium)
-	text(p3, t[2], 12, x1 + 18, y1 + 102, 245, SUB)
+	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
+	toggle(tile, 14, 27, t[3], t[4])
+	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamMedium)
+	text(tile, t[2], 12, 14, 85, tileW, SUB)
 end
 
-box(p3, 321, 505, 1474, 625, CARD, 12)
-text(p3, "Teleport (Tekan E)", 17, 345, 530, 300, TX, F.GothamMedium)
+local tpBox = box(otCard, PAD, tpY, inner2, 100, CARD, 12)
+text(tpBox, "Teleport (Tekan E)", 17, 14, 22, 300, TX, F.GothamMedium)
+local bw = math.floor((inner2 - 28 - 3 * GAP) / 4)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
 	local b = new("TextButton", {
 		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(343 + (i - 1) * 288, 552), Size = UDim2.fromOffset(268, 46), BorderSizePixel = 0,
-	}, p3)
+		Position = UDim2.fromOffset(14 + (i - 1) * (bw + GAP), 42), Size = UDim2.fromOffset(bw, 44), BorderSizePixel = 0,
+	}, tpBox)
 	round(b, 8)
 	stroke(b)
-	text(b, "📍", 16, 12, 23, 24, MUTED, F.Gotham, CENTER)
-	text(b, name, 15, 46, 23, 215, TX)
+	text(b, "📍", 15, 10, 22, 24, MUTED, F.Gotham, CENTER)
+	text(b, name, 15, 38, 22, bw - 44, TX)
 	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
 end
+sizes[2] = {w = cardW2, h = cardH2}
 
 ---------------------------------------------------------------------
--- TAB 4: Info
-local p4 = pages[3]
-box(p4, 305, 140, 1490, 766, SEC, 16)
-pageHeader(p4, "ℹ", "Info", "Tentang script ini.", nil)
-
--- logo
-box(p4, 321, 215, 621, 445, BLACK, 12)
-image(p4, ASSETS.LogoInfo, 346, 240, 596, 340, "Muhaves", 34)
-text(p4, "Private Farming", 19, 321, 375, 300, TX, F.GothamMedium, CENTER)
-text(p4, "v1.0.0", 14, 321, 405, 300, SUB, F.Gotham, CENTER)
-
--- detail
-box(p4, 637, 215, 1000, 445, CARD, 12)
-text(p4, "Made by", 14, 665, 262, 120, SUB)
-text(p4, "MuhavesDevs", 18, 790, 262, 200, TX, F.GothamMedium)
-hline(p4, 651, 986, 297)
-text(p4, "Game", 14, 665, 332, 120, SUB)
-text(p4, "Muscle Legends", 18, 790, 332, 200, TX, F.GothamMedium)
-hline(p4, 651, 986, 367)
-text(p4, "Status", 14, 665, 402, 120, SUB)
-text(p4, "Working", 18, 790, 402, 90, TX, F.GothamMedium)
-text(p4, "✅", 18, 885, 402, 30, TX, F.Gotham, CENTER)
-
--- fitur utama
-box(p4, 1016, 215, 1474, 445, CARD, 12)
-text(p4, "Fitur Utama", 18, 1040, 243, 300, TX, F.GothamMedium)
+-- HALAMAN 3: Info
+local p3 = newPage()
+local w1 = math.max(190, tw("Private Farming", 19, F.GothamMedium)) + 2 * PAD
+local lblW = math.max(tw("Made by", 14), tw("Game", 14), tw("Status", 14))
+local workW = tw("Working", 18, F.GothamMedium)
+local valW = math.max(tw("MuhavesDevs", 18, F.GothamMedium), tw("Muscle Legends", 18, F.GothamMedium), workW + 34)
+local w2 = 14 + lblW + 20 + valW + 14
 local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}
-for i, t in ipairs(feats) do
+local colW = 0
+for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15)) end
+colW = colW + 32
+local w3 = 14 + colW * 2 + 20 + 14
+local inner3 = w1 + w2 + w3 + 2 * GAP
+local cardW3 = inner3 + 2 * PAD
+local ROW_H = 180
+local footY = CONTENT_Y + ROW_H + GAP
+local cardH3 = footY + 70 + PAD
+
+local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
+cardHeader(inCard, "ℹ", "Info", "Tentang script ini.")
+
+local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
+image(lg, ASSETS.LogoInfo, (w1 - 190) / 2, 18, 190, 86, "Muhaves", 30)
+text(lg, "Private Farming", 19, 0, 130, w1, TX, F.GothamMedium, CENTER)
+text(lg, "v1.0.0", 13, 0, 156, w1, SUB, F.Gotham, CENTER)
+
+local dt = box(inCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
+local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
+for i, r in ipairs(kv) do
+	local cy = 30 + (i - 1) * 60
+	text(dt, r[1], 14, 14, cy, lblW + 10, SUB)
+	text(dt, r[2], 18, 14 + lblW + 20, cy, valW, TX, F.GothamMedium)
+	if i < 3 then hline(dt, 14, cy + 30, w2 - 28) end
+end
+text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
+
+local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
+text(ft, "Fitur Utama", 17, 14, 24, 250, TX, F.GothamMedium)
+for i, f in ipairs(feats) do
 	local col = i <= 4 and 0 or 1
 	local idx = i <= 4 and i or (i - 4)
-	local cy = 290 + (idx - 1) * 40
-	local x = 1040 + col * 205
-	text(p4, "✅", 15, x, cy, 28, TX, F.Gotham, CENTER)
-	text(p4, t, 15, x + 32, cy, 170, MUTED)
+	local cy = 62 + (idx - 1) * 32
+	local x = 14 + col * (colW + 20)
+	text(ft, "✅", 15, x, cy, 26, TX, F.Gotham, CENTER)
+	text(ft, f, 15, x + 32, cy, colW, MUTED)
 end
 
-text(p4, "\"Progress is not luck, it's a system.\"", 16, 321, 485, 1153, SUB, F.Gotham, CENTER)
-text(p4, "- Muhaves", 14, 321, 513, 1153, SUB, F.Gotham, CENTER)
-image(p4, ASSETS.EmblemBottom, 1400, 470, 1465, 545, "M", 36, true)
+text(inCard, "\"Progress is not luck, it's a system.\"", 15, PAD, footY + 22, inner3, SUB, F.Gotham, CENTER)
+text(inCard, "- Muhaves", 13, PAD, footY + 48, inner3, SUB, F.Gotham, CENTER)
+image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
+sizes[3] = {w = cardW3, h = cardH3}
 
 ---------------------------------------------------------------------
-selectNav(1)
+selectNav(1, true)
 
 return {
 	Gui = gui,
