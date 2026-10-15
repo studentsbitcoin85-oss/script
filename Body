@@ -26,8 +26,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local TextService = game:GetService("TextService")
-local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 
 local BLACK = Color3.fromRGB(2, 2, 3)
@@ -51,7 +49,7 @@ local Callbacks = {
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
 	AntiAFK = function(s) end, AntiLag = function(s) end, Render3D = function(s) end,
-	FPSCap = function(s) end, HidePlayers = function(s) end,
+	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end,
 }
 
 ---------------------------------------------------------------------
@@ -325,75 +323,6 @@ local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGu
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LocalPlayer:WaitForChild("PlayerGui"))
 pcall(function() gui.AutoLocalize = false end)
 
----------------------------------------------------------------------
--- LOW RESOURCE MODE: satu tombol = Render 3D Off + FPS limiter (20) + Anti Lag + layar hitam.
--- Semua perubahan dikembalikan saat dimatikan (atau saat UI ditutup).
-do
-	local active = false
-	local saved = setmetatable({}, {__mode = "k"}) -- efek yang kita matikan -> nilai Enabled aslinya
-	local conns = {}
-	local overlay, origQuality, origShadows, origFps
-
-	local function dim(o)
-		if o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Beam") or o:IsA("Smoke")
-			or o:IsA("Fire") or o:IsA("Sparkles") or o:IsA("PostEffect") then
-			if saved[o] == nil then saved[o] = o.Enabled end
-			o.Enabled = false
-		end
-	end
-
-	local function setLowResource(on)
-		on = on and true or false
-		if on == active then return end
-		active = on
-		if on then
-			-- Anti Lag: kualitas grafis minimum, tanpa bayangan, matikan partikel/efek
-			pcall(function() origQuality = settings().Rendering.QualityLevel end)
-			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
-			origShadows = Lighting.GlobalShadows
-			Lighting.GlobalShadows = false
-			for _, root in ipairs({workspace, Lighting}) do
-				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
-					if active then pcall(dim, o) end
-				end)
-			end
-			task.spawn(function()
-				for _, root in ipairs({workspace, Lighting}) do
-					for i, o in ipairs(root:GetDescendants()) do
-						if not active then return end
-						pcall(dim, o)
-						if i % 400 == 0 then task.wait() end
-					end
-				end
-			end)
-			-- FPS limiter
-			if getfpscap then pcall(function() origFps = getfpscap() end) end
-			if setfpscap then pcall(setfpscap, 20) end
-			-- Layar hitam (di bawah UI Muhaves)
-			overlay = new("ScreenGui", {Name = "MuhavesBlack", ResetOnSpawn = false, IgnoreGuiInset = true,
-				DisplayOrder = 5, ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, LocalPlayer:WaitForChild("PlayerGui"))
-			new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-				BorderSizePixel = 0, Active = false}, overlay)
-			-- Render 3D Off
-			pcall(function() RunService:Set3dRenderingEnabled(false) end)
-		else
-			pcall(function() RunService:Set3dRenderingEnabled(true) end)
-			if overlay then overlay:Destroy() overlay = nil end
-			if setfpscap then pcall(setfpscap, (type(origFps) == "number" and origFps > 0) and origFps or 60) end
-			for _, c in ipairs(conns) do c:Disconnect() end
-			table.clear(conns)
-			for o, v in pairs(saved) do
-				if o.Parent then pcall(function() o.Enabled = v end) end
-			end
-			table.clear(saved)
-			if origShadows ~= nil then Lighting.GlobalShadows = origShadows end
-			if origQuality then pcall(function() settings().Rendering.QualityLevel = origQuality end) end
-		end
-	end
-
-	Callbacks.LowResource = setLowResource
-	gui.Destroying:Connect(function() setLowResource(false) end)
-end
 
 local win = new("Frame", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -712,7 +641,7 @@ for i, t in ipairs(tiles) do
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
-text(otCard, "Low Resource Mode sudah aktif. Toggle lainnya masih tampilan saja (hubungkan lewat Callbacks).", 12, PAD, NOTE_Y + 10,
+text(otCard, "Mode UI: toggle di tab ini masih tampilan saja, belum terhubung ke fungsi.", 12, PAD, NOTE_Y + 10,
 	inner2, SUB, F.GothamMedium, CENTER)
 
 sizes[2] = {w = cardW2, h = cardH2}
