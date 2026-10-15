@@ -1319,11 +1319,13 @@ Callbacks.EatShake = function(s) flag.shake = s if s then eatShake() end end
 Callbacks.SpinWheel = function(s) flag.spin = s end
 Callbacks.EatAllBoosts = function(s) flag.boosts = s end
 Callbacks.AntiAFK = function(s) flag.antiAfk = s end
--- HIDE PETS: pakai opsi bawaan game + sembunyikan pet SEMUA pemain di server (sisi client, bisa dikembalikan).
--- Pet dikenali dari nama pet di petsFolder tiap pemain + daftar PETS.
+
+---------------------------------------------------------------------
+-- HIDE PETS (versi tanpa leak)
 do
 	local on = false
-	local saved = setmetatable({}, {__mode = "k"}) -- instance -> {properti, nilai asli}
+	local saved = {}         -- instance -> {properti, nilai asli}
+	local hiddenModels = {}  -- model pet yang sudah disembunyikan
 	local names, conns = {}, {}
 
 	local function hideInst(d)
@@ -1334,10 +1336,18 @@ do
 		d[prop] = (prop == "Enabled") and false or 1
 	end
 	local function hideModel(m)
-		if services.players:GetPlayerFromCharacter(m) then return end
+		if hiddenModels[m] or services.players:GetPlayerFromCharacter(m) then return end
+		hiddenModels[m] = true
 		hideInst(m)
 		for _, d in ipairs(m:GetDescendants()) do hideInst(d) end
-		conns[#conns + 1] = m.DescendantAdded:Connect(function(d) if on then pcall(hideInst, d) end end)
+	end
+	local function inHiddenModel(d)
+		local a = d.Parent
+		while a and a ~= workspace do
+			if hiddenModels[a] then return true end
+			a = a.Parent
+		end
+		return false
 	end
 	local function isPet(d)
 		return (d:IsA("Model") or d:IsA("BasePart")) and names[d.Name] == true
@@ -1365,6 +1375,15 @@ do
 			if i % 500 == 0 then task.wait() end
 		end
 	end
+	-- buang catatan objek yang sudah hilang dari game
+	local function sweep()
+		for d in pairs(saved) do
+			if not d:IsDescendantOf(game) then saved[d] = nil end
+		end
+		for m in pairs(hiddenModels) do
+			if not m:IsDescendantOf(game) then hiddenModels[m] = nil end
+		end
+	end
 
 	local function setHidden(state)
 		if state == on then return end
@@ -1372,14 +1391,23 @@ do
 		if on then
 			for k in pairs(PETS) do names[k] = true end
 			refreshNames()
+			-- hanya 1 koneksi global (bukan 1 per model)
 			conns[#conns + 1] = workspace.DescendantAdded:Connect(function(d)
-				if on and isPet(d) then pcall(hideModel, d) end
+				if not on then return end
+				if isPet(d) then
+					pcall(hideModel, d)
+				elseif inHiddenModel(d) then
+					pcall(hideInst, d)
+				end
 			end)
 			task.spawn(scan)
 			task.spawn(function()
+				local n = 0
 				while on and alive() do
 					task.wait(3)
+					n += 1
 					if on and refreshNames() then scan() end
+					if n % 10 == 0 then sweep() end -- tiap ~30 detik
 				end
 			end)
 		else
@@ -1389,6 +1417,7 @@ do
 				if d.Parent then pcall(function() d[v[1]] = v[2] end) end
 			end
 			table.clear(saved)
+			table.clear(hiddenModels)
 		end
 	end
 
@@ -1398,18 +1427,42 @@ do
 	end
 	gui.Destroying:Connect(function() setHidden(false) end)
 end
--- HIDE POPUPS (sisi client, bisa dikembalikan).
--- STRICT = true  : sembunyikan SEMUA GUI yang baru muncul (clone baru) atau yang tadinya mati lalu dinyalakan game,
---                  + teks gain "+1.5K" + GUI bernama popup/notif/toast. GUI HUD yang sudah tampil tidak diganggu.
--- STRICT = false : hanya yang cocok nama (POPUP_PATTERNS) atau teks gain.
--- Selama aktif, menu game (shop dll.) tidak bisa dibuka; matikan toggle kalau mau membukanya.
+
+---------------------------------------------------------------------
+-- HIDE POPUPS (versi tanpa leak)
 do
 	local on = false
 	local STRICT = true
 	local POPUP_PATTERNS = {"popup", "pop_up", "pop up", "notif", "toast"}
 	local GAIN = "^%s*%+%s*[%d%.,]"
-	local saved = setmetatable({}, {__mode = "k"}) -- instance -> {properti, nilai asli}
-	local conns = {}
+	local saved = {}      -- instance -> {properti, nilai asli}
+	local objConns = {}   -- instance -> {koneksi milik objek itu}
+	local rootConns = {}  -- koneksi global (hanya beberapa)
+
+	local function link(o, c)
+		local t = objConns[o]
+		if not t then t = {} objConns[o] = t end
+		t[#t + 1] = c
+	end
+	local function drop(o)
+		local t = objConns[o]
+		if t then
+			for _, c in ipairs(t) do c:Disconnect() end
+			objConns[o] = nil
+		end
+	end
+	-- objek yang sudah hilang dari game: putuskan koneksi + hapus catatan
+	local function sweep()
+		for o in pairs(objConns) do
+			if not o:IsDescendantOf(game) then
+				drop(o)
+				saved[o] = nil
+			end
+		end
+		for o in pairs(saved) do
+			if not o:IsDescendantOf(game) then saved[o] = nil end
+		end
+	end
 
 	local function propOf(o)
 		if o:IsA("ScreenGui") or o:IsA("BillboardGui") then return "Enabled" end
@@ -1422,7 +1475,6 @@ do
 		end
 		return false
 	end
-	-- UI Muhaves (UI utama + layar hitam Low Resource) tidak pernah disentuh
 	local function mine(o)
 		if o:IsDescendantOf(gui) then return true end
 		local top = o:IsA("ScreenGui") and o or o:FindFirstAncestorWhichIsA("ScreenGui") or o
@@ -1435,12 +1487,10 @@ do
 		if original == nil then original = o[prop] end
 		saved[o] = {prop, original}
 		o[prop] = false
-		-- kalau game menyalakannya lagi, matikan lagi selama mode ini aktif
-		conns[#conns + 1] = o:GetPropertyChangedSignal(prop):Connect(function()
+		link(o, o:GetPropertyChangedSignal(prop):Connect(function()
 			if on and o[prop] ~= false then o[prop] = false end
-		end)
+		end))
 	end
-	-- aturan nama / teks gain
 	local function rules(o)
 		if nameMatch(o.Name) then
 			hide(o)
@@ -1450,21 +1500,19 @@ do
 				if on and o.Text:match(GAIN) then hide(bb or o) end
 			end
 			test()
-			if bb then conns[#conns + 1] = o:GetPropertyChangedSignal("Text"):Connect(test) end
+			if bb then link(o, o:GetPropertyChangedSignal("Text"):Connect(test)) end
 		end
 	end
-	-- GUI yang sudah ada: jangan disembunyikan, tapi kalau tadinya mati lalu dinyalakan game -> matikan lagi
 	local function onExisting(o)
 		local prop = propOf(o)
 		if not prop or mine(o) then return end
 		rules(o)
 		if STRICT and not o:IsA("BillboardGui") and o[prop] == false then
-			conns[#conns + 1] = o:GetPropertyChangedSignal(prop):Connect(function()
+			link(o, o:GetPropertyChangedSignal(prop):Connect(function()
 				if on and o[prop] == true then hide(o, false) end
-			end)
+			end))
 		end
 	end
-	-- GUI yang baru muncul
 	local function onNew(o)
 		local prop = propOf(o)
 		if not prop or mine(o) then return end
@@ -1476,7 +1524,7 @@ do
 		on = state
 		if on then
 			for _, root in ipairs({lp:WaitForChild("PlayerGui"), workspace}) do
-				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
+				rootConns[#rootConns + 1] = root.DescendantAdded:Connect(function(o)
 					if on then pcall(onNew, o) end
 				end)
 				task.spawn(function()
@@ -1487,9 +1535,16 @@ do
 					end
 				end)
 			end
+			task.spawn(function()
+				while on and alive() do
+					task.wait(30)
+					if on then sweep() end
+				end
+			end)
 		else
-			for _, c in ipairs(conns) do c:Disconnect() end
-			table.clear(conns)
+			for _, c in ipairs(rootConns) do c:Disconnect() end
+			table.clear(rootConns)
+			for o in pairs(objConns) do drop(o) end
 			for o, v in pairs(saved) do
 				if o.Parent then pcall(function() o[v[1]] = v[2] end) end
 			end
