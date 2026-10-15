@@ -960,10 +960,17 @@ for i, f in ipairs(feats) do
 	text(ft, f, 15, x + 32, cy, colW, TX, BLD)
 end
 
--- footer: the Muhaves text image (replaces the old quote), centered between the card edges
+-- footer: Muhaves text image on the left, the bold quote in the middle, emblem on the right
 do
-	local fw = math.max(120, math.min(260, cardW3 - 2 * (56 + PAD + 10)))
-	image(inCard, ASSETS.LogoInfo, cardW3 / 2 - fw / 2, footY + 2, fw, 62, "Muhaves", 24)
+	local fw = 150
+	image(inCard, ASSETS.LogoInfo, PAD, footY + 2, fw, 62, "Muhaves", 24)
+	local qx = PAD + fw + 12
+	local qw = cardW3 - PAD - 56 - 12 - qx
+	local quote = "\"Progress is not luck, it's a system.\""
+	local qs = 17
+	while qs > 9 and tw(quote, qs, BLD) > qw do qs -= 1 end
+	text(inCard, quote, qs, qx, footY + 22, qw, TX, BLD, CENTER)
+	text(inCard, "- Muhaves", math.max(9, qs - 2), qx, footY + 48, qw, SUBB, BLD, CENTER)
 end
 image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
