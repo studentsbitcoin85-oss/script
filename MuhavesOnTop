@@ -615,7 +615,7 @@ local tiles = {
 	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, function(st) Callbacks.SpinWheel(st) end},
 	{"Eat All Boosts", "Makan semua boost (lag).", false, function(st) Callbacks.EatAllBoosts(st) end},
 	{"Hide Pets", "Sembunyikan pet dari game.", true, function(st) Callbacks.HidePets(st) end},
-	{"Hide Popups", "Sembunyikan teks +gain & efek.", false, function(st) Callbacks.HidePopups(st) end},
+	{"Hide Popups", "Sembunyikan semua pop up game.", true, function(st) Callbacks.HidePopups(st) end},
 	{"Anti AFK", "Cegah kick karena diam.", true, function(st) Callbacks.AntiAFK(st) end},
 	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
 	{"Low Resource Mode", "3D off + FPS 20 + layar hitam.", false, function(st) Callbacks.LowResource(st) end},
@@ -1254,7 +1254,6 @@ end)
 -- OTHER
 local rEvents = services.replicatedstorage:WaitForChild("rEvents")
 local showPetsEvent = rEvents:WaitForChild("showPetsEvent", 10)
-local savePlayerSizeEvent = rEvents:WaitForChild("savePlayerSizeEvent", 10)
 
 local function eatEgg()
 	local tool = findTool("Protein Egg")
@@ -1399,9 +1398,107 @@ do
 	end
 	gui.Destroying:Connect(function() setHidden(false) end)
 end
-Callbacks.HidePopups = function()
-	-- event ini sifatnya toggle di sisi game
-	if savePlayerSizeEvent then savePlayerSizeEvent:FireServer("showPopupsOption") end
+-- HIDE POPUPS (sisi client, bisa dikembalikan).
+-- STRICT = true  : sembunyikan SEMUA GUI yang baru muncul (clone baru) atau yang tadinya mati lalu dinyalakan game,
+--                  + teks gain "+1.5K" + GUI bernama popup/notif/toast. GUI HUD yang sudah tampil tidak diganggu.
+-- STRICT = false : hanya yang cocok nama (POPUP_PATTERNS) atau teks gain.
+-- Selama aktif, menu game (shop dll.) tidak bisa dibuka; matikan toggle kalau mau membukanya.
+do
+	local on = false
+	local STRICT = true
+	local POPUP_PATTERNS = {"popup", "pop_up", "pop up", "notif", "toast"}
+	local GAIN = "^%s*%+%s*[%d%.,]"
+	local saved = setmetatable({}, {__mode = "k"}) -- instance -> {properti, nilai asli}
+	local conns = {}
+
+	local function propOf(o)
+		if o:IsA("ScreenGui") or o:IsA("BillboardGui") then return "Enabled" end
+		if o:IsA("GuiObject") then return "Visible" end
+	end
+	local function nameMatch(n)
+		n = n:lower()
+		for _, p in ipairs(POPUP_PATTERNS) do
+			if n:find(p, 1, true) then return true end
+		end
+		return false
+	end
+	-- UI Muhaves (UI utama + layar hitam Low Resource) tidak pernah disentuh
+	local function mine(o)
+		if o:IsDescendantOf(gui) then return true end
+		local top = o:IsA("ScreenGui") and o or o:FindFirstAncestorWhichIsA("ScreenGui") or o
+		return top.Name:sub(1, 7) == "Muhaves"
+	end
+	local function hide(o, orig)
+		local prop = propOf(o)
+		if not prop or saved[o] ~= nil then return end
+		local original = orig
+		if original == nil then original = o[prop] end
+		saved[o] = {prop, original}
+		o[prop] = false
+		-- kalau game menyalakannya lagi, matikan lagi selama mode ini aktif
+		conns[#conns + 1] = o:GetPropertyChangedSignal(prop):Connect(function()
+			if on and o[prop] ~= false then o[prop] = false end
+		end)
+	end
+	-- aturan nama / teks gain
+	local function rules(o)
+		if nameMatch(o.Name) then
+			hide(o)
+		elseif o:IsA("TextLabel") then
+			local bb = o:FindFirstAncestorWhichIsA("BillboardGui")
+			local function test()
+				if on and o.Text:match(GAIN) then hide(bb or o) end
+			end
+			test()
+			if bb then conns[#conns + 1] = o:GetPropertyChangedSignal("Text"):Connect(test) end
+		end
+	end
+	-- GUI yang sudah ada: jangan disembunyikan, tapi kalau tadinya mati lalu dinyalakan game -> matikan lagi
+	local function onExisting(o)
+		local prop = propOf(o)
+		if not prop or mine(o) then return end
+		rules(o)
+		if STRICT and not o:IsA("BillboardGui") and o[prop] == false then
+			conns[#conns + 1] = o:GetPropertyChangedSignal(prop):Connect(function()
+				if on and o[prop] == true then hide(o, false) end
+			end)
+		end
+	end
+	-- GUI yang baru muncul
+	local function onNew(o)
+		local prop = propOf(o)
+		if not prop or mine(o) then return end
+		if STRICT then hide(o) else rules(o) end
+	end
+
+	local function setHidden(state)
+		if state == on then return end
+		on = state
+		if on then
+			for _, root in ipairs({lp:WaitForChild("PlayerGui"), workspace}) do
+				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
+					if on then pcall(onNew, o) end
+				end)
+				task.spawn(function()
+					for i, o in ipairs(root:GetDescendants()) do
+						if not on then return end
+						pcall(onExisting, o)
+						if i % 500 == 0 then task.wait() end
+					end
+				end)
+			end
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for o, v in pairs(saved) do
+				if o.Parent then pcall(function() o[v[1]] = v[2] end) end
+			end
+			table.clear(saved)
+		end
+	end
+
+	Callbacks.HidePopups = setHidden
+	gui.Destroying:Connect(function() setHidden(false) end)
 end
 
 -- Equip Reps / Strength / Rebirth Pets: pilih set pet untuk farming (saling mematikan).
@@ -1540,7 +1637,8 @@ do
 end
 
 ---------------------------------------------------------------------
--- Sinkronkan kondisi awal toggle di UI (Hide Pets = ON dari awal)
+-- Sinkronkan kondisi awal toggle di UI (Hide Pets, Hide Popups, Anti AFK = ON dari awal)
 task.spawn(function() Callbacks.HidePets(true) end)
+task.spawn(function() Callbacks.HidePopups(true) end)
 
 return UI
