@@ -41,46 +41,64 @@ local Callbacks = {
 }
 
 ---------------------------------------------------------------------
--- UTILITAS SISI KLIEN v2: Anti AFK, Anti Lag, Hide Popups
+-- UTILITAS SISI KLIEN v3: Anti AFK, Anti Lag, Hide Popups, Render 3D Off, FPS Limiter
 ---------------------------------------------------------------------
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
 
--- ANTI AFK: respon Idled + ping cadangan tiap 4 menit
+-- Data live untuk panel status di tab Other (bukti fitur bekerja)
+local StatsInfo = {
+	afkOn = false, afkSince = 0, afkPings = 0, afkIdled = 0, afkLast = 0,
+	lagOn = false, lagCount = 0,
+	popOn = false, popCount = 0, popLast = "-",
+	fpsNote = "",
+}
+
+---------------------------------------------------------------------
+-- ANTI AFK: event Idled + ping otomatis tiap 60 detik (terlihat di panel status)
 local afk = {conn = nil, token = 0}
 
-local function poke()
-	pcall(function()
+local function poke(kind)
+	local ok = pcall(function()
 		VirtualUser:CaptureController()
 		VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame)
 	end)
+	if ok then
+		StatsInfo.afkPings += 1
+		StatsInfo.afkLast = os.clock()
+		if kind == "idled" then StatsInfo.afkIdled += 1 end
+	end
 end
 
 Callbacks.AntiAFK = function(state)
 	afk.token += 1
 	if afk.conn then afk.conn:Disconnect() afk.conn = nil end
+	StatsInfo.afkOn = state
 	if not state then return end
 
-	afk.conn = Players.LocalPlayer.Idled:Connect(poke)
+	StatsInfo.afkSince, StatsInfo.afkPings, StatsInfo.afkIdled, StatsInfo.afkLast = os.clock(), 0, 0, 0
+	afk.conn = LocalPlayer.Idled:Connect(function() poke("idled") end)
 
 	local my = afk.token
 	task.spawn(function()
 		while afk.token == my do
-			for _ = 1, 240 do
+			for _ = 1, 60 do
 				if afk.token ~= my then return end
 				task.wait(1)
 			end
-			poke()
+			poke("timer")
 		end
 	end)
 end
 
--- ANTI LAG: matikan efek visual, semua nilai asli disimpan & dipulihkan
+---------------------------------------------------------------------
+-- ANTI LAG: matikan efek visual (reversibel, nilai asli disimpan)
 local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}),
 	lighting = nil, quality = nil, terrain = nil, token = 0}
 
-local EMITTERS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true,
-	Smoke = true, Sparkles = true, PointLight = true, SpotLight = true, SurfaceLight = true}
+local EMITTERS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true,
+	Sparkles = true, PointLight = true, SpotLight = true, SurfaceLight = true, Highlight = true}
 local POST = {BloomEffect = true, BlurEffect = true, SunRaysEffect = true,
 	ColorCorrectionEffect = true, DepthOfFieldEffect = true}
 
@@ -90,6 +108,11 @@ local function dampen(obj)
 	if EMITTERS[cls] or POST[cls] then
 		antiLag.saved[obj] = {kind = "enabled", v = obj.Enabled}
 		obj.Enabled = false
+		StatsInfo.lagCount += 1
+	elseif cls == "ForceField" then
+		antiLag.saved[obj] = {kind = "ff", v = obj.Visible}
+		obj.Visible = false
+		StatsInfo.lagCount += 1
 	elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
 		local s = {kind = "part", mat = obj.Material, refl = obj.Reflectance, shadow = obj.CastShadow}
 		if obj:IsA("MeshPart") then
@@ -100,35 +123,37 @@ local function dampen(obj)
 		obj.Material = Enum.Material.SmoothPlastic
 		obj.Reflectance = 0
 		obj.CastShadow = false
+		StatsInfo.lagCount += 1
 	elseif obj:IsA("Decal") or obj:IsA("Texture") then
 		antiLag.saved[obj] = {kind = "decal", v = obj.Transparency}
 		obj.Transparency = 1
+		StatsInfo.lagCount += 1
 	end
 end
 
 local function restore(obj, s)
-	if s.kind == "enabled" then
-		obj.Enabled = s.v
+	if s.kind == "enabled" then obj.Enabled = s.v
+	elseif s.kind == "ff" then obj.Visible = s.v
 	elseif s.kind == "part" then
 		obj.Material, obj.Reflectance, obj.CastShadow = s.mat, s.refl, s.shadow
 		if s.fid then obj.RenderFidelity = s.fid end
-	elseif s.kind == "decal" then
-		obj.Transparency = s.v
-	elseif s.kind == "atm" then
-		obj.Density, obj.Haze = s.d, s.h
-	end
+	elseif s.kind == "decal" then obj.Transparency = s.v
+	elseif s.kind == "atm" then obj.Density, obj.Haze = s.d, s.h end
 end
 
 Callbacks.AntiLag = function(state)
 	if state == antiLag.on then return end
 	antiLag.on = state
+	StatsInfo.lagOn = state
 	antiLag.token += 1
 	local my = antiLag.token
 
 	if state then
+		StatsInfo.lagCount = 0
 		antiLag.lighting = {GlobalShadows = Lighting.GlobalShadows,
 			EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale}
+			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+			Brightness = Lighting.Brightness}
 		pcall(function() antiLag.quality = settings().Rendering.QualityLevel end)
 		Lighting.GlobalShadows = false
 		Lighting.EnvironmentDiffuseScale = 0
@@ -182,64 +207,213 @@ Callbacks.AntiLag = function(state)
 	end
 end
 
--- HIDE POPUPS: sembunyikan GUI game yang namanya cocok kata kunci.
--- Nama GUI Muscle Legends tidak bisa saya verifikasi dari sini, jadi tiap objek
--- yang disembunyikan dicetak di Output (F9) supaya kamu bisa menyetel daftar ini.
-local POPUP_KEYWORDS = {
-	"popup", "pop_up", "notification", "notif", "toast", "alert", "announce",
-	"reward", "gift", "offer", "sale", "welcome", "daily",
-}
-local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar"} -- jangan disentuh
-local popup = {on = false, conns = {}, hidden = setmetatable({}, {__mode = "k"}), log = true}
+-- RENDER 3D OFF: layar dunia jadi kosong, GUI tetap tampil. Penghemat terkuat untuk farming lama.
+Callbacks.Render3D = function(state)
+	pcall(function() RunService:Set3dRenderingEnabled(not state) end)
+end
 
-local function isPopup(o)
-	if not (o:IsA("GuiObject") or o:IsA("ScreenGui")) then return false end
-	if o:FindFirstAncestor("MuhavesUI") or o.Name == "MuhavesUI" then return false end
-	local n = o.Name:lower()
-	for _, k in ipairs(POPUP_IGNORE) do
-		if n:find(k, 1, true) then return false end
+-- FPS LIMITER: hanya jalan kalau executor menyediakan setfpscap
+Callbacks.FPSCap = function(state)
+	if type(setfpscap) == "function" then
+		pcall(setfpscap, state and 20 or 60)
+		StatsInfo.fpsNote = state and "FPS cap 20" or ""
+	else
+		StatsInfo.fpsNote = "executor tidak mendukung setfpscap"
 	end
-	for _, k in ipairs(POPUP_KEYWORDS) do
+end
+
+---------------------------------------------------------------------
+-- HIDE POPUPS v3: deteksi berdasarkan ISI teks (+angka ...) dan pola muncul-cepat,
+-- bukan cuma nama. Semua yang disembunyikan dipulihkan saat dimatikan.
+local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce"}
+local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar"}
+
+local popup = {on = false, token = 0, conns = {},
+	hidden = setmetatable({}, {__mode = "k"}),
+	baseline = setmetatable({}, {__mode = "k"}),
+	labelSet = setmetatable({}, {__mode = "k"}),
+	seen = setmetatable({}, {__mode = "k"}),
+	spawn = setmetatable({}, {__mode = "k"})}
+
+local function gainText(t)
+	return t ~= "" and t:match("^%s*[%+%-]%s*%d") ~= nil
+end
+
+local function ignored(o)
+	if o.Name == "MuhavesUI" or o:FindFirstAncestor("MuhavesUI") then return true end
+	local a = o
+	while a and a ~= workspace and not a:IsA("PlayerGui") do
+		local n = a.Name:lower()
+		for _, k in ipairs(POPUP_IGNORE) do
+			if n:find(k, 1, true) then return true end
+		end
+		a = a.Parent
+	end
+	return false
+end
+
+local function layouty(p)
+	return p:IsA("ScrollingFrame") or p:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
+end
+
+local function unhide(o)
+	local s = popup.hidden[o]
+	if not s then return end
+	popup.hidden[o] = nil
+	for _, c in ipairs({s.conn, s.conn2, s.conn3}) do if c then c:Disconnect() end end
+	pcall(function() o[s.prop] = s.v end)
+end
+
+local function hideTarget(o, why, srcLabel)
+	if popup.hidden[o] or ignored(o) then return end
+	local prop = o:IsA("LayerCollector") and "Enabled" or "Visible"
+	local s = {prop = prop, v = o[prop]}
+	popup.hidden[o] = s
+	o[prop] = false
+	StatsInfo.popCount += 1
+	local full = o:GetFullName():gsub("^.-PlayerGui%.", "")
+	StatsInfo.popLast = why .. ": " .. full:sub(-46)
+	s.conn = o:GetPropertyChangedSignal(prop):Connect(function()
+		if popup.on and o[prop] == true then o[prop] = false end
+	end)
+	s.conn2 = o.Destroying:Connect(function()
+		popup.hidden[o] = nil
+		if s.conn then s.conn:Disconnect() end
+		if s.conn3 then s.conn3:Disconnect() end
+	end)
+	-- kalau label sumber berubah jadi bukan teks gain, pulihkan wadahnya
+	if srcLabel then
+		s.conn3 = srcLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			if not gainText(srcLabel.Text) then
+				popup.seen[srcLabel] = nil
+				unhide(o)
+			end
+		end)
+	end
+end
+
+-- pilih wadah terluar yang baru dibuat (dinamis) supaya ikon ikut hilang
+local function pickTarget(lbl)
+	local t, p = lbl, lbl.Parent
+	while p and p:IsA("GuiObject") and not popup.baseline[p] and not layouty(p) do
+		t, p = p, p.Parent
+	end
+	if p and p:IsA("LayerCollector") and not popup.baseline[p] then
+		return p
+	end
+	if t == lbl and popup.baseline[lbl] and p and p:IsA("GuiObject")
+		and not layouty(p) and #p:GetChildren() <= 4 then
+		t = p
+	end
+	return t
+end
+
+local function checkLabel(lbl)
+	if not popup.on or popup.hidden[lbl] then return end
+	local seenT = popup.seen[lbl]
+	if seenT and popup.hidden[seenT] then return end
+	if not lbl.Visible or not gainText(lbl.Text) then return end
+	local t = pickTarget(lbl)
+	popup.seen[lbl] = t
+	hideTarget(t, "gain", lbl)
+end
+
+local function nameHit(o)
+	if not o:IsA("GuiObject") and not o:IsA("LayerCollector") then return false end
+	if o:IsA("GuiButton") then return false end -- jangan sentuh tombol HUD
+	local n = o.Name:lower()
+	for _, k in ipairs(POPUP_NAMES) do
 		if n:find(k, 1, true) then return true end
 	end
 	return false
 end
 
-local function hidePopup(o)
-	if popup.hidden[o] then return end
-	local prop = o:IsA("ScreenGui") and "Enabled" or "Visible"
-	popup.hidden[o] = {prop = prop, v = o[prop]}
-	o[prop] = false
-	if popup.log then print("[MuhavesUI] HidePopups menyembunyikan:", o:GetFullName()) end
-	table.insert(popup.conns, o:GetPropertyChangedSignal(prop):Connect(function()
-		if popup.on and o[prop] == true then o[prop] = false end
-	end))
+-- efek yang muncul beruntun di wadah yang sama (ikon kepalan terbang, dsb.)
+local function spawnCheck(d)
+	local parent = d.Parent
+	if not parent or not (parent:IsA("GuiObject") or parent:IsA("LayerCollector")) then return end
+	if layouty(parent) then return end
+	local now = os.clock()
+	local s = popup.spawn[parent]
+	if not s then s = {t = now, n = 0, flag = false, last = now}; popup.spawn[parent] = s end
+	if now - s.t > 2 then s.t, s.n = now, 0 end
+	if s.flag and now - s.last > 10 then s.flag = false end
+	s.n += 1
+	s.last = now
+	if s.n >= 4 then s.flag = true end
+	if s.flag and d:IsA("GuiObject") and not d:IsA("GuiButton") then
+		hideTarget(d, "spawn")
+	end
 end
 
 Callbacks.HidePopups = function(state)
 	if state == popup.on then return end
 	popup.on = state
-	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+	StatsInfo.popOn = state
+	popup.token += 1
+	local my = popup.token
+	local pg = LocalPlayer:WaitForChild("PlayerGui")
 
 	if state then
+		StatsInfo.popCount, StatsInfo.popLast = 0, "-"
 		for _, d in ipairs(pg:GetDescendants()) do
-			if isPopup(d) then pcall(hidePopup, d) end
+			popup.baseline[d] = true
+			if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
 		end
+		for _, d in ipairs(pg:GetDescendants()) do
+			if nameHit(d) then pcall(hideTarget, d, "name") end
+		end
+
 		table.insert(popup.conns, pg.DescendantAdded:Connect(function(d)
-			if popup.on and isPopup(d) then
-				task.defer(function() pcall(hidePopup, d) end)
+			if not popup.on then return end
+			if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
+			task.defer(function()
+				if not popup.on or not d.Parent then return end
+				pcall(function()
+					if nameHit(d) then hideTarget(d, "name") return end
+					spawnCheck(d)
+					if d:IsA("TextLabel") or d:IsA("TextButton") then checkLabel(d) end
+				end)
+			end)
+		end))
+
+		-- teks di dunia 3D (BillboardGui di workspace)
+		table.insert(popup.conns, workspace.DescendantAdded:Connect(function(d)
+			if popup.on and d:IsA("TextLabel") then
+				task.delay(0.15, function()
+					if popup.on and d.Parent and gainText(d.Text) then
+						local bb = d:FindFirstAncestorWhichIsA("BillboardGui") or d:FindFirstAncestorWhichIsA("SurfaceGui")
+						if bb then pcall(hideTarget, bb, "world") end
+					end
+				end)
 			end
 		end))
+
+		-- pemindai berkala: menangkap label lama yang teksnya diubah game
+		task.spawn(function()
+			while popup.token == my do
+				local n = 0
+				for lbl in pairs(popup.labelSet) do
+					if lbl.Parent then pcall(checkLabel, lbl) end
+					n += 1
+					if n % 600 == 0 then RunService.Heartbeat:Wait() end
+				end
+				task.wait(0.25)
+			end
+		end)
 	else
 		for _, c in ipairs(popup.conns) do c:Disconnect() end
 		popup.conns = {}
-		for o, s in pairs(popup.hidden) do
-			pcall(function() o[s.prop] = s.v end)
-		end
+		for o in pairs(popup.hidden) do unhide(o) end
 		popup.hidden = setmetatable({}, {__mode = "k"})
+		popup.baseline = setmetatable({}, {__mode = "k"})
+		popup.labelSet = setmetatable({}, {__mode = "k"})
+		popup.seen = setmetatable({}, {__mode = "k"})
+		popup.spawn = setmetatable({}, {__mode = "k"})
 	end
 end
 
+---------------------------------------------------------------------
 ---------------------------------------------------------------------
 -- Helper (ukuran kartu dihitung dari panjang teks, jadi tidak ada ruang kosong)
 local TextService = game:GetService("TextService")
@@ -441,7 +615,7 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v13 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+local verLbl = text(header, "v14 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
@@ -463,6 +637,8 @@ closeBtn.MouseButton1Click:Connect(function()
 	pcall(Callbacks.AntiAFK, false)
 	pcall(Callbacks.AntiLag, false)
 	pcall(Callbacks.HidePopups, false)
+	pcall(Callbacks.Render3D, false)
+	pcall(Callbacks.FPSCap, false)
 	gui:Destroy()
 end)
 
@@ -647,9 +823,11 @@ local tiles = {
 	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, Callbacks.SpinWheel},
 	{"Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts},
 	{"Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets},
-	{"Hide Popups", "Sembunyikan notifikasi popup.", false, function(st) Callbacks.HidePopups(st) end},
+	{"Hide Popups", "Sembunyikan teks +gain & efek.", false, function(st) Callbacks.HidePopups(st) end},
 	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
 	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
+	{"Render 3D Off", "Layar dunia kosong, hemat besar.", false, function(st) Callbacks.Render3D(st) end},
+	{"FPS Limiter", "Batasi FPS ke 20 (hemat CPU).", false, function(st) Callbacks.FPSCap(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -659,7 +837,9 @@ tileW = tileW + 2 * PAD
 local TILE_H = 108
 local inner2 = 4 * tileW + 3 * GAP
 local cardW2 = inner2 + 2 * PAD
-local cardH2 = CONTENT_Y + 2 * TILE_H + GAP + PAD
+local ROWS2 = math.ceil(#tiles / 4)
+local STATUS_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
+local cardH2 = STATUS_Y + 50 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
@@ -670,6 +850,29 @@ for i, t in ipairs(tiles) do
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
+
+-- Panel status live (bukti Anti AFK / Anti Lag / Hide Popups bekerja)
+local stBox = box(otCard, PAD, STATUS_Y, inner2, 50, CARD, 10)
+local st1 = text(stBox, "", 12, 12, 16, inner2 - 24, MUTED, F.GothamMedium)
+local st2 = text(stBox, "", 12, 12, 35, inner2 - 24, MUTED, F.GothamMedium)
+st1.TextTruncate = Enum.TextTruncate.AtEnd
+st2.TextTruncate = Enum.TextTruncate.AtEnd
+task.spawn(function()
+	while gui.Parent do
+		local S, now = StatsInfo, os.clock()
+		local a, l, p = "AFK: OFF", "Lag: OFF", "Popup: OFF"
+		if S.afkOn then
+			local up = math.floor(now - S.afkSince)
+			local last = S.afkLast > 0 and (math.floor(now - S.afkLast) .. "d lalu") or "menunggu (maks 60d)"
+			a = string.format("AFK: ON %02d:%02d • ping %d • terakhir %s", up // 60, up % 60, S.afkPings, last)
+		end
+		if S.lagOn then l = "Lag: ON • " .. S.lagCount .. " objek" end
+		if S.popOn then p = "Popup: ON • " .. S.popCount .. " disembunyikan • " .. S.popLast end
+		st1.Text = a .. "   |   " .. l .. (S.fpsNote ~= "" and ("   |   " .. S.fpsNote) or "")
+		st2.Text = p
+		task.wait(1)
+	end
+end)
 
 sizes[2] = {w = cardW2, h = cardH2}
 
