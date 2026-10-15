@@ -10,6 +10,9 @@
     - Teks di stat otomatis mengecil kalau angkanya panjang (autoFit), tidak meluap/menumpuk.
     - AutoLocalize dimatikan supaya teks tidak diterjemahkan otomatis oleh Roblox
       (terjemahan bikin teks lebih panjang dan merusak tata letak).
+    - Label stat dipaksa satu baris (TextScaled/TextWrapped dimatikan) dan ukurannya dihitung dari
+      teks yang tampil, jadi tidak ada lagi baris yang kebesaran atau jadi dua baris kecil.
+    - Tombol zoom - / + di header (tersimpan). Zoom besar = isi jendela di-scroll.
 ]]
 
 local ASSETS = {
@@ -572,17 +575,39 @@ end
 
 -- Kecilkan ukuran font otomatis supaya teks (angka stat dsb.) selalu muat di lebar yang tersedia.
 -- Jalan lagi setiap kali Text diubah dari luar, jadi aman untuk angka yang terus berubah.
+-- Label dipaksa satu baris (TextScaled/TextWrapped dimatikan, dijaga walau script lain menyalakannya),
+-- dan ukuran dihitung dari teks yang benar-benar tampil (ContentText, termasuk terjemahan otomatis).
 local function autoFit(lbl, maxSize, minSize, avail)
 	minSize = minSize or 8
 	avail = avail or lbl.Size.X.Offset
+	local target = maxSize
 	lbl.TextTruncate = Enum.TextTruncate.AtEnd
+	lbl.TextWrapped = false
+	lbl.TextScaled = false
+	local function shown()
+		local ok, ct = pcall(function() return lbl.ContentText end)
+		if ok and type(ct) == "string" and ct ~= "" then return ct end
+		return lbl.Text
+	end
 	local function apply()
 		if avail <= 0 then return end
-		local sz = maxSize
-		while sz > minSize and tw(lbl.Text, sz, lbl.Font) > avail do sz -= 1 end
-		lbl.TextSize = sz
+		local txt, sz = shown(), maxSize
+		while sz > minSize and tw(txt, sz, lbl.Font) > avail do sz -= 1 end
+		target = sz
+		if lbl.TextSize ~= sz then lbl.TextSize = sz end
 	end
 	lbl:GetPropertyChangedSignal("Text"):Connect(apply)
+	pcall(function() lbl:GetPropertyChangedSignal("ContentText"):Connect(apply) end)
+	lbl:GetPropertyChangedSignal("TextScaled"):Connect(function()
+		if lbl.TextScaled then lbl.TextScaled = false end
+		apply()
+	end)
+	lbl:GetPropertyChangedSignal("TextWrapped"):Connect(function()
+		if lbl.TextWrapped then lbl.TextWrapped = false end
+	end)
+	lbl:GetPropertyChangedSignal("TextSize"):Connect(function()
+		if lbl.TextSize ~= target then lbl.TextSize = target end
+	end)
 	apply()
 	return lbl
 end
@@ -741,16 +766,19 @@ local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
 
--- Jendela hanya dikecilkan (UIScale) mengikuti LEBAR layar, dan tidak lebih kecil dari MINSCALE.
--- Kalau tinggi/lebar layar masih kurang, isi jendela di-scroll, bukan dikecilkan lagi.
-local MINSCALE = 0.75
+-- Skala otomatis hanya mengikuti LEBAR layar dan tidak lebih kecil dari MINSCALE.
+-- Kalau layar masih kurang, isi jendela di-scroll (bukan dikecilkan lagi).
+-- Tombol - / + di header mengatur zoom manual (disimpan), mentok MAXSCALE.
+local MINSCALE, MAXSCALE = 0.85, 1.6
+local userScale = tonumber(Saved.Zoom)
+if userScale then userScale = math.clamp(userScale, 0.5, MAXSCALE) end
 local body, minimized = nil, false
 
 local function layoutWindow(animate)
 	local v = cam.ViewportSize
-	local s = math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
+	local s = userScale or math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
 	scale.Scale = s
-	local W = math.min(cur.w, (v.X - 16) / s)
+	local W = math.max(320, math.min(cur.w, (v.X - 16) / s))
 	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
 	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
 	if animate then
@@ -769,12 +797,19 @@ text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
 local verLbl = text(header, "v19 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
-verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
+verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
+
+-- Tombol zoom: "-" mengecilkan, "+" membesarkan (isi jendela tetap bisa di-scroll)
+local function zbtn(txt, x)
+	return new("TextButton", {Text = txt, TextSize = 24, Font = F.GothamBold, TextColor3 = MUTED, BackgroundTransparency = 1,
+		Position = UDim2.new(1, x, 0, 20), Size = UDim2.fromOffset(34, 34), AutoLocalize = false}, header)
+end
+local zoomOutBtn, zoomInBtn = zbtn("-", -172), zbtn("+", -136)
 
 -- Isi jendela: ScrollingFrame di bawah header (geser atas/bawah, dan kiri/kanan kalau layar sempit)
 body = new("ScrollingFrame", {
@@ -795,6 +830,16 @@ minBtn.MouseButton1Click:Connect(function()
 	body.Visible = not minimized
 	layoutWindow(true)
 end)
+
+local function zoomBy(d)
+	local base = userScale or math.clamp((cam.ViewportSize.X - 16) / cur.w, MINSCALE, 1)
+	userScale = math.clamp(math.floor((base + d) * 20 + 0.5) / 20, 0.5, MAXSCALE)
+	Saved.Zoom = userScale
+	saveSettings()
+	layoutWindow(true)
+end
+zoomOutBtn.MouseButton1Click:Connect(function() zoomBy(-0.1) end)
+zoomInBtn.MouseButton1Click:Connect(function() zoomBy(0.1) end)
 
 -- Tutup UI: matikan semua utilitas dulu supaya pengaturan game kembali normal
 closeBtn.MouseButton1Click:Connect(function()
@@ -914,11 +959,14 @@ local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
 local RB_VW = 84 -- lebar kolom angka di Rebirth Stats
 local rbNameW = math.max(tw("Rebirths", 15, F.GothamMedium), tw("Gained", 15, F.GothamMedium),
-	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium))
+	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium),
+	tw("Kelahiran Kembali", 15, F.GothamMedium)) -- ruang cadangan kalau game menerjemahkan "Rebirths"
 local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 16 + 64 + 14
 local PACE = "-- /s | -- / min | -- /h | -- /d"
 local fsNameW = tw("Dura Average", 13, F.GothamMedium)
-local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE, 13) + 10 + 14
+-- lebar kolom pace dihitung dari contoh angka sungguhan (bukan "--") supaya tidak kepotong
+local PACE_LONG = "000.00M/s | 00.00B/m | 0.00T/h | 00.00T/d"
+local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE_LONG, 13) + 10 + 14
 
 local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
 local cardW1 = inner1 + 2 * PAD
