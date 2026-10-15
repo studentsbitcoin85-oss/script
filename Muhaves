@@ -361,10 +361,13 @@ end
 -- Header
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
 new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
-new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
-text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
+do -- logo header: dipanjangkan, ngisi penuh kotaknya
+	local hl = image(header, ASSETS.LogoHeader, 14, 5, 210, 68, "Muhaves", 30)
+	if hl:IsA("ImageLabel") then hl.ScaleType = Enum.ScaleType.Crop end
+end
+new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
+text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
 local verLbl = text(header, "v21 • Farming", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
@@ -435,7 +438,7 @@ end
 -- Sidebar + navigasi
 local pages, sizes = {}, {}
 local SIDEMIN = 300
-local CHAR_MAX_H = 424
+local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470 -- tinggi maksimal area halaman; kalau konten lebih tinggi, halaman di-scroll
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
@@ -462,7 +465,7 @@ local function selectNav(idx, instant)
 	local sideH = H - HH - 2 * PAD
 	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
-		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
+		charImg.ScaleType = Enum.ScaleType.Crop -- isi penuh kotak atas-bawah tanpa gepeng
 	end
 	local goals = {
 		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
