@@ -399,13 +399,25 @@ cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(fal
 layoutWindow(false)
 
 -- Minimize: jendela disembunyikan, muncul tombol kecil ≡ (tap = buka lagi, tahan+geser = pindah)
+-- Tampilan: kotak hitam agak transparan, sudut sedikit membulat, ikon 3 garis abu-abu (digambar dari Frame, bukan huruf)
+local MINI_SHOW = 0.1 -- transparansi latar saat tampil (0 = pekat)
 local mini = new("TextButton", {
-	Name = "Mini", Text = "≡", TextSize = 26, Font = F.GothamBold, TextColor3 = MUTED, AutoButtonColor = false,
-	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 8), Size = UDim2.fromOffset(110, 34),
-	BackgroundColor3 = BLACK, BorderSizePixel = 0, Visible = false, AutoLocalize = false,
+	Name = "Mini", Text = "", AutoButtonColor = false,
+	AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6), Size = UDim2.fromOffset(132, 42),
+	BackgroundColor3 = Color3.fromRGB(6, 6, 7), BackgroundTransparency = MINI_SHOW, BorderSizePixel = 0,
+	Visible = false, AutoLocalize = false,
 }, gui)
-round(mini, 10)
-stroke(mini, Color3.fromRGB(55, 55, 58))
+round(mini, 8)
+stroke(mini, Color3.fromRGB(38, 38, 41))
+local miniLines = {}
+for i = 1, 3 do
+	local ln = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, (i - 2) * 8),
+		Size = UDim2.fromOffset(24, 3), BackgroundColor3 = Color3.fromRGB(185, 185, 190), BorderSizePixel = 0,
+	}, mini)
+	round(ln, 2)
+	miniLines[i] = ln
+end
 
 -- Animasi minimize / buka: jendela mengecil pelan ke tengah lalu tombol ≡ muncul (fade),
 -- dan sebaliknya. Atur kecepatan lewat angka durasi di bawah (makin besar = makin pelan).
@@ -415,14 +427,18 @@ local animBusy = false
 local function targetScale()
 	return userScale or math.clamp((cam.ViewportSize.X - 16) / cur.w, MINSCALE, 1)
 end
+local function miniBg(a) return MINI_SHOW + (1 - MINI_SHOW) * a end
 local function setMiniAlpha(a) -- 0 = tampak, 1 = hilang
-	mini.BackgroundTransparency = a
-	mini.TextTransparency = a
+	mini.BackgroundTransparency = miniBg(a)
+	for _, ln in ipairs(miniLines) do ln.BackgroundTransparency = a end
 	if miniStroke then miniStroke.Transparency = a end
 end
 local function tweenMini(a, t)
 	local info = TweenInfo.new(t, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-	TweenService:Create(mini, info, {BackgroundTransparency = a, TextTransparency = a}):Play()
+	TweenService:Create(mini, info, {BackgroundTransparency = miniBg(a)}):Play()
+	for _, ln in ipairs(miniLines) do
+		TweenService:Create(ln, info, {BackgroundTransparency = a}):Play()
+	end
 	if miniStroke then TweenService:Create(miniStroke, info, {Transparency = a}):Play() end
 end
 
