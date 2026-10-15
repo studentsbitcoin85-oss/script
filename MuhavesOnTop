@@ -361,20 +361,25 @@ end
 -- Header
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
 new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-do -- logo header: dipanjangkan, ngisi penuh kotaknya
-	local hl = image(header, ASSETS.LogoHeader, 14, 5, 210, 68, "Muhaves", 30)
-	if hl:IsA("ImageLabel") then hl.ScaleType = Enum.ScaleType.Crop end
+do -- logo header: diperpanjang, melebar penuh, sudut halus + garis tepi tipis
+	local hl = image(header, ASSETS.LogoHeader, 12, 6, 250, 66, "Muhaves", 30)
+	if hl:IsA("ImageLabel") then
+		hl.ScaleType = Enum.ScaleType.Stretch -- melebar penuh, tidak terpotong
+		round(hl, 10)
+		stroke(hl, Color3.fromRGB(70, 70, 76), 1)
+	end
 end
-new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
-text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
+new("Frame", {Position = UDim2.fromOffset(280, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+text(header, "P R I V A T E   F A R M I N G", 15, 296, 28, 400, TX, F.GothamBold)
+text(header, "Stronger   •   Faster   •   Better", 12, 298, 52, 400, SUB, F.GothamMedium)
 
 local verLbl = text(header, "v21 • Farming", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
 
-local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+-- Minimize = hijau, Close = merah
+local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.GothamBold, TextColor3 = Color3.fromRGB(80, 255, 120), BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
-local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
+local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = Color3.fromRGB(255, 80, 80), BackgroundTransparency = 1,
 	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
 
 -- Tombol zoom: "-" mengecilkan, "+" membesarkan (isi jendela tetap bisa di-scroll)
