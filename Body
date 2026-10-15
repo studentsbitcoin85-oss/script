@@ -8,6 +8,7 @@
 
     Yang aktif:
     - Rebirth Stats menampilkan rebirth kamu secara live (hanya MEMBACA angka, tidak menjalankan aksi).
+    - Rebirths ditampilkan angka penuh (150.000), Gained/Pace tetap disingkat (K, M, B, ...).
     - Isi jendela bisa di-scroll, tombol zoom - / + di header (tersimpan).
     - Label stat dipaksa satu baris dan ukurannya menyesuaikan lebar (autoFit).
 ]]
@@ -65,6 +66,14 @@ local function abbr(n)
 	end
 	local s = i == 1 and tostring(math.floor(n + 0.5)) or string.format("%.2f", n)
 	return (neg and "-" or "") .. s .. SUFFIX[i]
+end
+
+-- angka penuh dengan titik pemisah ribuan: 150000 -> 150.000
+local function full(n)
+	local s = string.format("%.0f", math.abs(n))
+	s = s:reverse():gsub("(%d%d%d)", "%1."):reverse()
+	s = s:gsub("^%.", "")
+	return (n < 0 and "-" or "") .. s
 end
 
 local function isNum(v) return v:IsA("IntValue") or v:IsA("NumberValue") end
@@ -681,7 +690,7 @@ image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32
 sizes[3] = {w = cardW3, h = cardH3}
 
 ---------------------------------------------------------------------
--- Tampilan rebirth live: Rebirths (total), Gained (sejak script dijalankan), Pace per jam / hari.
+-- Tampilan rebirth live: Rebirths (total, angka penuh), Gained (sejak script dijalankan), Pace per jam / hari.
 -- Hanya membaca nilai, tidak mengubah apa pun di game.
 do
 	local rbObj, startVal, startT, tries = nil, nil, 0, 0
@@ -703,7 +712,7 @@ do
 			if n then
 				if not startVal then startVal, startT = n, os.clock() end
 				local gained = n - startVal
-				rbRebirths.Text = abbr(n)
+				rbRebirths.Text = full(n)
 				rbGained.Text = abbr(gained)
 				local elapsed = os.clock() - startT
 				if elapsed >= 10 then
