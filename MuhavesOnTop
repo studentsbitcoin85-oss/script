@@ -10,7 +10,7 @@
 local UI = (function()
 
 local ASSETS = {
-	LogoHeader   = "91147250558427",
+	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
 	LogoInfo     = "91147250558427",
 	EmblemStats  = "122842326893052",
@@ -361,10 +361,13 @@ end
 -- Header
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
 new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
-new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
-text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
+do -- logo header: full dari kiri sampai tinggi header, ngisi penuh kotaknya
+	local hl = image(header, ASSETS.LogoHeader, 0, 0, 260, HH - 1, "Muhaves", 30)
+	if hl:IsA("ImageLabel") then hl.ScaleType = Enum.ScaleType.Crop end
+end
+new("Frame", {Position = UDim2.fromOffset(272, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+text(header, "P R I V A T E   F A R M I N G", 15, 288, 28, 400, TX, F.GothamBold)
+text(header, "Stronger   •   Faster   •   Better", 12, 290, 52, 400, SUB, F.GothamMedium)
 
 local verLbl = text(header, "v21 • Farming", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
@@ -435,7 +438,7 @@ end
 -- Sidebar + navigasi
 local pages, sizes = {}, {}
 local SIDEMIN = 300
-local CHAR_MAX_H = 424
+local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470 -- tinggi maksimal area halaman; kalau konten lebih tinggi, halaman di-scroll
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
@@ -462,7 +465,7 @@ local function selectNav(idx, instant)
 	local sideH = H - HH - 2 * PAD
 	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
-		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
+		charImg.ScaleType = Enum.ScaleType.Crop -- isi penuh kotak atas-bawah tanpa gepeng
 	end
 	local goals = {
 		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
@@ -514,9 +517,11 @@ end
 local p1 = newPage()
 
 local rbRows = {
+	{"Rebirth Target", "Target strength untuk rebirth.", "🔄", true},
 	{"Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi."},
 	{"Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis."},
-	{"Rebirth Target", "Stop di jumlah rebirth ini (0 = bebas).", "🔄", true},
+	{"Equip Reps Pets", "Pasang pet reps terbaik secara otomatis."},
+	{"Equip Strength Pets", "Pasang pet strength terbaik secara otomatis."},
 }
 local fsRows = {
 	{"Auto Farm Strength", "Farming otomatis dengan sistem pintar."},
@@ -534,7 +539,7 @@ local RB_VW = 84 -- lebar kolom angka di Rebirth Stats
 local rbNameW = math.max(tw("Rebirths", 15, F.GothamMedium), tw("Gained", 15, F.GothamMedium),
 	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium),
 	tw("Kelahiran Kembali", 15, F.GothamMedium)) -- ruang cadangan kalau game menerjemahkan "Rebirths"
-local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 16 + 64 + 14
+local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 14
 local PACE = "-- /s | -- / min | -- /h | -- /d"
 local fsNameW = tw("Dura Average", 13, F.GothamMedium)
 -- lebar kolom pace dihitung dari contoh angka sungguhan (bukan "--") supaya tidak kepotong
@@ -547,17 +552,23 @@ local rbStatsW = inner1 - rbOptsW - GAP
 local fsStatsW = inner1 - fsOptsW - GAP
 local BOX_H = RH * 3
 local CARD_H = CONTENT_Y + BOX_H + PAD
+local RB_H = RH * 5
+local RB_CARD_H = CONTENT_Y + RB_H + PAD
 
 -- Rebirth
-local rbCard = box(p1, 0, 0, cardW1, CARD_H, SEC, 16)
+local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
 local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive")
 
-local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, BOX_H, CARD, 12)
-optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], false, function(s) Callbacks.AutoRebirth(s) end)
+local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RB_H, CARD, 12)
+optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], nil, nil, "🔄", "0", function(v) Callbacks.RebirthTarget(v) end)
 hline(rbOpts, 14, RH, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, function(s) Callbacks.EquipRebirthPets(s) end)
+optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], false, function(s) Callbacks.AutoRebirth(s) end)
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "0", function(v) Callbacks.RebirthTarget(v) end)
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], true, function(s) Callbacks.EquipRebirthPets(s) end)
+hline(rbOpts, 14, RH * 3, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH * 3, rbRows[4][1], rbRows[4][2], false, function(s) Callbacks.EquipRepsPets(s) end)
+hline(rbOpts, 14, RH * 4, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH * 4, rbRows[5][1], rbRows[5][2], false, function(s) Callbacks.EquipStrengthPets(s) end)
 
 -- Baris stat: nama (lebar dibatasi supaya tidak menabrak angka) + angka (font otomatis mengecil kalau panjang)
 local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, nameW)
@@ -566,18 +577,17 @@ local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, na
 	return autoFit(text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT), size, 8)
 end
 
-local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
-text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamBold)
-local rvx = rbStatsW - 14 - 64 - 16 - RB_VW
+local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, RB_H, CARD, 12)
+text(rbStats, "Rebirth Stats", 17, 14, 28, 220, TX, F.GothamBold)
+local rvx = rbStatsW - 14 - RB_VW
 local rnW = rvx - 44 - 4
-local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 84, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 130, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 176, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
 
 -- Strength
-local fsCard = box(p1, 0, CARD_H + GAP, cardW1, CARD_H, SEC, 16)
+local fsCard = box(p1, 0, RB_CARD_H + GAP, cardW1, CARD_H, SEC, 16)
 local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", "🕒 0d 0h 0m 0s")
 fsRuntime.TextXAlignment = CENTER
 fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
@@ -604,7 +614,7 @@ local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, n
 local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
 local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
 
-sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
+sizes[1] = {w = cardW1, h = RB_CARD_H + CARD_H + GAP}
 
 ---------------------------------------------------------------------
 -- HALAMAN 2: Other (semua toggle hanya tampilan; fungsinya diisi lewat tabel Callbacks)
@@ -619,9 +629,6 @@ local tiles = {
 	{"Anti AFK", "Cegah kick karena diam.", true, function(st) Callbacks.AntiAFK(st) end},
 	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
 	{"Low Resource Mode", "3D off + FPS 20 + layar hitam.", false, function(st) Callbacks.LowResource(st) end},
-	{"Equip Reps Pets", "Prioritas pet rep speed.", false, function(st) Callbacks.EquipRepsPets(st) end},
-	{"Equip Strength Pets", "Prioritas pet strength.", false, function(st) Callbacks.EquipStrengthPets(st) end},
-	{"Equip Rebirth Pets", "Prioritas pet rebirth.", false, function(st) Callbacks.AutoEquipRebirth(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -629,25 +636,32 @@ for _, t in ipairs(tiles) do
 end
 tileW = tileW + 2 * PAD
 local TILE_H = 108
-local inner2 = 4 * tileW + 3 * GAP
-local cardW2 = inner2 + 2 * PAD
-local ROWS2 = math.ceil(#tiles / 4)
-local NOTE_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
+local inner2 = #tiles * tileW + (#tiles - 1) * GAP + 2
+local cardW2 = cardW1 -- selebar kartu Farming; kalau tile tidak muat, barisnya di-scroll ke samping
+local rowViewW = cardW2 - 2 * PAD
+local SCROLL_H = TILE_H + 16
+local NOTE_Y = CONTENT_Y + SCROLL_H + GAP
 local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
+local tileRow = new("ScrollingFrame", {
+	Position = UDim2.fromOffset(PAD, CONTENT_Y), Size = UDim2.fromOffset(rowViewW, SCROLL_H),
+	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
+	ScrollingDirection = Enum.ScrollingDirection.X, CanvasSize = UDim2.fromOffset(inner2, 0),
+	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+}, otCard)
 for i, t in ipairs(tiles) do
-	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-	local inRow = math.min(4, #tiles - row * 4) -- jumlah tombol di baris ini
-	local xoff = (4 - inRow) * (tileW + GAP) / 2 -- baris yang tidak penuh ditaruh di tengah
-	local tile = box(otCard, PAD + xoff + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
+	local col = i - 1 -- semua tile sebaris
+	local tile = box(tileRow, 1 + col * (tileW + GAP), 2, tileW, TILE_H, CARD, 12)
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
 	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
 text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + layar hitam.", 12, PAD, NOTE_Y + 10,
-	inner2, SUB, F.GothamMedium, CENTER)
+	rowViewW, SUB, F.GothamMedium, CENTER)
 
 sizes[2] = {w = cardW2, h = cardH2}
 
@@ -1559,7 +1573,7 @@ end
 -- Equip Reps / Strength / Rebirth Pets: pilih set pet untuk farming (saling mematikan).
 -- Set yang dipilih juga dipakai Auto Rebirth dan Auto Farm Strength.
 local PET_TILES = {
-	reps = "Equip Reps Pets", strength = "Equip Strength Pets", rebirth = "Equip Rebirth Pets",
+	reps = "opt:Equip Reps Pets", strength = "opt:Equip Strength Pets",
 }
 local function choosePets(mode, equipFn)
 	petMode, petChosen = mode, true
