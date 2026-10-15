@@ -26,7 +26,7 @@ local SEC   = Color3.fromRGB(8, 8, 9)
 local CARD  = Color3.fromRGB(14, 14, 15)
 local LINE  = Color3.fromRGB(40, 40, 43)
 local TX    = Color3.fromRGB(240, 240, 240)
-local SUB   = Color3.fromRGB(140, 140, 145)
+local SUB   = Color3.fromRGB(150, 150, 156)
 local MUTED = Color3.fromRGB(190, 190, 194)
 local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
@@ -286,7 +286,7 @@ local CONTENT_Y = PAD + 44 + GAP        -- isi kartu mulai di bawah header kartu
 local function cardHeader(card, icon, title, sub, status, extra)
 	local cw = card.Size.X.Offset
 	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
-	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamMedium)
+	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamBold)
 	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB)
 	local sLbl, eLbl
 	local x = cw - PAD
@@ -335,12 +335,12 @@ local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparen
 new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
 image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
 new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamMedium)
-text(header, "Stronger   •   Faster   •   Better", 12, 220, 52, 400, SUB)
+text(header, "PRIVATE FARMING", 15, 214, 28, 400, TX, F.Michroma)
+text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v9 • rapat otomatis", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
+local verLbl = text(header, "v10 • premium font", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
-print("[MuhavesUI] v9 dimuat")
+print("[MuhavesUI] v10 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
@@ -420,7 +420,7 @@ end
 
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
-		Text = "            " .. n[2], TextSize = 17, Font = F.GothamMedium, TextXAlignment = LEFT, AutoButtonColor = false,
+		Text = "            " .. n[2], TextSize = 17, Font = F.GothamBold, TextXAlignment = LEFT, AutoButtonColor = false,
 		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
 		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0,
 	}, sidebar)
@@ -486,19 +486,19 @@ optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, Callbacks.EquipReb
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "5.000", Callbacks.RebirthTarget)
 
-local function srow(parent, icon, name, value, cy, vx, vw, size, align)
+local function srow(parent, icon, name, value, cy, vx, vw, size, align, font)
 	text(parent, icon, size + 2, 10, cy, 28, MUTED, F.Gotham, CENTER)
-	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208))
-	return text(parent, value, size, vx, cy, vw, TX, F.Gotham, align or LEFT)
+	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208), F.GothamMedium)
+	return text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT)
 end
 
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
-text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamMedium)
+text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamBold)
 local rvx = rbStatsW - 14 - 64 - 16 - 70
-local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT)
-local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT)
-local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT)
-local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT)
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT, F.GothamBold)
 image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
 
 -- Strength
@@ -516,12 +516,12 @@ hline(fsOpts, 14, RH * 2, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "659", Callbacks.MaxReps)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
-text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamMedium)
+text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
 local paceW = tw(PACE, 13) + 10
-local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13)
+local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold)
 local fsStrG = text(fsStats, "+0", 13, vx + 90, 46, 70, TX)
-local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13)
+local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold)
 local fsDurG = text(fsStats, "+0", 13, vx + 90, 69, 70, TX)
 local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13)
 local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13)
@@ -565,7 +565,7 @@ for i, t in ipairs(tiles) do
 end
 
 local tpBox = box(otCard, PAD, tpY, inner2, 100, CARD, 12)
-text(tpBox, "Teleport (Tekan E)", 17, 14, 22, 300, TX, F.GothamMedium)
+text(tpBox, "Teleport (Tekan E)", 17, 14, 22, 300, TX, F.GothamBold)
 local bw = math.floor((inner2 - 28 - 3 * GAP) / 4)
 for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
 	local b = new("TextButton", {
@@ -618,7 +618,7 @@ end
 text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
 
 local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
-text(ft, "Fitur Utama", 17, 14, 24, 250, TX, F.GothamMedium)
+text(ft, "Fitur Utama", 17, 14, 24, 250, TX, F.GothamBold)
 for i, f in ipairs(feats) do
 	local col = i <= 4 and 0 or 1
 	local idx = i <= 4 and i or (i - 4)
