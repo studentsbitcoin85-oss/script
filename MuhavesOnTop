@@ -1,10 +1,13 @@
 --[[
-    Muhaves Private Farming - UI + Farming (v21)
+    Muhaves Private Farming - UI + Farming (v22)
     LocalScript. Tab: Fast Farming / Other / Info.
 
     Satu file: UI (dibungkus function) + logika farming di bagian bawah.
     Semua toggle terhubung lewat tabel UI.Callbacks. Script mengembalikan tabel UI
     (UI.Gui, UI.Rebirth, UI.Strength, UI.Other, UI.Callbacks).
+
+    v22: gambar HD, tulisan Welcome + username, transisi menu / zoom / buka-tutup
+         yang halus (tween), startup ringan untuk Delta (scan berat dipecah + ditunda).
 ]]
 
 local UI = (function()
@@ -46,6 +49,15 @@ local Callbacks = {
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
 	AntiAFK = function(s) end, AntiLag = function(s) end, Render3D = function(s) end,
 	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end, AutoEquipRebirth = function(s) end,
+}
+
+-- Status animasi/navigasi (satu tabel supaya hemat local variable)
+local ST = {
+	anim = false,      -- true saat animasi buka / tutup / intro berjalan
+	nav = 0,           -- token navigasi (membatalkan transisi lama kalau pindah menu cepat-cepat)
+	cur = nil,         -- index halaman aktif
+	holders = {},      -- CanvasGroup tiap halaman (dipakai buat fade)
+	info = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
 ---------------------------------------------------------------------
@@ -184,6 +196,7 @@ end
 
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
+-- Gambar HD: file asli dulu, lalu thumbnail besar, terakhir thumbnail kecil sebagai cadangan.
 local function image(p, id, x, y, w, h, fallback, fsize, holder)
 	if holder then box(p, x - 6, y - 6, w + 12, h + 12, BLACK, 10, true) end
 	local numId = id ~= "" and id:match("%d+") or nil
@@ -191,9 +204,9 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 		return text(p, fallback, fsize or 20, x, y + h / 2, w, TX, F.GothamBlack, CENTER)
 	end
 	local urls = {
-		THUMB .. numId,
 		"rbxassetid://" .. numId,
-		"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
+		"rbxthumb://type=Asset&id=" .. numId .. "&w=768&h=432",
+		THUMB .. numId,
 	}
 	local img = new("ImageLabel", {
 		BackgroundTransparency = 1, Image = urls[1],
@@ -202,7 +215,7 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 	}, p)
 	task.spawn(function()
 		for i = 2, #urls do
-			task.wait(4)
+			task.wait(3)
 			if not img.Parent or img.IsLoaded then return end
 			img.Image = urls[i]
 		end
@@ -225,7 +238,7 @@ local function toggle(p, x, cy, initial, cb)
 	-- set(v, silent): ubah tampilan toggle; silent = true -> tidak memanggil callback
 	local function set(v, silent)
 		state = v
-		local i = TweenInfo.new(0.15)
+		local i = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		TweenService:Create(tr, i, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
 		TweenService:Create(kn, i, {Position = UDim2.fromOffset(state and 21 or 3, 3),
 			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
@@ -344,16 +357,21 @@ local userScale = tonumber(Saved.Zoom)
 if userScale then userScale = math.clamp(userScale, 0.5, MAXSCALE) end
 local body, minimized = nil, false
 
+-- Ukuran + skala jendela. animate = true -> keduanya di-tween bareng (halus).
+-- Saat animasi buka/tutup/intro berjalan (ST.anim), skala tidak disentuh.
 local function layoutWindow(animate)
 	local v = cam.ViewportSize
 	local s = userScale or math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
-	scale.Scale = s
 	local W = math.max(320, math.min(cur.w, (v.X - 16) / s))
 	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
 	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
-	if animate then
-		TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(W, H)}):Play()
+	if ST.anim then
+		win.Size = UDim2.fromOffset(W, H)
+	elseif animate then
+		TweenService:Create(scale, ST.info, {Scale = s}):Play()
+		TweenService:Create(win, ST.info, {Size = UDim2.fromOffset(W, H)}):Play()
 	else
+		scale.Scale = s
 		win.Size = UDim2.fromOffset(W, H)
 	end
 end
@@ -373,8 +391,15 @@ new("Frame", {Position = UDim2.fromOffset(280, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 296, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 298, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v21 • Farming", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
-verLbl.Position = UDim2.new(1, -340, 0, 39 - verLbl.Size.Y.Offset / 2)
+-- Welcome + username + versi (rata kanan, di area kosong sebelum tombol - + — X)
+local function hdrText(t, size, cy, color, font)
+	local l = text(header, t, size, 0, cy, 160, color, font, RIGHT)
+	l.Position = UDim2.new(1, -340, 0, cy - l.Size.Y.Offset / 2)
+	return l
+end
+hdrText("Welcome,", 12, 20, SUB, F.GothamMedium)
+autoFit(hdrText(LocalPlayer.Name, 16, 40, TX, F.GothamBold), 16, 9, 160)
+hdrText("v22 • Farming", 11, 61, SUB, F.GothamMedium)
 
 -- Minimize = hijau, Close = merah
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.GothamBold, TextColor3 = Color3.fromRGB(80, 255, 120), BackgroundTransparency = 1,
@@ -403,9 +428,8 @@ body = new("ScrollingFrame", {
 cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end)
 layoutWindow(false)
 
--- Minimize: jendela disembunyikan, muncul tombol kecil ≡ (tap = buka lagi, tahan+geser = pindah)
--- Tombol kecil: kotak hitam gradasi tipis, garis tepi halus, ikon 3 garis (digambar dari Frame).
--- Muncul agak ke bawah (di bawah bar strength). Bisa digeser kalau mau pindah posisi.
+-- Minimize: jendela mengecil pelan ke tengah lalu tombol ≡ muncul (fade), dan sebaliknya.
+-- Tombol kecil bisa digeser (tahan + geser), tap = buka lagi.
 local MINI_SHOW = 0.08   -- transparansi latar saat tampil (0 = pekat)
 local STROKE_SHOW = 0.35 -- transparansi garis tepi saat tampil
 local mini = new("TextButton", {
@@ -430,10 +454,7 @@ for i = 1, 3 do
 	miniLines[i] = ln
 end
 
--- Animasi minimize / buka: jendela mengecil pelan ke tengah lalu tombol ≡ muncul (fade),
--- dan sebaliknya. Atur kecepatan lewat angka durasi di bawah (makin besar = makin pelan).
 local miniStroke = mini:FindFirstChildOfClass("UIStroke")
-local animBusy = false
 
 local function targetScale()
 	return userScale or math.clamp((cam.ViewportSize.X - 16) / cur.w, MINSCALE, 1)
@@ -455,31 +476,32 @@ local function tweenMini(a, t)
 end
 
 local function minimizeWindow()
-	if animBusy or not win.Visible then return end
-	animBusy = true
-	local t = TweenService:Create(scale, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Scale = 0.05})
+	if ST.anim or not win.Visible then return end
+	ST.anim = true
+	local t = TweenService:Create(scale, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {Scale = 0.05})
 	t:Play()
 	t.Completed:Wait()
 	win.Visible = false
 	scale.Scale = targetScale() -- siapkan ukuran normal untuk saat dibuka lagi
 	setMiniAlpha(1)
 	mini.Visible = true
-	tweenMini(0, 0.35)
-	animBusy = false
+	tweenMini(0, 0.3)
+	ST.anim = false
 end
 
 local function restoreWindow()
-	if animBusy then return end
-	animBusy = true
-	tweenMini(1, 0.25)
-	task.wait(0.25)
+	if ST.anim then return end
+	ST.anim = true
+	tweenMini(1, 0.2)
+	task.wait(0.2)
 	mini.Visible = false
 	scale.Scale = 0.05
 	win.Visible = true
 	local t = TweenService:Create(scale, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = targetScale()})
 	t:Play()
 	t.Completed:Wait()
-	animBusy = false
+	ST.anim = false
+	layoutWindow(false)
 end
 
 minBtn.MouseButton1Click:Connect(minimizeWindow)
@@ -510,6 +532,7 @@ do
 	end)
 end
 
+-- Zoom halus: skala + ukuran jendela di-tween bareng
 local function zoomBy(d)
 	local base = userScale or math.clamp((cam.ViewportSize.X - 16) / cur.w, MINSCALE, 1)
 	userScale = math.clamp(math.floor((base + d) * 20 + 0.5) / 20, 0.5, MAXSCALE)
@@ -552,22 +575,63 @@ local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
 local navBtns = {}
 local charImg
 
+-- Pindah menu: tombol nav di-tween, halaman lama fade out, halaman baru fade + geser masuk,
+-- ukuran jendela/sidebar ikut di-tween. Pindah cepat-cepat aman (token ST.nav).
 local function selectNav(idx, instant)
+	ST.nav += 1
+	local tok = ST.nav
+	local prev = ST.cur
+	ST.cur = idx
+
 	for i, b in ipairs(navBtns) do
 		local on = i == idx
-		b.BackgroundTransparency = on and 0 or 1
-		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
-		b:FindFirstChildOfClass("UIStroke").Enabled = on
-		pages[i].Visible = on
+		local goal = {
+			BackgroundTransparency = on and 0 or 1,
+			TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218),
+		}
+		local sk = b:FindFirstChildOfClass("UIStroke")
+		if instant then
+			for k, v in pairs(goal) do b[k] = v end
+			sk.Transparency = on and 0 or 1
+		else
+			TweenService:Create(b, ST.info, goal):Play()
+			TweenService:Create(sk, ST.info, {Transparency = on and 0 or 1}):Play()
+		end
 	end
+
 	local sz = sizes[idx]
 	local viewH = math.min(sz.h, PAGE_MAX_H)
 	local W = CX + sz.w + PAD
 	local H = math.max(HH + PAD + viewH + PAD, HH + PAD + SIDEMIN + PAD)
 	cur.w, cur.h = W, H
-	pages[idx].Size = UDim2.fromOffset(sz.w + 8, viewH)
+	ST.holders[idx].Size = UDim2.fromOffset(sz.w + 8, viewH)
 	pages[idx].CanvasSize = UDim2.fromOffset(0, sz.h)
 	pages[idx].CanvasPosition = Vector2.new(0, 0)
+
+	for i, h in ipairs(ST.holders) do
+		if instant then
+			h.Visible = i == idx
+			h.GroupTransparency = 0
+			h.Position = UDim2.fromOffset(CX, CY)
+		elseif i == idx then
+			if i ~= prev then
+				h.GroupTransparency = 1
+				h.Position = UDim2.fromOffset(CX + 18, CY)
+				h.Visible = true
+				task.delay(0.08, function()
+					if tok ~= ST.nav then return end
+					TweenService:Create(h, ST.info, {GroupTransparency = 0, Position = UDim2.fromOffset(CX, CY)}):Play()
+				end)
+			end
+		elseif h.Visible then
+			local t = TweenService:Create(h, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {GroupTransparency = 1})
+			t.Completed:Connect(function()
+				if ST.cur ~= i then h.Visible = false end
+			end)
+			t:Play()
+		end
+	end
+
 	local sideH = H - HH - 2 * PAD
 	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
@@ -581,7 +645,7 @@ local function selectNav(idx, instant)
 		if instant then
 			for k, v in pairs(g[2]) do g[1][k] = v end
 		else
-			TweenService:Create(g[1], TweenInfo.new(0.2), g[2]):Play()
+			TweenService:Create(g[1], ST.info, g[2]):Play()
 		end
 	end
 	minimized = false
@@ -601,20 +665,28 @@ for i, n in ipairs(nav) do
 	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
 	text(b, n[1], 22, 10, 22, 36, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
 	navBtns[i] = b
-	b.MouseButton1Click:Connect(function() selectNav(i) end)
+	b.MouseButton1Click:Connect(function()
+		if ST.cur ~= i then selectNav(i) end
+	end)
 end
 charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
 
+-- Tiap halaman = CanvasGroup (buat fade) berisi ScrollingFrame. Yang dikembalikan: ScrollingFrame-nya.
 local function newPage()
-	local f = new("ScrollingFrame", {
+	local h = new("CanvasGroup", {
 		Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
-		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, Active = true,
+		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false,
+	}, body)
+	local f = new("ScrollingFrame", {
+		Position = UDim2.fromOffset(0, 0), Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
 		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.fromOffset(0, 0),
 		ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
 		VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
 		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
-	}, body)
+	}, h)
 	table.insert(pages, f)
+	table.insert(ST.holders, h)
 	return f
 end
 
@@ -868,6 +940,17 @@ end
 ---------------------------------------------------------------------
 selectNav(1, true)
 
+-- Intro halus saat di-execute: jendela membesar pelan dari tengah
+task.spawn(function()
+	ST.anim = true
+	scale.Scale = 0.05
+	local t = TweenService:Create(scale, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = targetScale()})
+	t:Play()
+	t.Completed:Wait()
+	ST.anim = false
+	layoutWindow(false)
+end)
+
 return {
 	Gui = gui,
 	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
@@ -924,10 +1007,13 @@ track(lp.Idled:Connect(function()
 	services.virtualinputmanager:SendKeyEvent(false, Enum.KeyCode.Y, false, game)
 end))
 
--- Hapus RobloxForwardPortals (iklan)
-for _, portal in ipairs(game:GetDescendants()) do
-	if portal.Name == "RobloxForwardPortals" then portal:Destroy() end
-end
+-- Hapus RobloxForwardPortals (iklan). Scan awal dipecah + di-yield supaya tidak freeze saat execute (Delta).
+task.spawn(function()
+	for i, portal in ipairs(game:GetDescendants()) do
+		if portal.Name == "RobloxForwardPortals" then pcall(function() portal:Destroy() end) end
+		if i % 400 == 0 then task.wait() end
+	end
+end)
 if _G.ads then
 	pcall(function() _G.ads:Disconnect() end)
 	_G.ads = nil
@@ -1492,7 +1578,7 @@ do
 		for i, d in ipairs(workspace:GetDescendants()) do
 			if not on then return end
 			if isPet(d) then pcall(hideModel, d) end
-			if i % 500 == 0 then task.wait() end
+			if i % 300 == 0 then task.wait() end
 		end
 	end
 	-- buang catatan objek yang sudah hilang dari game
@@ -1651,7 +1737,7 @@ do
 					for i, o in ipairs(root:GetDescendants()) do
 						if not on then return end
 						pcall(onExisting, o)
-						if i % 500 == 0 then task.wait() end
+						if i % 300 == 0 then task.wait() end
 					end
 				end)
 			end
@@ -1812,8 +1898,9 @@ do
 end
 
 ---------------------------------------------------------------------
--- Sinkronkan kondisi awal toggle di UI (Hide Pets, Hide Popups, Anti AFK = ON dari awal)
-task.spawn(function() Callbacks.HidePets(true) end)
-task.spawn(function() Callbacks.HidePopups(true) end)
+-- Kondisi awal toggle di UI (Hide Pets, Hide Popups, Anti AFK = ON dari awal).
+-- Ditunda ~1.2 detik supaya animasi intro UI tidak patah-patah saat di-execute (Delta).
+task.delay(1.2, function() if alive() then Callbacks.HidePets(true) end end)
+task.delay(1.6, function() if alive() then Callbacks.HidePopups(true) end end)
 
 return UI
