@@ -251,6 +251,7 @@ local function numberBox(p, x, y, w, h, value, cb)
 	end)
 end
 
+local Toggles = {} -- setter toggle (tab Other: judul tile; kartu opsi: "opt:" .. judul)
 local RH = 58
 local function rowW(title, sub, icon, num)
 	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamBold), tw(sub, 13, F.GothamMedium)) + 14
@@ -263,7 +264,7 @@ local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
 		text(p, icon, 26, left - 2, y + RH / 2, 34, MUTED, F.GothamBold, CENTER)
 		left = left + 38
 	else
-		toggle(p, left, y + RH / 2, state, cb)
+		Toggles["opt:" .. title] = toggle(p, left, y + RH / 2, state, cb)
 		left = left + 56
 	end
 	text(p, title, 17, left, y + 20, 400, TX, F.GothamBold)
@@ -515,7 +516,7 @@ local p1 = newPage()
 local rbRows = {
 	{"Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi."},
 	{"Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis."},
-	{"Rebirth Target", "Target strength untuk rebirth.", "🔄", true},
+	{"Rebirth Target", "Stop di jumlah rebirth ini (0 = bebas).", "🔄", true},
 }
 local fsRows = {
 	{"Auto Farm Strength", "Farming otomatis dengan sistem pintar."},
@@ -608,7 +609,6 @@ sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
 ---------------------------------------------------------------------
 -- HALAMAN 2: Other (semua toggle hanya tampilan; fungsinya diisi lewat tabel Callbacks)
 local p2 = newPage()
-local Toggles = {} -- setter tiap toggle di tab Other, dipakai untuk saling mematikan
 local tiles = {
 	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, function(st) Callbacks.EatEggs(st) end},
 	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, function(st) Callbacks.EatShake(st) end},
@@ -996,7 +996,7 @@ local rb = {
 	strength = ls:WaitForChild("Strength"),
 	running = false, workerActive = false,
 	usePets = true,      -- Equip Rebirth Pets
-	targetOverride = 0,  -- Rebirth Target: 0 = otomatis (5000 + rebirth x 2550)
+	targetCount = 0,     -- Rebirth Target: berhenti saat rebirth >= angka ini (0 = tanpa batas)
 }
 
 local function setRebirthStatus(text, color)
@@ -1004,16 +1004,27 @@ local function setRebirthStatus(text, color)
 	UI.Rebirth.Status.TextColor3 = color
 end
 
+local function rebirthTargetReached()
+	return rb.targetCount > 0 and rb.rebirths.Value >= rb.targetCount
+end
+
+local function stopAtTarget()
+	rb.running = false
+	setRebirthStatus("Status: Target reached", C_PAUSE)
+	local setter = UI.Toggles["opt:Auto Rebirth"]
+	if setter then setter(false, true) end
+end
+
 local function performRebirth()
-	local target = rb.targetOverride > 0 and rb.targetOverride or (5000 + rb.rebirths.Value * 2550)
+	local target = 5000 + rb.rebirths.Value * 2550
 	local reps = lp.MembershipType == Enum.MembershipType.Premium and 6 or 12
 
-	while rb.running and alive() and rb.strength.Value < target do
+	while rb.running and alive() and not rebirthTargetReached() and rb.strength.Value < target do
 		for _ = 1, reps do muscleEvent:FireServer("rep") end
 		task.wait(0.02)
 	end
 
-	if rb.running and alive() and rb.strength.Value >= target then
+	if rb.running and alive() and not rebirthTargetReached() and rb.strength.Value >= target then
 		if rb.usePets then
 			equipBestRebirthPets()
 			task.wait(0.25)
@@ -1032,6 +1043,10 @@ local function startRebirthWorker()
 	rb.workerActive = true
 	task.spawn(function()
 		while rb.running and alive() do
+			if rebirthTargetReached() then
+				stopAtTarget()
+				break
+			end
 			equipFarmingPets()
 			performRebirth()
 			task.wait(0.5)
@@ -1041,6 +1056,10 @@ local function startRebirthWorker()
 end
 
 Callbacks.AutoRebirth = function(state)
+	if state and rebirthTargetReached() then
+		stopAtTarget()
+		return
+	end
 	rb.running = state
 	if state then
 		setRebirthStatus("Status: Rebirthing", C_ON)
@@ -1050,7 +1069,7 @@ Callbacks.AutoRebirth = function(state)
 	end
 end
 Callbacks.EquipRebirthPets = function(state) rb.usePets = state end
-Callbacks.RebirthTarget = function(v) rb.targetOverride = math.max(0, math.floor(tonumber(v) or 0)) end
+Callbacks.RebirthTarget = function(v) rb.targetCount = math.max(0, math.floor(tonumber(v) or 0)) end
 
 ---------------------------------------------------------------------
 -- STRENGTH (tombol Auto Farm Strength / Controlled Speed / Max Reps)
