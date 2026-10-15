@@ -1,979 +1,1073 @@
-
 --[[
-    Muhaves Private Farming - UI Skeleton
-    Tabs: Fast Farming / Other / Info
-    Fast Farming: vertical scrolling
-    Farming & Other callbacks: EMPTY
+    Muhaves Private Farming - UI + Utilities (merged)
+    LocalScript. Tab: Fast Farming / Other / Info.
+    Aktif & berfungsi: Anti AFK, Anti Lag, Hide Popups.
+    Fitur lain masih berupa kerangka (isi di tabel Callbacks).
 ]]
 
---==================================================
--- SERVICES
---==================================================
+local ASSETS = {
+	LogoHeader   = "91147250558427",
+	Character    = "96640742460759",
+	LogoInfo     = "91147250558427",
+	EmblemStats  = "122842326893052",
+	EmblemBottom = "112087359143806",
+}
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local TextService = game:GetService("TextService")
+local RunService = game:GetService("RunService")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local BLACK = Color3.fromRGB(2, 2, 3)
+local WIN   = BLACK
+local SEC   = Color3.fromRGB(8, 8, 9)
+local CARD  = Color3.fromRGB(14, 14, 15)
+local LINE  = Color3.fromRGB(40, 40, 43)
+local TX    = Color3.fromRGB(240, 240, 240)
+local SUB   = Color3.fromRGB(150, 150, 156)
+local MUTED = Color3.fromRGB(190, 190, 194)
+local OFFBG = Color3.fromRGB(70, 70, 74)
+local ONBG  = Color3.fromRGB(104, 104, 110)
 
---==================================================
--- CONFIG
---==================================================
-
-local ASSETS = {
-    LogoHeader = "91147250558427",
-    Character = "96640742460759",
-    LogoInfo = "91147250558427",
-    EmblemStats = "122842326893052",
-    EmblemBottom = "112087359143806",
-}
-
-local C = {
-    Black = Color3.fromRGB(2, 2, 3),
-    Window = Color3.fromRGB(2, 2, 3),
-    Section = Color3.fromRGB(8, 8, 9),
-    Card = Color3.fromRGB(14, 14, 15),
-    Line = Color3.fromRGB(40, 40, 43),
-    Text = Color3.fromRGB(240, 240, 240),
-    Sub = Color3.fromRGB(150, 150, 156),
-    Muted = Color3.fromRGB(190, 190, 194),
-    Off = Color3.fromRGB(70, 70, 74),
-    On = Color3.fromRGB(104, 104, 110),
-}
-
+local LEFT, CENTER, RIGHT = Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right
 local F = Enum.Font
-local LEFT = Enum.TextXAlignment.Left
-local CENTER = Enum.TextXAlignment.Center
-local RIGHT = Enum.TextXAlignment.Right
-
-local PAD = 14
-local GAP = 10
-local HEADER_H = 78
-local SIDEBAR_W = 200
-local CONTENT_X = PAD + SIDEBAR_W + PAD
-local CONTENT_Y = HEADER_H + PAD
-local ROW_H = 58
-local MAX_PAGE_HEIGHT = 420
-
---==================================================
--- EMPTY CALLBACKS
--- Implementasi fitur dapat ditambahkan kemudian.
---==================================================
 
 local Callbacks = {
-    -- Fast Farming
-    AutoRebirth = function(state) end,
-    EquipRebirthPets = function(state) end,
-    RebirthTarget = function(value) end,
-    AutoFarmStrength = function(state) end,
-    ControlledSpeed = function(state) end,
-    MaxReps = function(value) end,
-
-    -- Other
-    EatEggs = function(state) end,
-    EatShake = function(state) end,
-    SpinWheel = function(state) end,
-    EatAllBoosts = function(state) end,
-    HidePets = function(state) end,
-    HidePopups = function(state) end,
-    AntiAFK = function(state) end,
-    AntiLag = function(state) end,
-    Render3D = function(state) end,
-    FPSCap = function(state) end,
-    HidePlayers = function(state) end,
+	AutoRebirth = function(s) end, EquipRebirthPets = function(s) end, RebirthTarget = function(v) end,
+	AutoFarmStrength = function(s) end, ControlledSpeed = function(s) end, MaxReps = function(v) end,
+	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
+	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
+	AntiAFK = function(s) end, AntiLag = function(s) end,
 }
 
---==================================================
--- HELPERS
---==================================================
+---------------------------------------------------------------------
+-- UTILITAS SISI KLIEN v3: Anti AFK, Anti Lag, Hide Popups, Render 3D Off, FPS Limiter
+---------------------------------------------------------------------
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
 
-local function new(className, properties, parent)
-    local object = Instance.new(className)
+-- Data live untuk panel status di tab Other (bukti fitur bekerja)
+local StatsInfo = {
+	afkOn = false, afkSince = 0, afkPings = 0, afkIdled = 0, afkLast = 0,
+	lagOn = false, lagCount = 0,
+	popOn = false, popCount = 0, popLast = "-",
+	fpsNote = "", fps = 0,
+}
 
-    for key, value in pairs(properties or {}) do
-        object[key] = value
-    end
+---------------------------------------------------------------------
+-- ANTI AFK: event Idled + ping otomatis tiap 60 detik (terlihat di panel status)
+local afk = {conn = nil, token = 0}
 
-    object.Parent = parent
-    return object
+local function poke(kind)
+	local ok = pcall(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame)
+	end)
+	if ok then
+		StatsInfo.afkPings += 1
+		StatsInfo.afkLast = os.clock()
+		if kind == "idled" then StatsInfo.afkIdled += 1 end
+	end
 end
 
-local function round(object, radius)
-    new("UICorner", {
-        CornerRadius = UDim.new(0, radius or 10),
-    }, object)
+Callbacks.AntiAFK = function(state)
+	afk.token += 1
+	if afk.conn then afk.conn:Disconnect() afk.conn = nil end
+	StatsInfo.afkOn = state
+	if not state then return end
+
+	StatsInfo.afkSince, StatsInfo.afkPings, StatsInfo.afkIdled, StatsInfo.afkLast = os.clock(), 0, 0, 0
+	afk.conn = LocalPlayer.Idled:Connect(function() poke("idled") end)
+
+	local my = afk.token
+	task.spawn(function()
+		while afk.token == my do
+			for _ = 1, 60 do
+				if afk.token ~= my then return end
+				task.wait(1)
+			end
+			poke("timer")
+		end
+	end)
 end
 
-local function stroke(object, color, thickness)
-    return new("UIStroke", {
-        Color = color or C.Line,
-        Thickness = thickness or 1,
-    }, object)
+---------------------------------------------------------------------
+-- ANTI LAG: matikan efek visual (reversibel, nilai asli disimpan)
+local antiLag = {on = false, conn = nil, saved = setmetatable({}, {__mode = "k"}),
+	lighting = nil, quality = nil, terrain = nil, token = 0}
+
+local EMITTERS = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true,
+	Sparkles = true, PointLight = true, SpotLight = true, SurfaceLight = true, Highlight = true}
+local POST = {BloomEffect = true, BlurEffect = true, SunRaysEffect = true,
+	ColorCorrectionEffect = true, DepthOfFieldEffect = true}
+
+local function dampen(obj)
+	if antiLag.saved[obj] then return end
+	local cls = obj.ClassName
+	if EMITTERS[cls] or POST[cls] then
+		antiLag.saved[obj] = {kind = "enabled", v = obj.Enabled}
+		obj.Enabled = false
+		StatsInfo.lagCount += 1
+	elseif cls == "ForceField" then
+		antiLag.saved[obj] = {kind = "ff", v = obj.Visible}
+		obj.Visible = false
+		StatsInfo.lagCount += 1
+	elseif obj:IsA("BasePart") and not obj:IsA("Terrain") then
+		local s = {kind = "part", mat = obj.Material, refl = obj.Reflectance, shadow = obj.CastShadow}
+		if obj:IsA("MeshPart") then
+			s.fid = obj.RenderFidelity
+			obj.RenderFidelity = Enum.RenderFidelity.Performance
+		end
+		antiLag.saved[obj] = s
+		obj.Material = Enum.Material.SmoothPlastic
+		obj.Reflectance = 0
+		obj.CastShadow = false
+		StatsInfo.lagCount += 1
+	elseif obj:IsA("Decal") or obj:IsA("Texture") then
+		antiLag.saved[obj] = {kind = "decal", v = obj.Transparency}
+		obj.Transparency = 1
+		StatsInfo.lagCount += 1
+	end
 end
 
-local function measure(value, size, font)
-    local ok, result = pcall(function()
-        return TextService:GetTextSize(
-            value,
-            size,
-            font or F.Gotham,
-            Vector2.new(10000, 1000)
-        )
-    end)
-
-    return ok and result.X or (#value * size * 0.6)
+local function restore(obj, s)
+	if s.kind == "enabled" then obj.Enabled = s.v
+	elseif s.kind == "ff" then obj.Visible = s.v
+	elseif s.kind == "part" then
+		obj.Material, obj.Reflectance, obj.CastShadow = s.mat, s.refl, s.shadow
+		if s.fid then obj.RenderFidelity = s.fid end
+	elseif s.kind == "decal" then obj.Transparency = s.v
+	elseif s.kind == "atm" then obj.Density, obj.Haze = s.d, s.h end
 end
 
-local function box(parent, x, y, width, height, color, radius)
-    local object = new("Frame", {
-        Position = UDim2.fromOffset(x, y),
-        Size = UDim2.fromOffset(width, height),
-        BackgroundColor3 = color or C.Card,
-        BorderSizePixel = 0,
-    }, parent)
+Callbacks.AntiLag = function(state)
+	if state == antiLag.on then return end
+	antiLag.on = state
+	StatsInfo.lagOn = state
+	antiLag.token += 1
+	local my = antiLag.token
 
-    round(object, radius or 12)
-    stroke(object)
+	if state then
+		StatsInfo.lagCount = 0
+		antiLag.lighting = {GlobalShadows = Lighting.GlobalShadows,
+			EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+			EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+			Brightness = Lighting.Brightness}
+		pcall(function() antiLag.quality = settings().Rendering.QualityLevel end)
+		Lighting.GlobalShadows = false
+		Lighting.EnvironmentDiffuseScale = 0
+		Lighting.EnvironmentSpecularScale = 0
+		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
 
-    return object
+		pcall(function()
+			local t = workspace.Terrain
+			antiLag.terrain = {WaterWaveSize = t.WaterWaveSize, WaterWaveSpeed = t.WaterWaveSpeed,
+				WaterReflectance = t.WaterReflectance}
+			t.WaterWaveSize, t.WaterWaveSpeed, t.WaterReflectance = 0, 0, 0
+		end)
+
+		for _, d in ipairs(Lighting:GetDescendants()) do pcall(dampen, d) end
+		local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+		if atm then
+			antiLag.saved[atm] = {kind = "atm", d = atm.Density, h = atm.Haze}
+			atm.Density, atm.Haze = 0, 0
+		end
+
+		antiLag.conn = workspace.DescendantAdded:Connect(function(d)
+			if antiLag.on then pcall(dampen, d) end
+		end)
+
+		task.spawn(function()
+			local n = 0
+			for _, d in ipairs(workspace:GetDescendants()) do
+				if antiLag.token ~= my then return end
+				pcall(dampen, d)
+				n += 1
+				if n % 300 == 0 then RunService.Heartbeat:Wait() end
+			end
+		end)
+	else
+		if antiLag.conn then antiLag.conn:Disconnect() antiLag.conn = nil end
+		for k, v in pairs(antiLag.lighting or {}) do pcall(function() Lighting[k] = v end) end
+		for k, v in pairs(antiLag.terrain or {}) do pcall(function() workspace.Terrain[k] = v end) end
+		if antiLag.quality then
+			pcall(function() settings().Rendering.QualityLevel = antiLag.quality end)
+		end
+		local list = antiLag.saved
+		antiLag.saved = setmetatable({}, {__mode = "k"})
+		task.spawn(function()
+			local n = 0
+			for obj, s in pairs(list) do
+				pcall(restore, obj, s)
+				n += 1
+				if n % 300 == 0 then RunService.Heartbeat:Wait() end
+			end
+		end)
+	end
 end
 
-local function label(parent, value, size, x, centerY, width, color, font, align)
-    local height = size + 10
-
-    return new("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = value,
-        TextSize = size,
-        Font = font or F.Gotham,
-        Position = UDim2.fromOffset(x, centerY - height / 2),
-        Size = UDim2.fromOffset(width, height),
-        TextColor3 = color or C.Text,
-        TextXAlignment = align or LEFT,
-        TextYAlignment = Enum.TextYAlignment.Center,
-        TextWrapped = true,
-    }, parent)
+-- RENDER 3D OFF: layar dunia jadi kosong, GUI tetap tampil. Penghemat terkuat untuk farming lama.
+Callbacks.Render3D = function(state)
+	pcall(function() RunService:Set3dRenderingEnabled(not state) end)
 end
 
-local function divider(parent, x, y, width)
-    new("Frame", {
-        Position = UDim2.fromOffset(x, y),
-        Size = UDim2.fromOffset(width, 1),
-        BackgroundColor3 = C.Line,
-        BorderSizePixel = 0,
-    }, parent)
+-- FPS LIMITER: hanya jalan kalau executor menyediakan setfpscap
+Callbacks.FPSCap = function(state)
+	if type(setfpscap) == "function" then
+		pcall(setfpscap, state and 20 or 60)
+		StatsInfo.fpsNote = state and "FPS cap 20" or ""
+	else
+		StatsInfo.fpsNote = "executor tidak mendukung setfpscap"
+	end
 end
 
-local function image(parent, assetId, x, y, width, height, fallback)
-    local id = tostring(assetId or ""):match("%d+")
+---------------------------------------------------------------------
+-- HIDE POPUPS v3: deteksi berdasarkan ISI teks (+angka ...) dan pola muncul-cepat,
+-- bukan cuma nama. Semua yang disembunyikan dipulihkan saat dimatikan.
+local POPUP_NAMES = {"popup", "pop_up", "notification", "notif", "toast", "alert", "announce", "stateffects"}
+local POPUP_IGNORE = {"muhavesui", "chat", "backpack", "leaderboard", "hotbar", "quest", "mission", "misi",
+	"shop", "store", "inventory", "settings", "trade", "index", "rewardlist", "codes"}
 
-    if not id then
-        return label(
-            parent, fallback or "M", 24,
-            x, y + height / 2, width,
-            C.Text, F.GothamBlack, CENTER
-        )
-    end
+local popup = {on = false, token = 0, conns = {},
+	hidden = setmetatable({}, {__mode = "k"}),
+	baseline = setmetatable({}, {__mode = "k"}),
+	labelSet = setmetatable({}, {__mode = "k"}),
+	seen = setmetatable({}, {__mode = "k"}),
+	counted = setmetatable({}, {__mode = "k"}),
+	spawn = setmetatable({}, {__mode = "k"})}
 
-    return new("ImageLabel", {
-        BackgroundTransparency = 1,
-        Image = "rbxassetid://" .. id,
-        Position = UDim2.fromOffset(x, y),
-        Size = UDim2.fromOffset(width, height),
-        ScaleType = Enum.ScaleType.Fit,
-    }, parent)
+local function gainText(t)
+	return t ~= "" and t:match("^%s*[%+%-]%s*%d") ~= nil
 end
 
-local function makeToggle(parent, x, centerY, initial, callback)
-    local state = initial == true
-
-    local track = new("TextButton", {
-        Text = "",
-        AutoButtonColor = false,
-        Position = UDim2.fromOffset(x, centerY - 13),
-        Size = UDim2.fromOffset(44, 26),
-        BackgroundColor3 = state and C.On or C.Off,
-        BorderSizePixel = 0,
-    }, parent)
-
-    round(track, 13)
-
-    local knob = new("Frame", {
-        Size = UDim2.fromOffset(20, 20),
-        Position = UDim2.fromOffset(state and 21 or 3, 3),
-        BackgroundColor3 = Color3.fromRGB(235, 235, 235),
-        BorderSizePixel = 0,
-    }, track)
-
-    round(knob, 10)
-
-    track.MouseButton1Click:Connect(function()
-        state = not state
-
-        local tweenInfo = TweenInfo.new(0.15)
-
-        TweenService:Create(track, tweenInfo, {
-            BackgroundColor3 = state and C.On or C.Off,
-        }):Play()
-
-        TweenService:Create(knob, tweenInfo, {
-            Position = UDim2.fromOffset(state and 21 or 3, 3),
-        }):Play()
-
-        if callback then
-            callback(state)
-        end
-    end)
-
-    return track
+local function ignored(o)
+	if o.Name == "MuhavesUI" or o:FindFirstAncestor("MuhavesUI") then return true end
+	local a = o
+	while a and a ~= workspace and not a:IsA("PlayerGui") do
+		local n = a.Name:lower()
+		for _, k in ipairs(POPUP_IGNORE) do
+			if n:find(k, 1, true) then return true end
+		end
+		a = a.Parent
+	end
+	return false
 end
 
-local function makeNumberBox(parent, x, y, width, height, initial, callback)
-    local frame = box(parent, x, y, width, height, C.Black, 8)
-    local input = new("TextBox", {
-        BackgroundTransparency = 1,
-        Text = initial or "",
-        PlaceholderText = "Value",
-        TextSize = 14,
-        Font = F.GothamBold,
-        TextColor3 = C.Text,
-        PlaceholderColor3 = C.Sub,
-        Position = UDim2.fromOffset(8, 0),
-        Size = UDim2.new(1, -16, 1, 0),
-        TextXAlignment = LEFT,
-        ClearTextOnFocus = false,
-    }, frame)
-
-    input.FocusLost:Connect(function()
-        if callback then
-            callback(input.Text)
-        end
-    end)
-
-    return frame
+local function layouty(p)
+	return p:IsA("ScrollingFrame") or p:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
 end
 
-local function makeOption(parent, y, width, title, subtitle, callback, numberValue)
-    local row = new("Frame", {
-        Position = UDim2.fromOffset(0, y),
-        Size = UDim2.fromOffset(width, ROW_H),
-        BackgroundTransparency = 1,
-    }, parent)
-
-    if numberValue then
-        label(row, "↳", 20, 8, 27, 30, C.Muted, F.GothamBold, CENTER)
-
-        label(
-            row, title, 15, 42, 18,
-            width - 150, C.Text, F.GothamBold
-        )
-
-        label(
-            row, subtitle, 11, 42, 40,
-            width - 150, C.Sub, F.GothamMedium
-        )
-
-        makeNumberBox(
-            row,
-            width - 94,
-            15,
-            80,
-            28,
-            numberValue,
-            callback
-        )
-    else
-        makeToggle(row, 8, ROW_H / 2, false, callback)
-
-        label(
-            row, title, 15, 64, 18,
-            width - 76, C.Text, F.GothamBold
-        )
-
-        label(
-            row, subtitle, 11, 64, 40,
-            width - 76, C.Sub, F.GothamMedium
-        )
-    end
-
-    return row
+-- daftar/menu (quest, shop, inventory) hampir selalu ada di ScrollingFrame: jangan disentuh
+local function inScrolling(o)
+	local a = o.Parent
+	while a and not a:IsA("PlayerGui") and a ~= workspace do
+		if a:IsA("ScrollingFrame") then return true end
+		a = a.Parent
+	end
+	return false
 end
 
-local function makeCardHeader(parent, iconText, title, subtitle, width)
-    label(parent, iconText, 25, PAD, PAD + 22, 36, C.Text, F.GothamBold, CENTER)
-
-    label(
-        parent, title, 21, PAD + 44, PAD + 12,
-        width - 100, C.Text, F.GothamBold
-    )
-
-    label(
-        parent, subtitle, 12, PAD + 44, PAD + 36,
-        width - 70, C.Sub, F.GothamMedium
-    )
-
-    divider(parent, PAD, 62, width - PAD * 2)
+local function unhide(o)
+	local s = popup.hidden[o]
+	if not s then return end
+	popup.hidden[o] = nil
+	for _, c in ipairs({s.conn, s.conn2, s.conn3}) do if c then c:Disconnect() end end
+	pcall(function() o[s.prop] = s.v end)
 end
 
---==================================================
--- CREATE GUI
---==================================================
-
-local oldGui = PlayerGui:FindFirstChild("MuhavesUI")
-if oldGui then
-    oldGui:Destroy()
+local function hideTarget(o, why, srcLabel)
+	if popup.hidden[o] or ignored(o) or inScrolling(o) then return end
+	local prop = o:IsA("LayerCollector") and "Enabled" or "Visible"
+	local s = {prop = prop, v = o[prop]}
+	popup.hidden[o] = s
+	o[prop] = false
+	if not popup.counted[o] then
+		popup.counted[o] = true
+		StatsInfo.popCount += 1
+	end
+	local full = o:GetFullName():gsub("^.-PlayerGui%.", "")
+	StatsInfo.popLast = why .. ": " .. full:sub(-46)
+	s.conn = o:GetPropertyChangedSignal(prop):Connect(function()
+		if popup.on and o[prop] == true then o[prop] = false end
+	end)
+	s.conn2 = o.Destroying:Connect(function()
+		popup.hidden[o] = nil
+		if s.conn then s.conn:Disconnect() end
+		if s.conn3 then s.conn3:Disconnect() end
+	end)
+	-- kalau label sumber berubah jadi bukan teks gain, pulihkan wadahnya
+	if srcLabel then
+		s.conn3 = srcLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			if not gainText(srcLabel.Text) then
+				popup.seen[srcLabel] = nil
+				unhide(o)
+			end
+		end)
+	end
 end
 
-local Gui = new("ScreenGui", {
-    Name = "MuhavesUI",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, PlayerGui)
-
-local Window = new("Frame", {
-    Name = "Window",
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(900, 600),
-    BackgroundColor3 = C.Window,
-    BorderSizePixel = 0,
-}, Gui)
-
-round(Window, 18)
-stroke(Window, Color3.fromRGB(55, 55, 58))
-
-local Scale = new("UIScale", {}, Window)
-
-local currentWidth, currentHeight = 900, 600
-
-local function fitWindow()
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-
-    local viewport = camera.ViewportSize
-
-    Scale.Scale = math.min(
-        1,
-        math.max(0.35, (viewport.X - 16) / currentWidth),
-        math.max(0.35, (viewport.Y - 16) / currentHeight)
-    )
+-- pilih wadah terluar yang baru dibuat (dinamis) supaya ikon ikut hilang
+local function pickTarget(lbl)
+	local t, p = lbl, lbl.Parent
+	while p and p:IsA("GuiObject") and not popup.baseline[p] and not layouty(p) do
+		t, p = p, p.Parent
+	end
+	if p and p:IsA("LayerCollector") and not popup.baseline[p] then
+		return p
+	end
+	if t == lbl and popup.baseline[lbl] and p and p:IsA("GuiObject")
+		and not layouty(p) and #p:GetChildren() <= 4 then
+		t = p
+	end
+	return t
 end
 
-if workspace.CurrentCamera then
-    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitWindow)
+local function checkLabel(lbl)
+	if not popup.on or popup.hidden[lbl] then return end
+	local seenT = popup.seen[lbl]
+	if seenT and popup.hidden[seenT] then return end
+	if not lbl.Visible or not gainText(lbl.Text) or inScrolling(lbl) then return end
+	local t = pickTarget(lbl)
+	popup.seen[lbl] = t
+	hideTarget(t, "gain", lbl)
 end
 
---==================================================
--- HEADER
---==================================================
+local function nameHit(o)
+	if not o:IsA("GuiObject") and not o:IsA("LayerCollector") then return false end
+	if o:IsA("GuiButton") then return false end -- jangan sentuh tombol HUD
+	local n = o.Name:lower()
+	for _, k in ipairs(POPUP_NAMES) do
+		if n:find(k, 1, true) then return true end
+	end
+	return false
+end
 
-local Header = new("Frame", {
-    Size = UDim2.new(1, 0, 0, HEADER_H),
-    BackgroundTransparency = 1,
-}, Window)
+-- efek yang muncul beruntun di wadah yang sama (ikon kepalan terbang, dsb.)
+local function spawnCheck(d)
+	if not d:IsA("GuiObject") or d:IsA("GuiButton") then return end
+	local parent = d.Parent
+	if not parent or not (parent:IsA("GuiObject") or parent:IsA("LayerCollector")) then return end
+	if layouty(parent) then return end
+	local now = os.clock()
+	local s = popup.spawn[parent]
+	if not s then s = {short = 0, flag = false, lastShort = 0}; popup.spawn[parent] = s end
+	if s.flag and now - s.lastShort > 20 then s.flag = false; s.short = 0 end
+	-- pelajari umur objek: efek sementara cepat dihapus game, UI menu bertahan lama.
+	-- Wadah baru ditandai "spawner efek" setelah 3 anaknya terbukti hilang dalam <4 detik.
+	d.Destroying:Connect(function()
+		local t = os.clock()
+		if t - now < 4 then
+			s.short += 1
+			s.lastShort = t
+			if s.short >= 3 then s.flag = true end
+		end
+	end)
+	if s.flag then hideTarget(d, "spawn") end
+end
 
-divider(Header, 0, HEADER_H - 1, 900)
+Callbacks.HidePopups = function(state)
+	if state == popup.on then return end
+	popup.on = state
+	StatsInfo.popOn = state
+	popup.token += 1
+	local my = popup.token
+	local pg = LocalPlayer:WaitForChild("PlayerGui")
 
-image(Header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves")
+	if state then
+		StatsInfo.popCount, StatsInfo.popLast = 0, "-"
+		for _, d in ipairs(pg:GetDescendants()) do
+			popup.baseline[d] = true
+			if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
+		end
+		for _, d in ipairs(pg:GetDescendants()) do
+			if nameHit(d) then pcall(hideTarget, d, "name") end
+		end
 
-new("Frame", {
-    Position = UDim2.fromOffset(198, 20),
-    Size = UDim2.fromOffset(1, 38),
-    BackgroundColor3 = C.Line,
-    BorderSizePixel = 0,
-}, Header)
+		table.insert(popup.conns, pg.DescendantAdded:Connect(function(d)
+			if not popup.on then return end
+			if d:IsA("TextLabel") or d:IsA("TextButton") then popup.labelSet[d] = true end
+			task.defer(function()
+				if not popup.on or not d.Parent then return end
+				pcall(function()
+					if nameHit(d) then hideTarget(d, "name") return end
+					spawnCheck(d)
+					if d:IsA("TextLabel") or d:IsA("TextButton") then checkLabel(d) end
+				end)
+			end)
+		end))
 
-label(
-    Header, "P R I V A T E   F A R M I N G",
-    15, 214, 28, 400, C.Text, F.GothamBold
-)
+		-- teks di dunia 3D (BillboardGui di workspace)
+		table.insert(popup.conns, workspace.DescendantAdded:Connect(function(d)
+			if popup.on and d:IsA("TextLabel") then
+				task.delay(0.15, function()
+					if popup.on and d.Parent and gainText(d.Text) then
+						local bb = d:FindFirstAncestorWhichIsA("BillboardGui") or d:FindFirstAncestorWhichIsA("SurfaceGui")
+						if bb then pcall(hideTarget, bb, "world") end
+					end
+				end)
+			end
+		end))
 
-label(
-    Header, "Stronger   •   Faster   •   Better",
-    12, 216, 52, 400, C.Sub, F.GothamMedium
-)
+		-- pemindai berkala: menangkap label lama yang teksnya diubah game
+		task.spawn(function()
+			while popup.token == my do
+				local n = 0
+				for lbl in pairs(popup.labelSet) do
+					if lbl.Parent then pcall(checkLabel, lbl) end
+					n += 1
+					if n % 600 == 0 then RunService.Heartbeat:Wait() end
+				end
+				task.wait(0.25)
+			end
+		end)
+	else
+		for _, c in ipairs(popup.conns) do c:Disconnect() end
+		popup.conns = {}
+		for o in pairs(popup.hidden) do unhide(o) end
+		popup.hidden = setmetatable({}, {__mode = "k"})
+		popup.baseline = setmetatable({}, {__mode = "k"})
+		popup.labelSet = setmetatable({}, {__mode = "k"})
+		popup.seen = setmetatable({}, {__mode = "k"})
+		popup.spawn = setmetatable({}, {__mode = "k"})
+		popup.counted = setmetatable({}, {__mode = "k"})
+	end
+end
 
-local MinimizeButton = new("TextButton", {
-    Text = "—",
-    TextSize = 18,
-    Font = F.Gotham,
-    TextColor3 = C.Muted,
-    BackgroundTransparency = 1,
-    Position = UDim2.new(1, -84, 0, 22),
-    Size = UDim2.fromOffset(34, 34),
-}, Header)
+---------------------------------------------------------------------
+---------------------------------------------------------------------
+-- HIDE PLAYERS: sembunyikan karakter pemain lain (lokal, reversibel). Pengurang lag besar di server ramai.
+local hidePl = {on = false, conns = {}, saved = setmetatable({}, {__mode = "k"})}
 
-local CloseButton = new("TextButton", {
-    Text = "X",
-    TextSize = 18,
-    Font = F.GothamBold,
-    TextColor3 = C.Text,
-    BackgroundTransparency = 1,
-    Position = UDim2.new(1, -48, 0, 22),
-    Size = UDim2.fromOffset(34, 34),
-}, Header)
+local function hpHide(d)
+	if hidePl.saved[d] then return end
+	if d:IsA("BasePart") then
+		hidePl.saved[d] = {k = "p", v = d.LocalTransparencyModifier}
+		d.LocalTransparencyModifier = 1
+	elseif d:IsA("Decal") or d:IsA("Texture") then
+		hidePl.saved[d] = {k = "d", v = d.Transparency}
+		d.Transparency = 1
+	elseif d:IsA("BillboardGui") then
+		hidePl.saved[d] = {k = "b", v = d.Enabled}
+		d.Enabled = false
+	end
+end
 
-local Body = new("Frame", {
-    Name = "Body",
-    Position = UDim2.fromOffset(0, HEADER_H),
-    Size = UDim2.new(1, 0, 1, -HEADER_H),
-    BackgroundTransparency = 1,
-}, Window)
+local function hpChar(char)
+	for _, d in ipairs(char:GetDescendants()) do pcall(hpHide, d) end
+	table.insert(hidePl.conns, char.DescendantAdded:Connect(function(d)
+		if hidePl.on then task.defer(pcall, hpHide, d) end
+	end))
+end
+
+local function hpPlayer(pl)
+	if pl == LocalPlayer then return end
+	if pl.Character then hpChar(pl.Character) end
+	table.insert(hidePl.conns, pl.CharacterAdded:Connect(function(c)
+		if not hidePl.on then return end
+		task.wait(0.5)
+		if hidePl.on then hpChar(c) end
+	end))
+end
+
+Callbacks.HidePlayers = function(state)
+	if state == hidePl.on then return end
+	hidePl.on = state
+	if state then
+		for _, pl in ipairs(Players:GetPlayers()) do pcall(hpPlayer, pl) end
+		table.insert(hidePl.conns, Players.PlayerAdded:Connect(function(pl) pcall(hpPlayer, pl) end))
+	else
+		for _, c in ipairs(hidePl.conns) do c:Disconnect() end
+		hidePl.conns = {}
+		local list = hidePl.saved
+		hidePl.saved = setmetatable({}, {__mode = "k"})
+		for d, s in pairs(list) do
+			pcall(function()
+				if s.k == "p" then d.LocalTransparencyModifier = s.v
+				elseif s.k == "d" then d.Transparency = s.v
+				else d.Enabled = s.v end
+			end)
+		end
+	end
+end
+
+---------------------------------------------------------------------
+-- FPS counter live (untuk panel status)
+local fpsConn
+do
+	local n, t0 = 0, os.clock()
+	fpsConn = RunService.Heartbeat:Connect(function()
+		n += 1
+		local now = os.clock()
+		if now - t0 >= 1 then
+			StatsInfo.fps = math.floor(n / (now - t0) + 0.5)
+			n, t0 = 0, now
+		end
+	end)
+end
+StatsInfo.fps = 0
+
+---------------------------------------------------------------------
+-- Simpan pengaturan (otomatis aktif lagi saat script dijalankan ulang). Aman jika executor tak punya writefile.
+local HttpService = game:GetService("HttpService")
+local SAVE_FILE = "MuhavesSettings_MuscleLegends.json"
+local Saved = {}
+pcall(function()
+	if isfile and isfile(SAVE_FILE) then Saved = HttpService:JSONDecode(readfile(SAVE_FILE)) end
+end)
+local function saveSettings()
+	pcall(function()
+		if writefile then writefile(SAVE_FILE, HttpService:JSONEncode(Saved)) end
+	end)
+end
+local PERSIST = {["Hide Popups"] = true, ["Anti AFK"] = true, ["Anti Lag"] = true,
+	["Hide Players"] = true, ["FPS Limiter"] = true}
+
+---------------------------------------------------------------------
+-- Helper (ukuran kartu dihitung dari panjang teks, jadi tidak ada ruang kosong)
+local TextService = game:GetService("TextService")
+
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	o.Parent = parent
+	return o
+end
+local function round(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
+local function stroke(o, c, t) new("UIStroke", {Color = c or LINE, Thickness = t or 1}, o) end
+
+local function tw(t, size, font)
+	local ok, v = pcall(function()
+		return TextService:GetTextSize(t, size, font or F.Gotham, Vector2.new(10000, 1000)).X
+	end)
+	return math.ceil(ok and v or (#t * size * 0.6))
+end
+
+local function box(p, x, y, w, h, bg, r, noStroke)
+	local f = new("Frame", {
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
+		BackgroundColor3 = bg, BorderSizePixel = 0,
+	}, p)
+	round(f, r or 12)
+	if not noStroke then stroke(f) end
+	return f
+end
+
+local function text(p, t, size, x, cy, w, color, font, align)
+	local h = size + 10
+	return new("TextLabel", {
+		BackgroundTransparency = 1, Text = t, TextSize = size, Font = font or F.Gotham,
+		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(w, h),
+		TextColor3 = color or TX, TextXAlignment = align or LEFT, TextYAlignment = Enum.TextYAlignment.Center,
+	}, p)
+end
+
+local function hline(p, x, y, w)
+	new("Frame", {Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, 1),
+		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
+end
+
+local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
+
+local function image(p, id, x, y, w, h, fallback, fsize, holder)
+	if holder then box(p, x - 6, y - 6, w + 12, h + 12, BLACK, 10, true) end
+	local numId = id ~= "" and id:match("%d+") or nil
+	if not numId then
+		return text(p, fallback, fsize or 20, x, y + h / 2, w, TX, F.GothamBlack, CENTER)
+	end
+	local urls = {
+		THUMB .. numId,
+		"rbxassetid://" .. numId,
+		"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
+	}
+	local img = new("ImageLabel", {
+		BackgroundTransparency = 1, Image = urls[1],
+		Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
+		ScaleType = Enum.ScaleType.Fit,
+	}, p)
+	task.spawn(function()
+		for i = 2, #urls do
+			task.wait(4)
+			if not img.Parent or img.IsLoaded then return end
+			img.Image = urls[i]
+		end
+	end)
+	return img
+end
+
+local function toggle(p, x, cy, initial, cb)
+	local state = initial
+	local tr = new("TextButton", {
+		Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(x, cy - 13),
+		Size = UDim2.fromOffset(44, 26), BackgroundColor3 = state and ONBG or OFFBG, BorderSizePixel = 0,
+	}, p)
+	round(tr, 13)
+	local kn = new("Frame", {
+		Size = UDim2.fromOffset(20, 20), Position = UDim2.fromOffset(state and 21 or 3, 3),
+		BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225), BorderSizePixel = 0,
+	}, tr)
+	round(kn, 10)
+	tr.MouseButton1Click:Connect(function()
+		state = not state
+		local i = TweenInfo.new(0.15)
+		TweenService:Create(tr, i, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
+		TweenService:Create(kn, i, {Position = UDim2.fromOffset(state and 21 or 3, 3),
+			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
+		cb(state)
+	end)
+end
+
+local function numberBox(p, x, y, w, h, value, cb)
+	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
+	stroke(f, Color3.fromRGB(85, 85, 90))
+	local tb = new("TextBox", {
+		BackgroundTransparency = 1, Text = value, TextSize = 16, Font = F.GothamBold, TextColor3 = TX,
+		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -30, 1, 0), TextXAlignment = LEFT,
+		ClearTextOnFocus = false,
+	}, f)
+	text(f, "▲", 8, w - 20, h / 2 - 6, 14, MUTED, F.GothamBold, CENTER)
+	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
+	tb.FocusLost:Connect(function()
+		local n = tonumber((tb.Text:gsub("%.", "")))
+		if n then cb(n) end
+	end)
+end
+
+local RH = 58
+local function rowW(title, sub, icon, num)
+	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamBold), tw(sub, 13, F.GothamMedium)) + 14
+	if num then w = w + 98 end
+	return w
+end
+local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
+	local left = 14
+	if icon then
+		text(p, icon, 26, left - 2, y + RH / 2, 34, MUTED, F.GothamBold, CENTER)
+		left = left + 38
+	else
+		toggle(p, left, y + RH / 2, state, cb)
+		left = left + 56
+	end
+	text(p, title, 17, left, y + 20, 400, TX, F.GothamBold)
+	text(p, sub, 13, left, y + 41, 400, SUB, F.GothamMedium)
+	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb) end
+end
+
+local function pillW(t, dot) return tw(t, 14, F.GothamMedium) + (dot and 52 or 26) end
+local function pill(p, x, y, t, dot, wOverride)
+	local w = wOverride or pillW(t, dot)
+	local f = box(p, x, y, w, 32, Color3.fromRGB(10, 10, 11), 16)
+	if dot then
+		local d = new("Frame", {Position = UDim2.fromOffset(12, 9), Size = UDim2.fromOffset(14, 14),
+			BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
+		round(d, 7)
+	end
+	return text(f, t, 14, dot and 34 or 13, 16, w, TX, F.GothamMedium), w
+end
+
+local PAD, GAP, HH, SW = 14, 10, 78, 200
+local CX, CY = PAD + SW + PAD, HH + PAD
+local CONTENT_Y = PAD + 44 + GAP
+
+local function cardHeader(card, icon, title, sub, status, extra)
+	local cw = card.Size.X.Offset
+	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
+	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamBold)
+	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB, F.GothamMedium)
+	local sLbl, eLbl
+	local x = cw - PAD
+	if status then
+		x = x - pillW(status, true)
+		sLbl = pill(card, x, PAD + 6, status, true)
+	end
+	if extra then
+		local w = pillW(extra, false) + 30
+		x = x - 8 - w
+		eLbl = pill(card, x, PAD + 6, extra, false, w)
+	end
+	return sLbl, eLbl
+end
+
+---------------------------------------------------------------------
+-- Jendela
+do
+	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local old = pg:FindFirstChild("MuhavesUI")
+	if old then old:Destroy() end
+end
+
+local gui = new("ScreenGui", {Name = "MuhavesUI", ResetOnSpawn = false, IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling}, Players.LocalPlayer:WaitForChild("PlayerGui"))
+
+local win = new("Frame", {
+	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
+}, gui)
+round(win, 20)
+stroke(win, Color3.fromRGB(55, 55, 58))
+
+local cur = {w = 900, h = 600}
+local scale = new("UIScale", {}, win)
+local cam = workspace.CurrentCamera
+local function fit()
+	local v = cam.ViewportSize
+	scale.Scale = math.min(1, (v.X - 16) / cur.w, (v.Y - 16) / cur.h)
+end
+fit()
+cam:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
+
+-- Header
+local header = new("Frame", {Size = UDim2.new(1, 0, 0, HH), BackgroundTransparency = 1}, win)
+new("Frame", {Position = UDim2.new(0, 0, 0, HH - 1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+image(header, ASSETS.LogoHeader, 16, 8, 170, 62, "Muhaves", 30)
+new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
+text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
+text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
+
+local verLbl = text(header, "v19 • utilities", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
+verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
+
+local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
+	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
+local closeBtn = new("TextButton", {Text = "X", TextSize = 18, Font = F.GothamBold, TextColor3 = TX, BackgroundTransparency = 1,
+	Position = UDim2.new(1, -48, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
+
+local body = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1}, win)
 
 local minimized = false
-
-MinimizeButton.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    Body.Visible = not minimized
-
-    TweenService:Create(Window, TweenInfo.new(0.2), {
-        Size = UDim2.fromOffset(
-            currentWidth,
-            minimized and HEADER_H or currentHeight
-        ),
-    }):Play()
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	body.Visible = not minimized
+	TweenService:Create(win, TweenInfo.new(0.2), {Size = UDim2.fromOffset(cur.w, minimized and HH or cur.h)}):Play()
 end)
 
-CloseButton.MouseButton1Click:Connect(function()
-    Gui:Destroy()
+-- Tutup UI: matikan semua utilitas dulu supaya pengaturan game kembali normal
+closeBtn.MouseButton1Click:Connect(function()
+	pcall(Callbacks.AntiAFK, false)
+	pcall(Callbacks.AntiLag, false)
+	pcall(Callbacks.HidePopups, false)
+	pcall(Callbacks.Render3D, false)
+	pcall(Callbacks.FPSCap, false)
+	pcall(Callbacks.HidePlayers, false)
+	if fpsConn then fpsConn:Disconnect() end
+	gui:Destroy()
 end)
 
--- Drag window
-do
-    local dragging = false
-    local dragStart
-    local startPosition
-
-    Header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-
-            dragging = true
-            dragStart = input.Position
-            startPosition = Window.Position
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            local delta = input.Position - dragStart
-
-            Window.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
-            )
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
+do -- drag lewat header
+	local dragging, start, startPos
+	header.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, start, startPos = true, i.Position, win.Position
+			i.Changed:Connect(function() if i.UserInputState == Enum.UserInputState.End then dragging = false end end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - start
+			win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
 end
 
---==================================================
--- SIDEBAR
---==================================================
+---------------------------------------------------------------------
+-- Sidebar + navigasi
+local pages, sizes = {}, {}
+local SIDEMIN = 300
+local CHAR_MAX_H = 424
 
-local Sidebar = box(
-    Body, PAD, PAD, SIDEBAR_W, 400, C.Black, 16
-)
+local sidebar = box(body, PAD, HH + PAD, SW, 400, BLACK, 16)
+local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
+local navBtns = {}
+local charImg
 
-local NavItems = {
-    {"⚡", "Fast Farming"},
-    {"⚙", "Other"},
-    {"ℹ", "Info"},
+local function selectNav(idx, instant)
+	for i, b in ipairs(navBtns) do
+		local on = i == idx
+		b.BackgroundTransparency = on and 0 or 1
+		b.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218)
+		b:FindFirstChildOfClass("UIStroke").Enabled = on
+		pages[i].Visible = on
+	end
+	local sz = sizes[idx]
+	local W = CX + sz.w + PAD
+	local H = math.max(HH + PAD + sz.h + PAD, HH + PAD + SIDEMIN + PAD)
+	cur.w, cur.h = W, H
+	local sideH = H - HH - 2 * PAD
+	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
+	if charImg and charImg:IsA("ImageLabel") then
+		charImg.ScaleType = charH >= 300 and Enum.ScaleType.Stretch or Enum.ScaleType.Fit
+	end
+	local goals = {
+		{win, {Size = UDim2.fromOffset(W, H)}},
+		{sidebar, {Size = UDim2.fromOffset(SW, sideH)}},
+	}
+	if charImg then table.insert(goals, {charImg, {Size = UDim2.fromOffset(SW - 16, charH)}}) end
+	for _, g in ipairs(goals) do
+		if instant then
+			for k, v in pairs(g[2]) do g[1][k] = v end
+		else
+			TweenService:Create(g[1], TweenInfo.new(0.2), g[2]):Play()
+		end
+	end
+	minimized = false
+	body.Visible = true
+	fit()
+end
+
+for i, n in ipairs(nav) do
+	local b = new("TextButton", {
+		Text = "            " .. n[2], TextSize = 17, Font = F.GothamBold, TextXAlignment = LEFT, AutoButtonColor = false,
+		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
+		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0,
+	}, sidebar)
+	round(b, 10)
+	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
+	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
+	text(b, n[1], 22, 10, 22, 36, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
+	navBtns[i] = b
+	b.MouseButton1Click:Connect(function() selectNav(i) end)
+end
+charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
+
+local function newPage()
+	local f = new("Frame", {Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1, Visible = false}, body)
+	table.insert(pages, f)
+	return f
+end
+
+---------------------------------------------------------------------
+-- HALAMAN 1: Fast Farming
+local p1 = newPage()
+
+local rbRows = {
+	{"Auto Rebirth", "Otomatis melakukan rebirth saat syarat terpenuhi."},
+	{"Equip Rebirth Pets", "Pasang pet rebirth terbaik secara otomatis."},
+	{"Rebirth Target", "Target strength untuk rebirth.", "🔄", true},
 }
-
-for index, item in ipairs(NavItems) do
-    local button = new("TextButton", {
-        Name = item[2],
-        Text = "",
-        AutoButtonColor = false,
-        Position = UDim2.fromOffset(8, 10 + (index - 1) * 52),
-        Size = UDim2.fromOffset(SIDEBAR_W - 16, 44),
-        BackgroundColor3 = C.Card,
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-    }, Sidebar)
-
-    round(button, 10)
-    local border = stroke(button, C.Line)
-
-    label(
-        button, item[1], 20, 8, 22, 30,
-        C.Muted, F.GothamBold, CENTER
-    )
-
-    label(
-        button, item[2], 15, 44, 22,
-        SIDEBAR_W - 66, C.Text, F.GothamBold
-    )
-
-    button:SetAttribute("PageIndex", index)
-    button:SetAttribute("Active", false)
-    button:SetAttribute("BorderName", "NavigationBorder")
-
-    -- Keep references for navigation.
-    button.MouseButton1Click:Connect(function()
-        -- Set by navigation below.
-        button:SetAttribute("RequestedPage", index)
-    end)
-end
-
-image(
-    Sidebar,
-    ASSETS.Character,
-    8, 172, SIDEBAR_W - 16, 210,
-    ""
-)
-
---==================================================
--- PAGE CONTAINER
--- All pages use a ScrollingFrame.
--- Fast Farming has content taller than its viewport.
---==================================================
-
-local Pages = {}
-local PageButtons = {}
-
-local function createPage(name)
-    local page = new("ScrollingFrame", {
-        Name = name:gsub("%s+", "") .. "Page",
-        Position = UDim2.fromOffset(CONTENT_X, CONTENT_Y),
-        Size = UDim2.fromOffset(500, MAX_PAGE_HEIGHT),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-
-        Visible = false,
-
-        ScrollingDirection = Enum.ScrollingDirection.Y,
-        ScrollBarThickness = 5,
-        ScrollBarImageColor3 = C.On,
-        ScrollBarImageTransparency = 0,
-        ScrollBarInset = Enum.ScrollBarInset.ScrollBar,
-
-        AutomaticCanvasSize = Enum.AutomaticSize.None,
-        CanvasSize = UDim2.fromOffset(0, 0),
-        CanvasPosition = Vector2.zero,
-
-        ClipsDescendants = true,
-    }, Body)
-
-    Pages[name] = page
-    return page
-end
-
-local FarmingPage = createPage("Fast Farming")
-local OtherPage = createPage("Other")
-local InfoPage = createPage("Info")
-
---==================================================
--- PAGE LAYOUT HELPERS
---==================================================
-
-local function createSection(parent, y, width, height, iconText, title, subtitle)
-    local section = box(
-        parent, 0, y, width, height, C.Section, 16
-    )
-
-    makeCardHeader(section, iconText, title, subtitle, width)
-    return section
-end
-
-local function addPageContent(page, width, totalHeight)
-    page.Size = UDim2.fromOffset(width, MAX_PAGE_HEIGHT)
-    page.CanvasSize = UDim2.fromOffset(width, totalHeight)
-    page.AutomaticCanvasSize = Enum.AutomaticSize.None
-end
-
---==================================================
--- FAST FARMING PAGE
--- Scroll down to view the second card.
---==================================================
-
-local FARM_CARD_WIDTH = 570
-local FARM_CARD_HEIGHT = 260
-local FARM_CARD_GAP = 12
-local FARM_TOP = 0
-
--- Fast Rebirth card
-local RebirthCard = createSection(
-    FarmingPage,
-    FARM_TOP,
-    FARM_CARD_WIDTH,
-    FARM_CARD_HEIGHT,
-    "👑",
-    "Fast Rebirth",
-    "Rebirth settings and statistics."
-)
-
-local RebirthOptions = box(
-    RebirthCard,
-    PAD, 76,
-    300, 170,
-    C.Card, 12
-)
-
-makeOption(
-    RebirthOptions, 0, 300,
-    "Auto Rebirth",
-    "Automatic rebirth placeholder.",
-    Callbacks.AutoRebirth
-)
-
-divider(RebirthOptions, 12, ROW_H, 276)
-
-makeOption(
-    RebirthOptions, ROW_H, 300,
-    "Equip Rebirth Pets",
-    "Pet equip placeholder.",
-    Callbacks.EquipRebirthPets
-)
-
-divider(RebirthOptions, ROW_H * 2, 276)
-
-makeOption(
-    RebirthOptions, ROW_H * 2, 300,
-    "Rebirth Target",
-    "Target value placeholder.",
-    Callbacks.RebirthTarget,
-    "5.000"
-)
-
-local RebirthStats = box(
-    RebirthCard,
-    326, 76,
-    230, 170,
-    C.Card, 12
-)
-
-label(
-    RebirthStats, "Rebirth Stats",
-    15, 12, 20, 200, C.Text, F.GothamBold
-)
-
-divider(RebirthStats, 12, 40, 206)
-
-label(RebirthStats, "Rebirths", 12, 12, 65, 125, C.Sub)
-label(RebirthStats, "--", 13, 145, 65, 70, C.Text, F.GothamBold, RIGHT)
-
-label(RebirthStats, "Gained", 12, 12, 93, 125, C.Sub)
-label(RebirthStats, "--", 13, 145, 93, 70, C.Text, F.GothamBold, RIGHT)
-
-label(RebirthStats, "Pace / Hour", 12, 12, 121, 125, C.Sub)
-label(RebirthStats, "--", 13, 145, 121, 70, C.Text, F.GothamBold, RIGHT)
-
-label(RebirthStats, "Pace / Day", 12, 12, 149, 125, C.Sub)
-label(RebirthStats, "--", 13, 145, 149, 70, C.Text, F.GothamBold, RIGHT)
-
--- Fast Strength card
-local strengthY = FARM_CARD_HEIGHT + FARM_CARD_GAP
-
-local StrengthCard = createSection(
-    FarmingPage,
-    strengthY,
-    FARM_CARD_WIDTH,
-    FARM_CARD_HEIGHT,
-    "🏋",
-    "Fast Strength",
-    "Strength farming settings and statistics."
-)
-
-local StrengthOptions = box(
-    StrengthCard,
-    PAD, 76,
-    300, 170,
-    C.Card, 12
-)
-
-makeOption(
-    StrengthOptions, 0, 300,
-    "Auto Farm Strength",
-    "Strength farming placeholder.",
-    Callbacks.AutoFarmStrength
-)
-
-divider(StrengthOptions, 12, ROW_H, 276)
-
-makeOption(
-    StrengthOptions, ROW_H, 300,
-    "Controlled Speed",
-    "Speed control placeholder.",
-    Callbacks.ControlledSpeed
-)
-
-divider(StrengthOptions, ROW_H * 2, 276)
-
-makeOption(
-    StrengthOptions, ROW_H * 2, 300,
-    "Max Reps / Second",
-    "Maximum reps placeholder.",
-    Callbacks.MaxReps,
-    "659"
-)
-
-local StrengthStats = box(
-    StrengthCard,
-    326, 76,
-    230, 170,
-    C.Card, 12
-)
-
-label(
-    StrengthStats, "Strength Stats",
-    15, 12, 20, 200, C.Text, F.GothamBold
-)
-
-divider(StrengthStats, 12, 40, 206)
-
-label(StrengthStats, "Strength", 12, 12, 65, 125, C.Sub)
-label(StrengthStats, "--", 13, 145, 65, 70, C.Text, F.GothamBold, RIGHT)
-
-label(StrengthStats, "Durability", 12, 12, 93, 125, C.Sub)
-label(StrengthStats, "--", 13, 145, 93, 70, C.Text, F.GothamBold, RIGHT)
-
-label(StrengthStats, "Str Pace", 12, 12, 121, 125, C.Sub)
-label(StrengthStats, "--", 13, 145, 121, 70, C.Text, F.GothamBold, RIGHT)
-
-label(StrengthStats, "Dura Pace", 12, 12, 149, 125, C.Sub)
-label(StrengthStats, "--", 13, 145, 149, 70, C.Text, F.GothamBold, RIGHT)
-
-local farmingTotalHeight =
-    strengthY + FARM_CARD_HEIGHT + FARM_CARD_GAP
-
-addPageContent(
-    FarmingPage,
-    FARM_CARD_WIDTH,
-    farmingTotalHeight
-)
-
---==================================================
--- OTHER PAGE
---==================================================
-
-local OTHER_WIDTH = 570
-local TILE_WIDTH = 270
-local TILE_HEIGHT = 100
-local TILE_GAP = 10
-
-local OtherCard = createSection(
-    OtherPage,
-    0,
-    OTHER_WIDTH,
-    510,
-    "⚙",
-    "Other",
-    "Additional utilities — UI placeholders only."
-)
-
-local OtherItems = {
-    {"Eat Eggs (Auto)", "Egg automation placeholder.", Callbacks.EatEggs},
-    {"Eat Shake (Auto)", "Shake placeholder.", Callbacks.EatShake},
-    {"Spin Fortune Wheel", "Wheel placeholder.", Callbacks.SpinWheel},
-    {"Eat All Boosts", "Boost placeholder.", Callbacks.EatAllBoosts},
-    {"Hide Pets", "Pet visibility placeholder.", Callbacks.HidePets},
-    {"Hide Popups", "Popup visibility placeholder.", Callbacks.HidePopups},
-    {"Anti AFK", "AFK placeholder.", Callbacks.AntiAFK},
-    {"Anti Lag", "Visual optimization placeholder.", Callbacks.AntiLag},
-    {"Render 3D Off", "Rendering placeholder.", Callbacks.Render3D},
-    {"FPS Limiter", "FPS placeholder.", Callbacks.FPSCap},
-    {"Hide Players", "Player visibility placeholder.", Callbacks.HidePlayers},
+local fsRows = {
+	{"Auto Farm Strength", "Farming otomatis dengan sistem pintar."},
+	{"Controlled Speed", "Menyesuaikan kecepatan dengan ping."},
+	{"Max Reps / Second", "Batas maksimal reps per detik.", "🚀", true},
 }
+local function rowsW(rows)
+	local w = 0
+	for _, r in ipairs(rows) do w = math.max(w, rowW(r[1], r[2], r[3], r[4])) end
+	return w
+end
+local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
-local tileStartY = 76
+local rbNameW = math.max(tw("Rebirths", 15), tw("Gained", 15), tw("Pace / Hour", 15), tw("Pace / Day", 15))
+local rbStatsMin = 14 + 30 + rbNameW + 16 + 70 + 16 + 64 + 14
+local PACE = "-- /s | -- / min | -- /h | -- /d"
+local fsNameW = tw("Dura Average", 13)
+local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE, 13) + 10 + 14
 
-for index, item in ipairs(OtherItems) do
-    local column = (index - 1) % 2
-    local row = math.floor((index - 1) / 2)
+local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
+local cardW1 = inner1 + 2 * PAD
+local rbStatsW = inner1 - rbOptsW - GAP
+local fsStatsW = inner1 - fsOptsW - GAP
+local BOX_H = RH * 3
+local CARD_H = CONTENT_Y + BOX_H + PAD
 
-    local tile = box(
-        OtherCard,
-        PAD + column * (TILE_WIDTH + TILE_GAP),
-        tileStartY + row * (TILE_HEIGHT + TILE_GAP),
-        TILE_WIDTH,
-        TILE_HEIGHT,
-        C.Card,
-        12
-    )
+-- Rebirth
+local rbCard = box(p1, 0, 0, cardW1, CARD_H, SEC, 16)
+local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Rebirth otomatis dengan kecepatan maksimal.", "Status: Inactive")
 
-    label(
-        tile, item[1], 14, 12, 27,
-        TILE_WIDTH - 24, C.Text, F.GothamBold
-    )
+local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, BOX_H, CARD, 12)
+optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], false, Callbacks.AutoRebirth)
+hline(rbOpts, 14, RH, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], true, Callbacks.EquipRebirthPets)
+hline(rbOpts, 14, RH * 2, rbOptsW - 28)
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], nil, nil, "🔄", "5.000", Callbacks.RebirthTarget)
 
-    label(
-        tile, item[2], 10, 12, 51,
-        TILE_WIDTH - 24, C.Sub, F.GothamMedium
-    )
-
-    makeToggle(
-        tile,
-        TILE_WIDTH - 54,
-        80,
-        false,
-        item[3]
-    )
+local function srow(parent, icon, name, value, cy, vx, vw, size, align, font)
+	text(parent, icon, size + 2, 10, cy, 28, MUTED, F.Gotham, CENTER)
+	text(parent, name, size, 44, cy, 220, Color3.fromRGB(205, 205, 208), F.GothamMedium)
+	return text(parent, value, size, vx, cy, vw, TX, font or F.Gotham, align or LEFT)
 end
 
-local otherTotalHeight =
-    tileStartY + math.ceil(#OtherItems / 2) * (TILE_HEIGHT + TILE_GAP) + PAD
+local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, BOX_H, CARD, 12)
+text(rbStats, "Rebirth Stats", 17, 14, 22, 220, TX, F.GothamBold)
+local rvx = rbStatsW - 14 - 64 - 16 - 70
+local rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 62, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbGained   = srow(rbStats, "📈", "Gained", "0", 92, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 122, rvx, 70, 15, RIGHT, F.GothamBold)
+local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 152, rvx, 70, 15, RIGHT, F.GothamBold)
+image(rbStats, ASSETS.EmblemStats, rbStatsW - 14 - 64, (BOX_H - 64) / 2, 64, 64, "M", 36, true)
 
-OtherCard.Size = UDim2.fromOffset(OTHER_WIDTH, otherTotalHeight)
+-- Strength
+local fsCard = box(p1, 0, CARD_H + GAP, cardW1, CARD_H, SEC, 16)
+local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Farming Strength dengan statistik lengkap.", "Status: Inactive", "🕒 0d 0h 0m 0s")
+fsRuntime.TextXAlignment = CENTER
+fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
+fsRuntime.Size = UDim2.new(1, 0, 0, fsRuntime.Size.Y.Offset)
 
-addPageContent(
-    OtherPage,
-    OTHER_WIDTH,
-    otherTotalHeight
-)
+local fsOpts = box(fsCard, PAD, CONTENT_Y, fsOptsW, BOX_H, CARD, 12)
+optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, Callbacks.AutoFarmStrength)
+hline(fsOpts, 14, RH, fsOptsW - 28)
+optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, Callbacks.ControlledSpeed)
+hline(fsOpts, 14, RH * 2, fsOptsW - 28)
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "659", Callbacks.MaxReps)
 
---==================================================
--- INFO PAGE
---==================================================
+local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
+text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
+local vx = 44 + fsNameW + 16
+local paceW = tw(PACE, 13) + 10
+local fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold)
+local fsStrG = text(fsStats, "+0", 13, vx + 90, 46, 70, TX)
+local fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold)
+local fsDurG = text(fsStats, "+0", 13, vx + 90, 69, 70, TX)
+local fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13)
+local fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13)
+local fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13)
+local fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13)
 
-local INFO_WIDTH = 570
-local InfoCard = createSection(
-    InfoPage,
-    0,
-    INFO_WIDTH,
-    310,
-    "ℹ",
-    "Info",
-    "About Muhaves Private Farming."
-)
+sizes[1] = {w = cardW1, h = CARD_H * 2 + GAP}
 
-image(InfoCard, ASSETS.LogoInfo, 20, 82, 150, 90, "Muhaves")
+---------------------------------------------------------------------
+-- HALAMAN 2: Other
+local p2 = newPage()
+local tiles = {
+	{"Eat Eggs (Auto)", "Makan protein egg otomatis.", false, Callbacks.EatEggs},
+	{"Eat Shake (Auto)", "Makan tropical shake otomatis.", false, Callbacks.EatShake},
+	{"Spin Fortune Wheel", "Spin roda keberuntungan.", false, Callbacks.SpinWheel},
+	{"Eat All Boosts", "Makan semua boost (lag).", false, Callbacks.EatAllBoosts},
+	{"Hide Pets", "Sembunyikan pet dari game.", true, Callbacks.HidePets},
+	{"Hide Popups", "Sembunyikan teks +gain & efek.", false, function(st) Callbacks.HidePopups(st) end},
+	{"Anti AFK", "Cegah kick karena diam.", false, function(st) Callbacks.AntiAFK(st) end},
+	{"Anti Lag", "Kurangi efek visual.", false, function(st) Callbacks.AntiLag(st) end},
+	{"Render 3D Off", "Layar dunia kosong, hemat besar.", false, function(st) Callbacks.Render3D(st) end},
+	{"FPS Limiter", "Batasi FPS ke 20 (hemat CPU).", false, function(st) Callbacks.FPSCap(st) end},
+	{"Hide Players", "Sembunyikan pemain lain.", false, function(st) Callbacks.HidePlayers(st) end},
+}
+local tileW = 44
+for _, t in ipairs(tiles) do
+	tileW = math.max(tileW, tw(t[1], 17, F.GothamBold), tw(t[2], 12, F.GothamMedium))
+end
+tileW = tileW + 2 * PAD
+local TILE_H = 108
+local inner2 = 4 * tileW + 3 * GAP
+local cardW2 = inner2 + 2 * PAD
+local ROWS2 = math.ceil(#tiles / 4)
+local STATUS_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
+local cardH2 = STATUS_Y + 68 + PAD
 
-label(
-    InfoCard, "MuhavesDevs",
-    18, 190, 104, 340, C.Text, F.GothamBold
-)
-
-label(
-    InfoCard, "Muscle Legends",
-    14, 190, 136, 340, C.Sub, F.GothamMedium
-)
-
-label(
-    InfoCard, "Status: UI Skeleton",
-    13, 190, 164, 340, C.Sub, F.GothamMedium
-)
-
-divider(InfoCard, PAD, 192, INFO_WIDTH - PAD * 2)
-
-label(
-    InfoCard,
-    "Fast Farming and Other are empty UI frameworks.",
-    12, PAD, 220, INFO_WIDTH - PAD * 2, C.Sub, F.GothamMedium
-)
-
-label(
-    InfoCard,
-    "You can connect separate modules later.",
-    12, PAD, 246, INFO_WIDTH - PAD * 2, C.Sub, F.GothamMedium
-)
-
-addPageContent(InfoPage, INFO_WIDTH, 310)
-
---==================================================
--- NAVIGATION
---==================================================
-
-local function selectPage(name)
-    for pageName, page in pairs(Pages) do
-        page.Visible = pageName == name
-    end
-
-    for _, button in ipairs(Sidebar:GetChildren()) do
-        if button:IsA("TextButton") then
-            local isActive = button.Name == name
-
-            button.BackgroundTransparency = isActive and 0 or 1
-
-            local border = button:FindFirstChildOfClass("UIStroke")
-            if border then
-                border.Enabled = isActive
-            end
-        end
-    end
-
-    local page = Pages[name]
-    if not page then return end
-
-    local contentWidth = page.CanvasSize.X.Offset
-    local contentHeight = page.CanvasSize.Y.Offset
-
-    local viewportHeight = math.min(
-        contentHeight,
-        MAX_PAGE_HEIGHT
-    )
-
-    page.Size = UDim2.fromOffset(
-        contentWidth,
-        viewportHeight
-    )
-
-    currentWidth = CONTENT_X + contentWidth + PAD
-    currentHeight = HEADER_H + PAD + viewportHeight + PAD
-
-    local viewport = workspace.CurrentCamera
-        and workspace.CurrentCamera.ViewportSize
-
-    if viewport then
-        local sidebarHeight = math.max(
-            viewportHeight,
-            300
-        )
-
-        Sidebar.Size = UDim2.fromOffset(
-            SIDEBAR_W,
-            sidebarHeight
-        )
-    end
-
-    minimized = false
-    Body.Visible = true
-
-    TweenService:Create(Window, TweenInfo.new(0.2), {
-        Size = UDim2.fromOffset(currentWidth, currentHeight),
-    }):Play()
-
-    page.CanvasPosition = Vector2.zero
-    fitWindow()
+local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
+local restoreList = {}
+local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
+for i, t in ipairs(tiles) do
+	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
+	local init, cb = t[3], t[4]
+	if PERSIST[t[1]] then
+		if Saved[t[1]] ~= nil then init = Saved[t[1]] end
+		local base = t[4]
+		cb = function(st)
+			base(st)
+			Saved[t[1]] = st
+			saveSettings()
+		end
+		if init then table.insert(restoreList, base) end
+	end
+	toggle(tile, 14, 27, init, cb)
+	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
+	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
 
-for _, item in ipairs(NavItems) do
-    local button = Sidebar:FindFirstChild(item[2])
+-- Panel status live (bukti fitur bekerja)
+local stBox = box(otCard, PAD, STATUS_Y, inner2, 68, CARD, 10)
+local st1 = text(stBox, "", 12, 12, 15, inner2 - 24, MUTED, F.GothamMedium)
+local st2 = text(stBox, "", 12, 12, 34, inner2 - 24, MUTED, F.GothamMedium)
+local st3 = text(stBox, "", 12, 12, 53, inner2 - 24, MUTED, F.GothamMedium)
+for _, l in ipairs({st1, st2, st3}) do l.TextTruncate = Enum.TextTruncate.AtEnd end
 
-    if button then
-        button.MouseButton1Click:Connect(function()
-            selectPage(item[2])
-        end)
-    end
+-- aktifkan kembali pengaturan yang tersimpan
+task.defer(function()
+	for _, f in ipairs(restoreList) do pcall(f, true) end
+end)
+
+task.spawn(function()
+	while gui.Parent do
+		local S, now = StatsInfo, os.clock()
+		local a, l, p = "AFK: OFF", "Lag: OFF", "Popup: OFF"
+		if S.afkOn then
+			local up = math.floor(now - S.afkSince)
+			local last = S.afkLast > 0 and (math.floor(now - S.afkLast) .. "d lalu") or "menunggu (maks 60d)"
+			a = string.format("AFK: ON %02d:%02d • ping %d • terakhir %s", up // 60, up % 60, S.afkPings, last)
+		end
+		if S.lagOn then l = "Lag: ON • " .. S.lagCount .. " objek" end
+		if S.popOn then p = "Popup: ON • " .. S.popCount .. " disembunyikan • " .. S.popLast end
+		st1.Text = "FPS " .. S.fps .. "   |   " .. a
+		st2.Text = l .. (S.fpsNote ~= "" and ("   |   " .. S.fpsNote) or "")
+		st3.Text = p
+		task.wait(1)
+	end
+end)
+
+sizes[2] = {w = cardW2, h = cardH2}
+
+---------------------------------------------------------------------
+-- HALAMAN 3: Info
+local p3 = newPage()
+local w1 = math.max(190, tw("Private Farming", 19, F.GothamMedium)) + 2 * PAD
+local lblW = math.max(tw("Made by", 14, F.GothamMedium), tw("Game", 14, F.GothamMedium), tw("Status", 14, F.GothamMedium))
+local workW = tw("Working", 18, F.GothamMedium)
+local valW = math.max(tw("MuhavesDevs", 18, F.GothamMedium), tw("Muscle Legends", 18, F.GothamMedium), workW + 34)
+local w2 = 14 + lblW + 20 + valW + 14
+local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups"}
+local colW = 0
+for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15, F.GothamMedium)) end
+colW = colW + 32
+local w3 = 14 + colW * 2 + 20 + 14
+local inner3 = w1 + w2 + w3 + 2 * GAP
+local cardW3 = inner3 + 2 * PAD
+local ROW_H = 180
+local footY = CONTENT_Y + ROW_H + GAP
+local cardH3 = footY + 70 + PAD
+
+local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
+cardHeader(inCard, "ℹ", "Info", "Tentang script ini.")
+
+local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
+image(lg, ASSETS.LogoInfo, (w1 - 190) / 2, 18, 190, 86, "Muhaves", 30)
+text(lg, "Private Farming", 19, 0, 130, w1, TX, F.GothamMedium, CENTER)
+text(lg, "v1.0.0", 13, 0, 156, w1, SUB, F.GothamMedium, CENTER)
+
+local dt = box(inCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
+local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
+for i, r in ipairs(kv) do
+	local cy = 30 + (i - 1) * 60
+	text(dt, r[1], 14, 14, cy, lblW + 10, SUB, F.GothamMedium)
+	text(dt, r[2], 18, 14 + lblW + 20, cy, valW, TX, F.GothamMedium)
+	if i < 3 then hline(dt, 14, cy + 30, w2 - 28) end
+end
+text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
+
+local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
+text(ft, "Fitur Utama", 17, 14, 24, 250, TX, F.GothamBold)
+for i, f in ipairs(feats) do
+	local col = i <= 3 and 0 or 1
+	local idx = i <= 3 and i or (i - 3)
+	local cy = 62 + (idx - 1) * 32
+	local x = 14 + col * (colW + 20)
+	text(ft, "✅", 15, x, cy, 26, TX, F.Gotham, CENTER)
+	text(ft, f, 15, x + 32, cy, colW, MUTED, F.GothamMedium)
 end
 
---==================================================
--- INITIALIZE
---==================================================
+text(inCard, "\"Progress is not luck, it's a system.\"", 15, PAD, footY + 22, inner3, SUB, F.GothamMedium, CENTER)
+text(inCard, "- Muhaves", 13, PAD, footY + 48, inner3, SUB, F.GothamMedium, CENTER)
+image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
+sizes[3] = {w = cardW3, h = cardH3}
 
-selectPage("Fast Farming")
+---------------------------------------------------------------------
+selectNav(1, true)
 
 return {
-    Gui = Gui,
-    Pages = Pages,
-    Rebirth = RebirthCard,
-    Strength = StrengthCard,
-    Other = OtherCard,
-    Info = InfoCard,
-    Callbacks = Callbacks,
+	Gui = gui,
+	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
+	Strength = {Status = fsStatus, Strength = fsStr, StrengthGain = fsStrG, Durability = fsDura, DurabilityGain = fsDurG,
+		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime},
+	Other = {Status = otStatus},
+	Callbacks = Callbacks,
 }
