@@ -338,7 +338,7 @@ local cam = workspace.CurrentCamera
 -- Skala otomatis hanya mengikuti LEBAR layar dan tidak lebih kecil dari MINSCALE.
 -- Kalau layar masih kurang, isi jendela di-scroll (bukan dikecilkan lagi).
 -- Tombol - / + di header mengatur zoom manual (disimpan), mentok MAXSCALE.
-local MINSCALE, MAXSCALE = 0.85, 1.6
+local MINSCALE, MAXSCALE = 0.85, 2.5
 local userScale = tonumber(Saved.Zoom)
 if userScale then userScale = math.clamp(userScale, 0.5, MAXSCALE) end
 local body, minimized = nil, false
@@ -435,6 +435,7 @@ end
 local pages, sizes = {}, {}
 local SIDEMIN = 300
 local CHAR_MAX_H = 424
+local PAGE_MAX_H = 470 -- tinggi maksimal area halaman; kalau konten lebih tinggi, halaman di-scroll
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
 local nav = {{"⚡", "Fast Farming"}, {"⚙", "Other"}, {"ℹ", "Info"}}
@@ -450,9 +451,13 @@ local function selectNav(idx, instant)
 		pages[i].Visible = on
 	end
 	local sz = sizes[idx]
+	local viewH = math.min(sz.h, PAGE_MAX_H)
 	local W = CX + sz.w + PAD
-	local H = math.max(HH + PAD + sz.h + PAD, HH + PAD + SIDEMIN + PAD)
+	local H = math.max(HH + PAD + viewH + PAD, HH + PAD + SIDEMIN + PAD)
 	cur.w, cur.h = W, H
+	pages[idx].Size = UDim2.fromOffset(sz.w + 8, viewH)
+	pages[idx].CanvasSize = UDim2.fromOffset(0, sz.h)
+	pages[idx].CanvasPosition = Vector2.new(0, 0)
 	local sideH = H - HH - 2 * PAD
 	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
@@ -491,8 +496,14 @@ end
 charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
 
 local function newPage()
-	local f = new("Frame", {Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
-		BackgroundTransparency = 1, Visible = false}, body)
+	local f = new("ScrollingFrame", {
+		Position = UDim2.fromOffset(CX, CY), Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, Active = true,
+		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
+		VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+	}, body)
 	table.insert(pages, f)
 	return f
 end
