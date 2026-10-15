@@ -12,11 +12,10 @@ local UI = (function()
 local ASSETS = {
 	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
-	LogoInfo     = "122341159300890", -- tulisan MUHAVES (kartu logo di tab Info)
+	LogoInfo     = "91147250558427",
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
 	InfoBG       = "106276772809647", -- latar kartu Info
-	FarmBG       = "131699469923325", -- latar tab Fast Farming (logo MHV)
 }
 
 local Players = game:GetService("Players")
@@ -182,18 +181,6 @@ local function autoFit(lbl, maxSize, minSize, avail)
 	end)
 	apply()
 	return lbl
-end
-
--- latar gambar untuk sebuah kartu (di belakang isi), dengan lapisan gelap tipis supaya teks tetap terbaca
-local function cardBG(card, id, w, h, shade)
-	local bg = image(card, id, 0, 0, w, h, "", 14)
-	if bg:IsA("ImageLabel") then
-		bg.ScaleType = Enum.ScaleType.Crop
-		round(bg, 16)
-		local sh = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = shade or 0.45, BorderSizePixel = 0}, card)
-		round(sh, 16)
-	end
 end
 
 local function hline(p, x, y, w)
@@ -408,8 +395,8 @@ do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
 	new("Frame", {Position = UDim2.fromOffset(wx - 14, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-	local greet = text(header, "Muhaves V1 | Fast Farming - Hey, " .. LocalPlayer.Name .. "!", 21, wx, 39, 640, TX, F.GothamBold)
-	autoFit(greet, 21, 12, 640)
+	local greet = text(header, "Muhaves | Fast Farming - Hey, " .. LocalPlayer.Name .. "!", 15, wx, 39, 380, TX, F.GothamBold)
+	autoFit(greet, 15, 9, 380)
 end
 
 -- Colors make the buttons easy to tell apart: GREEN = minimize, RED = close (zoom - / + stay plain gray)
@@ -752,7 +739,6 @@ local RB_CARD_H = CONTENT_Y + RB_H + PAD
 
 -- Rebirth
 local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
-cardBG(rbCard, ASSETS.FarmBG, cardW1, RB_CARD_H, 0.5)
 local rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
 
 local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RB_H, CARD, 12)
@@ -784,7 +770,6 @@ local rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15
 
 -- Strength
 local fsCard = box(p1, 0, RB_CARD_H + GAP, cardW1, CARD_H, SEC, 16)
-cardBG(fsCard, ASSETS.FarmBG, cardW1, CARD_H, 0.5)
 local fsStatus, fsRuntime = cardHeader(fsCard, "🏋", "Fast Strength", "Strength farming with detailed stats.", "Status: Inactive", "🕒 0d 0h 0m 0s")
 fsRuntime.TextXAlignment = CENTER
 fsRuntime.Position = UDim2.fromOffset(0, fsRuntime.Position.Y.Offset)
@@ -833,29 +818,23 @@ for _, t in ipairs(tiles) do
 end
 tileW = tileW + 2 * PAD
 local TILE_H = 108
-local inner2 = #tiles * tileW + (#tiles - 1) * GAP + 2
-local cardW2 = cardW1 -- same width as the Farming card; if the tiles do not fit, the row scrolls sideways
+local cardW2 = cardW1 -- same width as the Farming card
 local rowViewW = cardW2 - 2 * PAD
-local SCROLL_H = TILE_H + 16
-local NOTE_Y = CONTENT_Y + SCROLL_H + GAP
+-- tiles fill the card width in a grid; if there are too many rows the whole page scrolls up/down
+local COLS = math.max(1, math.floor((rowViewW + GAP) / (tileW + GAP)))
+local tileFullW = math.floor((rowViewW - (COLS - 1) * GAP) / COLS)
+local ROWS2 = math.ceil(#tiles / COLS)
+local NOTE_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
 local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
-local tileRow = new("ScrollingFrame", {
-	Position = UDim2.fromOffset(PAD, CONTENT_Y), Size = UDim2.fromOffset(rowViewW, SCROLL_H),
-	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
-	ScrollingDirection = Enum.ScrollingDirection.X, CanvasSize = UDim2.fromOffset(inner2, 0),
-	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
-	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
-	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
-}, otCard)
 for i, t in ipairs(tiles) do
-	local col = i - 1 -- all tiles in a single row
-	local tile = box(tileRow, 1 + col * (tileW + GAP), 2, tileW, TILE_H, CARD, 12)
+	local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
+	local tile = box(otCard, PAD + col * (tileFullW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileFullW, TILE_H, CARD, 12)
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
-	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
-	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
+	text(tile, t[1], 17, 14, 61, tileFullW - 20, TX, F.GothamBold)
+	text(tile, t[2], 12, 14, 85, tileFullW - 20, SUB, F.GothamMedium)
 end
 text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
 	rowViewW, SUB, F.GothamMedium, CENTER)
@@ -882,7 +861,16 @@ local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
 local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
-cardBG(inCard, ASSETS.InfoBG, cardW3, cardH3, 0.45)
+do -- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
+	local bg = image(inCard, ASSETS.InfoBG, 0, 0, cardW3, cardH3, "", 14)
+	if bg:IsA("ImageLabel") then
+		bg.ScaleType = Enum.ScaleType.Crop
+		round(bg, 16)
+		local shade = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+			BackgroundTransparency = 0.45, BorderSizePixel = 0}, inCard)
+		round(shade, 16)
+	end
+end
 cardHeader(inCard, "ℹ", "Info", "About this script.")
 
 local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
