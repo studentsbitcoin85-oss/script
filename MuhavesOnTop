@@ -390,14 +390,13 @@ new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
--- Welcome <username>, di sebelah kanan tulisan PRIVATE FARMING
+-- One-line greeting next to PRIVATE FARMING (style: "Muhaves | Fast Farming - Hey, username!")
 do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
 	new("Frame", {Position = UDim2.fromOffset(wx - 14, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
-	local wl = text(header, "Welcome", 12, wx, 28, 240, SUB, F.GothamMedium)
-	local ul = text(header, LocalPlayer.Name, 15, wx, 50, 240, TX, F.GothamBold)
-	autoFit(ul, 15, 9, 240)
+	local greet = text(header, "Muhaves | Fast Farming - Hey, " .. LocalPlayer.Name .. "!", 15, wx, 39, 380, TX, F.GothamBold)
+	autoFit(greet, 15, 9, 380)
 end
 
 -- Colors make the buttons easy to tell apart: GREEN = minimize, RED = close (zoom - / + stay plain gray)
@@ -819,29 +818,23 @@ for _, t in ipairs(tiles) do
 end
 tileW = tileW + 2 * PAD
 local TILE_H = 108
-local inner2 = #tiles * tileW + (#tiles - 1) * GAP + 2
-local cardW2 = cardW1 -- same width as the Farming card; if the tiles do not fit, the row scrolls sideways
+local cardW2 = cardW1 -- same width as the Farming card
 local rowViewW = cardW2 - 2 * PAD
-local SCROLL_H = TILE_H + 16
-local NOTE_Y = CONTENT_Y + SCROLL_H + GAP
+-- tiles fill the card width in a grid; if there are too many rows the whole page scrolls up/down
+local COLS = math.max(1, math.floor((rowViewW + GAP) / (tileW + GAP)))
+local tileFullW = math.floor((rowViewW - (COLS - 1) * GAP) / COLS)
+local ROWS2 = math.ceil(#tiles / COLS)
+local NOTE_Y = CONTENT_Y + ROWS2 * (TILE_H + GAP)
 local cardH2 = NOTE_Y + 26 + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
-local tileRow = new("ScrollingFrame", {
-	Position = UDim2.fromOffset(PAD, CONTENT_Y), Size = UDim2.fromOffset(rowViewW, SCROLL_H),
-	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
-	ScrollingDirection = Enum.ScrollingDirection.X, CanvasSize = UDim2.fromOffset(inner2, 0),
-	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
-	VerticalScrollBarInset = Enum.ScrollBarInset.None, HorizontalScrollBarInset = Enum.ScrollBarInset.None,
-	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
-}, otCard)
 for i, t in ipairs(tiles) do
-	local col = i - 1 -- all tiles in a single row
-	local tile = box(tileRow, 1 + col * (tileW + GAP), 2, tileW, TILE_H, CARD, 12)
+	local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
+	local tile = box(otCard, PAD + col * (tileFullW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileFullW, TILE_H, CARD, 12)
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
-	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
-	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
+	text(tile, t[1], 17, 14, 61, tileFullW - 20, TX, F.GothamBold)
+	text(tile, t[2], 12, 14, 85, tileFullW - 20, SUB, F.GothamMedium)
 end
 text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
 	rowViewW, SUB, F.GothamMedium, CENTER)
