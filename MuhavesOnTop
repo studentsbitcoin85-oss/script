@@ -45,7 +45,7 @@ local Callbacks = {
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
 	AntiAFK = function(s) end, AntiLag = function(s) end, Render3D = function(s) end,
-	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end,
+	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end, AutoEquipRebirth = function(s) end,
 }
 
 ---------------------------------------------------------------------
@@ -621,6 +621,7 @@ local tiles = {
 	{"Low Resource Mode", "3D off + FPS 20 + layar hitam.", false, function(st) Callbacks.LowResource(st) end},
 	{"Equip Reps Pets", "Prioritas pet rep speed.", false, function(st) Callbacks.EquipRepsPets(st) end},
 	{"Equip Strength Pets", "Prioritas pet strength.", false, function(st) Callbacks.EquipStrengthPets(st) end},
+	{"Equip Rebirth Pets", "Prioritas pet rebirth.", false, function(st) Callbacks.AutoEquipRebirth(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -978,10 +979,11 @@ local function equipBestStrengthPets()
 end
 
 -- Versi Reps = equipBestFarmingPets (rep speed dulu sampai 100, sisanya strength)
-local petMode = "reps"     -- "reps" (default, sama seperti script lama) atau "strength"
+local petMode = "reps"     -- "reps" (default, sama seperti script lama), "strength", atau "rebirth"
 local petChosen = false    -- true kalau pemain pernah memilih salah satu di tab Other
 local function equipFarmingPets()
 	if petMode == "strength" then return equipBestStrengthPets() end
+	if petMode == "rebirth" then return equipBestRebirthPets() end
 	return equipBestFarmingPets()
 end
 
@@ -1383,20 +1385,21 @@ Callbacks.HidePopups = function()
 	if savePlayerSizeEvent then savePlayerSizeEvent:FireServer("showPopupsOption") end
 end
 
--- Equip Reps Pets / Equip Strength Pets: pilih set pet untuk farming (saling mematikan).
+-- Equip Reps / Strength / Rebirth Pets: pilih set pet untuk farming (saling mematikan).
 -- Set yang dipilih juga dipakai Auto Rebirth dan Auto Farm Strength.
-Callbacks.EquipRepsPets = function(state)
-	if not state then return end
-	petMode, petChosen = "reps", true
-	if UI.Toggles["Equip Strength Pets"] then UI.Toggles["Equip Strength Pets"](false, true) end
-	task.spawn(equipBestFarmingPets)
+local PET_TILES = {
+	reps = "Equip Reps Pets", strength = "Equip Strength Pets", rebirth = "Equip Rebirth Pets",
+}
+local function choosePets(mode, equipFn)
+	petMode, petChosen = mode, true
+	for m, title in pairs(PET_TILES) do
+		if m ~= mode and UI.Toggles[title] then UI.Toggles[title](false, true) end
+	end
+	task.spawn(equipFn)
 end
-Callbacks.EquipStrengthPets = function(state)
-	if not state then return end
-	petMode, petChosen = "strength", true
-	if UI.Toggles["Equip Reps Pets"] then UI.Toggles["Equip Reps Pets"](false, true) end
-	task.spawn(equipBestStrengthPets)
-end
+Callbacks.EquipRepsPets = function(state) if state then choosePets("reps", equipBestFarmingPets) end end
+Callbacks.EquipStrengthPets = function(state) if state then choosePets("strength", equipBestStrengthPets) end end
+Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth", equipBestRebirthPets) end end
 
 ---------------------------------------------------------------------
 -- HIDE PLAYERS: sembunyikan karakter pemain lain (bisa dikembalikan)
