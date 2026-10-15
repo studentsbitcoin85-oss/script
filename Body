@@ -39,7 +39,6 @@ local Callbacks = {
 	AutoFarmStrength = function(s) end, ControlledSpeed = function(s) end, MaxReps = function(v) end,
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
-	Teleport = function(name) end,
 	AntiAFK = function(s) end, AntiLag = function(s) end,
 }
 
@@ -232,7 +231,7 @@ local function numberBox(p, x, y, w, h, value, cb)
 	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
 	local tb = new("TextBox", {
-		BackgroundTransparency = 1, Text = value, TextSize = 16, Font = F.Gotham, TextColor3 = TX,
+		BackgroundTransparency = 1, Text = value, TextSize = 16, Font = F.GothamBold, TextColor3 = TX,
 		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -30, 1, 0), TextXAlignment = LEFT,
 		ClearTextOnFocus = false,
 	}, f)
@@ -247,7 +246,7 @@ end
 -- Baris opsi (toggle/ikon di kiri, judul + deskripsi, kotak angka opsional di kanan)
 local RH = 58
 local function rowW(title, sub, icon, num)
-	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamMedium), tw(sub, 13)) + 14
+	local w = 14 + (icon and 38 or 56) + math.max(tw(title, 17, F.GothamBold), tw(sub, 13, F.GothamMedium)) + 14
 	if num then w = w + 98 end
 	return w
 end
@@ -260,13 +259,13 @@ local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
 		toggle(p, left, y + RH / 2, state, cb)
 		left = left + 56
 	end
-	text(p, title, 17, left, y + 20, 400, TX, F.GothamMedium)
-	text(p, sub, 13, left, y + 41, 400, SUB)
+	text(p, title, 17, left, y + 20, 400, TX, F.GothamBold)
+	text(p, sub, 13, left, y + 41, 400, SUB, F.GothamMedium)
 	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb) end
 end
 
 -- Pill status
-local function pillW(t, dot) return tw(t, 14) + (dot and 52 or 26) end
+local function pillW(t, dot) return tw(t, 14, F.GothamMedium) + (dot and 52 or 26) end
 local function pill(p, x, y, t, dot, wOverride)
 	local w = wOverride or pillW(t, dot)
 	local f = box(p, x, y, w, 32, Color3.fromRGB(10, 10, 11), 16)
@@ -275,7 +274,7 @@ local function pill(p, x, y, t, dot, wOverride)
 			BackgroundColor3 = Color3.fromRGB(130, 130, 134), BorderSizePixel = 0}, f)
 		round(d, 7)
 	end
-	return text(f, t, 14, dot and 34 or 13, 16, w, TX), w
+	return text(f, t, 14, dot and 34 or 13, 16, w, TX, F.GothamMedium), w
 end
 
 local PAD, GAP, HH, SW = 14, 10, 78, 200
@@ -287,7 +286,7 @@ local function cardHeader(card, icon, title, sub, status, extra)
 	local cw = card.Size.X.Offset
 	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
 	text(card, title, 22, PAD + 44, PAD + 12, 400, TX, F.GothamBold)
-	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB)
+	text(card, sub, 13, PAD + 44, PAD + 36, 600, SUB, F.GothamMedium)
 	local sLbl, eLbl
 	local x = cw - PAD
 	if status then
@@ -338,9 +337,9 @@ new("Frame", {Position = UDim2.fromOffset(198, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 214, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 216, 52, 400, SUB, F.GothamMedium)
 
-local verLbl = text(header, "v11 • bold header", 11, 0, 39, 160, SUB, F.Gotham, RIGHT)
+local verLbl = text(header, "v12 • clean", 11, 0, 39, 160, SUB, F.GothamMedium, RIGHT)
 verLbl.Position = UDim2.new(1, -250, 0, 39 - verLbl.Size.Y.Offset / 2)
-print("[MuhavesUI] v11 dimuat")
+print("[MuhavesUI] v12 dimuat")
 
 local minBtn = new("TextButton", {Text = "—", TextSize = 18, Font = F.Gotham, TextColor3 = MUTED, BackgroundTransparency = 1,
 	Position = UDim2.new(1, -84, 0, 22), Size = UDim2.fromOffset(34, 34)}, header)
@@ -545,14 +544,13 @@ local tiles = {
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
-	tileW = math.max(tileW, tw(t[1], 17, F.GothamMedium), tw(t[2], 12))
+	tileW = math.max(tileW, tw(t[1], 17, F.GothamBold), tw(t[2], 12, F.GothamMedium))
 end
 tileW = tileW + 2 * PAD
 local TILE_H = 108
 local inner2 = 4 * tileW + 3 * GAP
 local cardW2 = inner2 + 2 * PAD
-local tpY = CONTENT_Y + 2 * TILE_H + 2 * GAP
-local cardH2 = tpY + 100 + PAD
+local cardH2 = CONTENT_Y + 2 * TILE_H + GAP + PAD
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 local otStatus = cardHeader(otCard, "⚙", "Other", "Fitur tambahan dan pengaturan lainnya.", "Status: Ready")
@@ -560,37 +558,23 @@ for i, t in ipairs(tiles) do
 	local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
 	local tile = box(otCard, PAD + col * (tileW + GAP), CONTENT_Y + row * (TILE_H + GAP), tileW, TILE_H, CARD, 12)
 	toggle(tile, 14, 27, t[3], t[4])
-	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamMedium)
-	text(tile, t[2], 12, 14, 85, tileW, SUB)
+	text(tile, t[1], 17, 14, 61, tileW, TX, F.GothamBold)
+	text(tile, t[2], 12, 14, 85, tileW, SUB, F.GothamMedium)
 end
 
-local tpBox = box(otCard, PAD, tpY, inner2, 100, CARD, 12)
-text(tpBox, "Teleport (Tekan E)", 17, 14, 22, 300, TX, F.GothamBold)
-local bw = math.floor((inner2 - 28 - 3 * GAP) / 4)
-for i, name in ipairs({"Industrial Lift", "Industrial Squat", "Overcharged Lift", "Overcharged Squat"}) do
-	local b = new("TextButton", {
-		Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(26, 26, 28),
-		Position = UDim2.fromOffset(14 + (i - 1) * (bw + GAP), 42), Size = UDim2.fromOffset(bw, 44), BorderSizePixel = 0,
-	}, tpBox)
-	round(b, 8)
-	stroke(b)
-	text(b, "📍", 15, 10, 22, 24, MUTED, F.Gotham, CENTER)
-	text(b, name, 15, 38, 22, bw - 44, TX)
-	b.MouseButton1Click:Connect(function() Callbacks.Teleport(name) end)
-end
 sizes[2] = {w = cardW2, h = cardH2}
 
 ---------------------------------------------------------------------
 -- HALAMAN 3: Info
 local p3 = newPage()
 local w1 = math.max(190, tw("Private Farming", 19, F.GothamMedium)) + 2 * PAD
-local lblW = math.max(tw("Made by", 14), tw("Game", 14), tw("Status", 14))
+local lblW = math.max(tw("Made by", 14, F.GothamMedium), tw("Game", 14, F.GothamMedium), tw("Status", 14, F.GothamMedium))
 local workW = tw("Working", 18, F.GothamMedium)
 local valW = math.max(tw("MuhavesDevs", 18, F.GothamMedium), tw("Muscle Legends", 18, F.GothamMedium), workW + 34)
 local w2 = 14 + lblW + 20 + valW + 14
-local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups", "Teleport Farm"}
+local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Hide Pets & Popups"}
 local colW = 0
-for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15)) end
+for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15, F.GothamMedium)) end
 colW = colW + 32
 local w3 = 14 + colW * 2 + 20 + 14
 local inner3 = w1 + w2 + w3 + 2 * GAP
@@ -605,13 +589,13 @@ cardHeader(inCard, "ℹ", "Info", "Tentang script ini.")
 local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
 image(lg, ASSETS.LogoInfo, (w1 - 190) / 2, 18, 190, 86, "Muhaves", 30)
 text(lg, "Private Farming", 19, 0, 130, w1, TX, F.GothamMedium, CENTER)
-text(lg, "v1.0.0", 13, 0, 156, w1, SUB, F.Gotham, CENTER)
+text(lg, "v1.0.0", 13, 0, 156, w1, SUB, F.GothamMedium, CENTER)
 
 local dt = box(inCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
 local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
 for i, r in ipairs(kv) do
 	local cy = 30 + (i - 1) * 60
-	text(dt, r[1], 14, 14, cy, lblW + 10, SUB)
+	text(dt, r[1], 14, 14, cy, lblW + 10, SUB, F.GothamMedium)
 	text(dt, r[2], 18, 14 + lblW + 20, cy, valW, TX, F.GothamMedium)
 	if i < 3 then hline(dt, 14, cy + 30, w2 - 28) end
 end
@@ -620,16 +604,16 @@ text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
 local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
 text(ft, "Fitur Utama", 17, 14, 24, 250, TX, F.GothamBold)
 for i, f in ipairs(feats) do
-	local col = i <= 4 and 0 or 1
-	local idx = i <= 4 and i or (i - 4)
+	local col = i <= 3 and 0 or 1
+	local idx = i <= 3 and i or (i - 3)
 	local cy = 62 + (idx - 1) * 32
 	local x = 14 + col * (colW + 20)
 	text(ft, "✅", 15, x, cy, 26, TX, F.Gotham, CENTER)
-	text(ft, f, 15, x + 32, cy, colW, MUTED)
+	text(ft, f, 15, x + 32, cy, colW, MUTED, F.GothamMedium)
 end
 
-text(inCard, "\"Progress is not luck, it's a system.\"", 15, PAD, footY + 22, inner3, SUB, F.Gotham, CENTER)
-text(inCard, "- Muhaves", 13, PAD, footY + 48, inner3, SUB, F.Gotham, CENTER)
+text(inCard, "\"Progress is not luck, it's a system.\"", 15, PAD, footY + 22, inner3, SUB, F.GothamMedium, CENTER)
+text(inCard, "- Muhaves", 13, PAD, footY + 48, inner3, SUB, F.GothamMedium, CENTER)
 image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
 
