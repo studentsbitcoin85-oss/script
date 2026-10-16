@@ -314,7 +314,11 @@ local function numberBox(p, x, y, w, h, value, cb, minVal, default)
 	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
 	local last = tonumber(value) or 0
 	tb.FocusLost:Connect(function()
-		local n = tonumber((tb.Text:gsub("%.", "")))
+		local raw = tb.Text:gsub("%s", "")
+		-- dots are only removed when they are thousand separators (150.000 -> 150000); 6.5 stays 6.5 and is floored to 6
+		local stripped = (raw:gsub("%.%d%d%d", ""))
+		if stripped ~= raw and stripped:match("^%d%d?%d?$") then raw = (raw:gsub("%.", "")) end
+		local n = tonumber(raw)
 		if not n or n < (minVal or 0) then n = default or last end
 		n = math.floor(n)
 		last = n
@@ -2158,7 +2162,8 @@ Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth",
 do
 	local on = false
 	local saved = setmetatable({}, {__mode = "k"})
-	local conns = {}     -- global connections: PlayerAdded / PlayerRemoving / one CharacterAdded per player
+	local conns = {}     -- global connections: PlayerAdded / PlayerRemoving
+	local charConn = {}  -- player -> CharacterAdded connection (one per player, removed when the player leaves)
 	local descConn = {}  -- player -> DescendantAdded connection of the CURRENT character
 
 	local function hideInst(d)
@@ -2175,7 +2180,8 @@ do
 	local function watch(p)
 		if p == lp then return end
 		if p.Character then hideChar(p, p.Character) end
-		conns[#conns + 1] = p.CharacterAdded:Connect(function(c) if on then hideChar(p, c) end end)
+		if charConn[p] then charConn[p]:Disconnect() end
+		charConn[p] = p.CharacterAdded:Connect(function(c) if on then hideChar(p, c) end end)
 	end
 
 	Callbacks.HidePlayers = function(state)
@@ -2185,6 +2191,10 @@ do
 			for _, p in ipairs(services.players:GetPlayers()) do watch(p) end
 			conns[#conns + 1] = services.players.PlayerAdded:Connect(function(p) if on then watch(p) end end)
 			conns[#conns + 1] = services.players.PlayerRemoving:Connect(function(p)
+				if charConn[p] then
+					charConn[p]:Disconnect()
+					charConn[p] = nil
+				end
 				if descConn[p] then
 					descConn[p]:Disconnect()
 					descConn[p] = nil
@@ -2193,6 +2203,8 @@ do
 		else
 			for _, c in ipairs(conns) do c:Disconnect() end
 			table.clear(conns)
+			for _, c in pairs(charConn) do c:Disconnect() end
+			table.clear(charConn)
 			for _, c in pairs(descConn) do c:Disconnect() end
 			table.clear(descConn)
 			for d, v in pairs(saved) do
@@ -2267,7 +2279,8 @@ do
 			if getfpscap then pcall(function() origFps = getfpscap() end) end
 			if setfpscap then pcall(setfpscap, 20) end
 		elseif setfpscap then
-			pcall(setfpscap, (type(origFps) == "number" and origFps > 0) and origFps or 60)
+			-- 0 means "no limit" in executors, so it is restored as 0; 60 is only used when the old cap is unknown
+			pcall(setfpscap, type(origFps) == "number" and origFps or 60)
 		end
 	end
 
