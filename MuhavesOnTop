@@ -236,9 +236,11 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 	}, p)
 	task.spawn(function()
 		for i = 2, #urls do
-			-- wait up to 1.5 s for the current URL to load; stop right away once it has loaded
+			-- wait for the current URL to load, then fall back to the next one; stop right away once it has loaded.
+			-- The first URL (i == 2 means we are still waiting on urls[1]) gets 3.5 s for slow connections.
+			local limit = (i == 2) and 3.5 or 1.5
 			local waited = 0
-			while waited < 1.5 do
+			while waited < limit do
 				task.wait(0.25)
 				waited += 0.25
 				if not img.Parent or img.IsLoaded then return end
@@ -289,7 +291,9 @@ local function toggle(p, x, cy, initial, cb)
 	return set
 end
 
-local function numberBox(p, x, y, w, h, value, cb)
+-- minVal / default: a value below minVal (or text that is not a number) is replaced by `default`
+-- and the box shows that replacement, so the box always displays the value that is really used.
+local function numberBox(p, x, y, w, h, value, cb, minVal, default)
 	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
 	local tb = new("TextBox", {
@@ -299,9 +303,14 @@ local function numberBox(p, x, y, w, h, value, cb)
 	}, f)
 	text(f, "▲", 8, w - 20, h / 2 - 6, 14, MUTED, F.GothamBold, CENTER)
 	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
+	local last = tonumber(value) or 0
 	tb.FocusLost:Connect(function()
 		local n = tonumber((tb.Text:gsub("%.", "")))
-		if n then cb(n) end
+		if not n or n < (minVal or 0) then n = default or last end
+		n = math.floor(n)
+		last = n
+		tb.Text = tostring(n)
+		cb(n)
 	end)
 end
 
@@ -312,7 +321,7 @@ local function rowW(title, sub, icon, num)
 	if num then w = w + 98 end
 	return w
 end
-local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
+local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb, numMin, numDef)
 	local left = 14
 	if icon then
 		text(p, icon, 26, left - 2, y + RH / 2, 34, MUTED, F.GothamBold, CENTER)
@@ -323,7 +332,7 @@ local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb)
 	end
 	text(p, title, 17, left, y + 20, 400, TX, F.GothamBold)
 	text(p, sub, 13, left, y + 41, 400, SUB, F.GothamMedium)
-	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb) end
+	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb, numMin, numDef) end
 end
 
 local function pillW(t, dot) return tw(t, 14, F.GothamMedium) + (dot and 52 or 26) end
@@ -899,7 +908,7 @@ optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, function(s) Callba
 hline(fsOpts, 14, RH, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, function(s) Callbacks.ControlledSpeed(s) end)
 hline(fsOpts, 14, RH * 2, fsOptsW - 28)
-optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "650", function(v) Callbacks.MaxReps(v) end)
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "650", function(v) Callbacks.MaxReps(v) end, 1, 650)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
 fsStats.BackgroundTransparency = PANEL_T
@@ -931,7 +940,7 @@ local tiles = {
 	{"Hide Pets", "Hides pets from the game.", true, function(st) Callbacks.HidePets(st) end},
 	{"Hide Popups", "Hides all game popups.", true, function(st) Callbacks.HidePopups(st) end},
 	{"Anti AFK", "Prevents idle kicks.", true, function(st) Callbacks.AntiAFK(st) end},
-	{"Hide Players", "Hides other players.", false, function(st) Callbacks.HidePlayers(st) end},
+	{"Hide Players", "Hides other players.", true, function(st) Callbacks.HidePlayers(st) end},
 	{"Low Resource Mode", "3D off + 20 FPS + black screen.", false, function(st) Callbacks.LowResource(st) end},
 }
 local tileW = 44
@@ -1182,6 +1191,7 @@ local function walk(root, fn)
 				if okFn and stop then return end
 				n += 1
 				stack[n] = child
+				step() -- also inside the loop, so a parent with tens of thousands of children cannot cause a frame drop
 			end
 		end
 		step()
@@ -1529,7 +1539,7 @@ local st = {
 	controlled = true,                 -- Controlled Speed
 	startedAt = 0, totalElapsed = 0, timerStarted = false, baselineSet = false,
 	calcInterval = 10,
-	maxRate = 650, initialRate = 200, rate = 200,
+	maxRate = 650, initialRate = 200, rate = 650, -- maxRate = fastest (start speed), initialRate = lowest speed when slowing down
 	tokens = 0, maxBurst = 24,
 	ctrlInterval = 0.5, stalled = 0,
 	-- Statistics are built only from POSITIVE changes of the values: a rebirth that resets Strength to 0 is never
@@ -1648,8 +1658,11 @@ local function strengthLoop(myId)
 
 		if st.controlled then updateAdaptiveRate() else st.rate = st.maxRate end
 
-		st.tokens = math.min(st.maxBurst, st.tokens + st.rate * dt)
-		local burstLimit = math.max(1, math.min(st.maxBurst, math.ceil(st.rate * 0.05)))
+		-- The burst cap scales with the rate and the frame time, so a low FPS (e.g. Low Resource Mode at 20 FPS)
+		-- still sends the full rate: cap >= rate * 0.1 s covers any frame up to the 0.1 s dt limit.
+		local burstCap = math.max(st.maxBurst, math.ceil(st.rate * 0.1))
+		st.tokens = math.min(burstCap, st.tokens + st.rate * dt)
+		local burstLimit = math.max(1, math.min(burstCap, math.ceil(st.rate * math.max(dt, 0.05))))
 		local n = math.min(math.floor(st.tokens), burstLimit)
 		if n > 0 then
 			pcall(function()
@@ -1676,7 +1689,7 @@ Callbacks.AutoFarmStrength = function(state)
 		st.timerStarted, st.startedAt = false, 0
 		st.win.str, st.win.dura = st.run.str, st.run.dura
 		st.lastCalcAt = tick()
-		st.rate = st.initialRate
+		st.rate = st.maxRate -- start at the fastest speed right away (initialRate is only the lowest speed Controlled Speed may slow down to)
 		st.tokens = 0
 		st.lastLoopAt = os.clock()
 		st.lastCtrlAt = tick()
@@ -1711,7 +1724,8 @@ gui.Destroying:Connect(function()
 	rb.running = false
 end)
 
--- Max Reps / Second: 0 or empty = default 650 (above 650 = lag)
+-- Max Reps / Second: the UI box replaces anything below 1 with 650 and shows 650, so it always displays the real value.
+-- The fallback below (<= 0 -> 650) is only a safety net for other callers. Above 650 = lag.
 Callbacks.MaxReps = function(v)
 	v = tonumber(v) or 0
 	if v <= 0 then v = 650 end
@@ -1798,8 +1812,9 @@ task.spawn(function()
 	end
 end)
 
-Callbacks.EatEggs = function(s) flag.eggs = s if s then eatEgg() end end
-Callbacks.EatShake = function(s) flag.shake = s if s then eatShake() end end
+-- the loops above do the eating (they pick up the flag within 1 s), so the callbacks only set the flag
+Callbacks.EatEggs = function(s) flag.eggs = s end
+Callbacks.EatShake = function(s) flag.shake = s end
 Callbacks.SpinWheel = function(s) flag.spin = s end
 Callbacks.EatAllBoosts = function(s) flag.boosts = s end
 Callbacks.AntiAFK = function(s) flag.antiAfk = s end
@@ -2238,7 +2253,7 @@ do
 end
 
 ---------------------------------------------------------------------
--- Sync the initial toggle states in the UI (Hide Pets, Hide Popups and Anti AFK are ON from the start).
+-- Sync the initial toggle states in the UI (Hide Pets, Hide Popups, Hide Players and Anti AFK are ON from the start).
 -- Delayed until the intro animation is finished so the heavy scans do not stutter it.
 task.spawn(function()
 	task.wait(2.5)
@@ -2247,6 +2262,9 @@ task.spawn(function()
 	task.wait(1)
 	if not alive() then return end
 	Callbacks.HidePopups(true)
+	task.wait(0.5)
+	if not alive() then return end
+	Callbacks.HidePlayers(true)
 end)
 
 return UI
