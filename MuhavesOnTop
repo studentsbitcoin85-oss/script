@@ -22,6 +22,15 @@
     - Info tab renamed to Notice everywhere (comments, assets, variables).
     - Image loader: modern rbxthumb first, legacy Thumbs endpoint last, 3.5 s wait for the first URL, 1.5 s for the fallbacks.
     - Corrected texts: Controlled Speed uses server response, Max Reps box shows 650, Rebirth Target hint.
+    - Eat All Boosts skips Tropical Shake while Eat Shake is on (no clash with the 150 s timing).
+    - text() rounds its position to whole pixels, so labels stay sharp (no half-pixel offsets).
+    - abbr() re-checks the suffix after rounding (999999.9 -> 1.00M, no more "1000.00K").
+    - Number boxes (Rebirth Target / Max Reps) shrink long numbers to fit instead of spilling out.
+    - One number formatter: farming stats use the UI's abbr() (UI.Abbr), formatNumber is gone.
+    - AutoEquipRebirth (never wired to the UI) removed, together with the dead "rebirth" pet mode.
+    - Closing the UI restores the player's original Hide Pets setting when the game exposes it.
+    - Pet swapping sends only the difference (syncPets); same set = no remotes. Full re-sync when a pet toggle
+      or farming is switched on.
 ]]
 
 local VERSION = "2"
@@ -84,7 +93,7 @@ local Callbacks = {
 	EatEggs = function(s) end, EatShake = function(s) end, SpinWheel = function(s) end,
 	EatAllBoosts = function(s) end, HidePets = function(s) end, HidePopups = function(s) end,
 	AntiAFK = function(s) end, AntiLag = function(s) end, Render3D = function(s) end,
-	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end, AutoEquipRebirth = function(s) end,
+	FPSCap = function(s) end, HidePlayers = function(s) end, LowResource = function(s) end, EquipRepsPets = function(s) end, EquipStrengthPets = function(s) end,
 }
 
 ---------------------------------------------------------------------
@@ -99,7 +108,14 @@ local function abbr(n)
 		n /= 1000
 		i += 1
 	end
-	local s = i == 1 and tostring(math.floor(n + 0.5)) or string.format("%.2f", n)
+	local shown = i == 1 and math.floor(n + 0.5) or tonumber(string.format("%.2f", n))
+	-- rounding can push the value up to 1000 (999.7 -> 1000, 999.999K -> 1000.00K): move up one suffix
+	if shown >= 1000 and i < #SUFFIX then
+		n /= 1000
+		i += 1
+		shown = tonumber(string.format("%.2f", n))
+	end
+	local s = i == 1 and tostring(shown) or string.format("%.2f", shown)
 	return (neg and "-" or "") .. s .. SUFFIX[i]
 end
 
@@ -176,7 +192,7 @@ local function text(p, t, size, x, cy, w, color, font, align)
 	local h = size + 10
 	return new("TextLabel", {
 		BackgroundTransparency = 1, Text = t, TextSize = size, Font = font or F.Gotham,
-		Position = UDim2.fromOffset(x, cy - h / 2), Size = UDim2.fromOffset(w, h),
+		Position = UDim2.fromOffset(math.floor(x), math.floor(cy - h / 2)), Size = UDim2.fromOffset(w, h),
 		TextColor3 = color or TX, TextXAlignment = align or LEFT, TextYAlignment = Enum.TextYAlignment.Center,
 		AutoLocalize = false,
 	}, p)
@@ -310,6 +326,8 @@ local function numberBox(p, x, y, w, h, value, cb, minVal, default)
 		Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -30, 1, 0), TextXAlignment = LEFT,
 		ClearTextOnFocus = false,
 	}, f)
+	-- a long number shrinks to fit inside the box (it never spills over the arrows or out of the box)
+	autoFit(tb, 16, 7, w - 34)
 	text(f, "▲", 8, w - 20, h / 2 - 6, 14, MUTED, F.GothamBold, CENTER)
 	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
 	local last = tonumber(value) or 0
@@ -823,7 +841,7 @@ end
 -- PAGE 1: Fast Farming
 -- Locals needed later (return table / other pages) are declared here; everything else lives inside the do-block
 -- and is released afterwards (Luau allows max 200 locals per function).
-local rbStatus, rbRebirths, rbGained, rbHour, rbDay
+local rbStatus, rbRuntime, rbRebirths, rbGained, rbHour, rbDay
 local fsStatus, fsRuntime, fsStr, fsStrG, fsDura, fsDurG, fsSP, fsDP, fsSA, fsDA
 local cardW1
 do
@@ -876,7 +894,10 @@ local PANEL_T = 0.4
 -- Rebirth
 local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
 cardBG(rbCard, ASSETS.FarmBG, FARM_SHADE)
-rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
+rbStatus, rbRuntime = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive", "🕒 0d 0h 0m 0s")
+rbRuntime.TextXAlignment = CENTER
+rbRuntime.Position = UDim2.fromOffset(0, rbRuntime.Position.Y.Offset)
+rbRuntime.Size = UDim2.new(1, 0, 0, rbRuntime.Size.Y.Offset)
 
 -- saved settings (the matching callbacks are applied by the farming part at the bottom)
 local savedTarget = tostring(math.floor(tonumber(Saved.RebirthTarget) or 0))
@@ -1108,6 +1129,9 @@ do
 				end
 				lastT, lastN = nowT, n
 				local elapsed = activeTime
+				rbRuntime.Text = string.format("🕒 %dd %dh %dm %ds",
+					math.floor(elapsed / 86400), math.floor((elapsed % 86400) / 3600),
+					math.floor((elapsed % 3600) / 60), math.floor(elapsed % 60))
 				if elapsed >= 10 then
 					local perHour = activeGain / elapsed * 3600
 					rbHour.Text = abbr(perHour)
@@ -1166,13 +1190,14 @@ end
 
 return {
 	Gui = gui,
-	Rebirth = {Status = rbStatus, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
+	Rebirth = {Status = rbStatus, Runtime = rbRuntime, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
 	Strength = {Status = fsStatus, Strength = fsStr, StrengthGain = fsStrG, Durability = fsDura, DurabilityGain = fsDurG,
 		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime},
 	Extras = {Status = otStatus},
 	Callbacks = Callbacks,
 	Toggles = Toggles,
 	Saved = Saved, Save = saveSettings,
+	Abbr = abbr, -- the one number formatter, shared with the farming part
 }
 end)()
 
@@ -1300,17 +1325,9 @@ end
 
 local muscleEvent = lp:WaitForChild("muscleEvent")
 
-local function formatNumber(num)
-	local sign = ""
-	if num < 0 then sign, num = "-", -num end
-	if num >= 1e18 then return sign .. string.format("%.2fQi", num / 1e18) end
-	if num >= 1e15 then return sign .. string.format("%.2fQa", num / 1e15) end
-	if num >= 1e12 then return sign .. string.format("%.2fT", num / 1e12) end
-	if num >= 1e9 then return sign .. string.format("%.2fB", num / 1e9) end
-	if num >= 1e6 then return sign .. string.format("%.2fM", num / 1e6) end
-	if num >= 1e3 then return sign .. string.format("%.2fK", num / 1e3) end
-	return sign .. string.format("%.0f", num)
-end
+-- One shared number formatter: the same function the UI uses for Rebirth stats (K / M / B ... up to Dc,
+-- with the rounding fix), so every number in the window is written the same way.
+local formatNumber = UI.Abbr
 
 local function formatPace(r)
 	return formatNumber(r) .. "/s | " .. formatNumber(r * 60) .. "/m | "
@@ -1356,8 +1373,47 @@ local function unequipConfiguredPets()
 	task.wait(0.1)
 end
 
+-- Pet swapping: the equipBest* functions only COLLECT the pets they want (equipConfiguredPet adds to `wanted`),
+-- then syncPets() compares that with what this script has equipped and sends only the difference.
+-- Same set as before = zero remotes. equippedSet == nil means "unknown": the next sync clears all pets once
+-- and starts from a known state (it is reset when a pet toggle / farming is switched on, so manual changes in game get re-synced).
+local wanted = {}
+local equippedSet = nil
+local petLock = false
 local function equipConfiguredPet(pet)
-	services.replicatedstorage.rEvents.equipPetEvent:FireServer("equipPet", pet)
+	wanted[#wanted + 1] = pet
+end
+
+local function syncPets(desired)
+	while petLock do task.wait(0.05) end
+	petLock = true
+	local ok, err = pcall(function()
+		local ev = services.replicatedstorage.rEvents.equipPetEvent
+		local want = {}
+		for _, inst in ipairs(desired) do want[inst] = true end
+		if equippedSet == nil then
+			unequipConfiguredPets() -- first sync (or after a reset): clear everything once
+			equippedSet = {}
+		else
+			for inst in pairs(equippedSet) do
+				if not want[inst] then
+					if inst.Parent then ev:FireServer("unequipPet", inst) end
+					equippedSet[inst] = nil
+				end
+			end
+		end
+		for _, inst in ipairs(desired) do
+			if not equippedSet[inst] then
+				ev:FireServer("equipPet", inst)
+				equippedSet[inst] = true
+			end
+		end
+	end)
+	petLock = false
+	if not ok then
+		equippedSet = nil -- unknown state: do a full re-sync next time
+		error(err, 0)
+	end
 end
 
 local function getOwnedConfiguredPets()
@@ -1382,7 +1438,7 @@ local function getOwnedConfiguredPets()
 end
 
 local function equipBestFarmingPets()
-	unequipConfiguredPets()
+	table.clear(wanted)
 	local pets = getOwnedConfiguredPets()
 	local equipped, equippedCount, currentRepSpeed = {}, 0, 0
 
@@ -1410,11 +1466,12 @@ local function equipBestFarmingPets()
 			equippedCount += 1
 		end
 	end
+	syncPets(table.clone(wanted))
 	return currentRepSpeed, equippedCount
 end
 
 local function equipBestRebirthPets()
-	unequipConfiguredPets()
+	table.clear(wanted)
 	local pets = getOwnedConfiguredPets()
 	table.sort(pets, function(a, b) return a.rebirth > b.rebirth end)
 	local equippedCount, total = 0, 0
@@ -1426,12 +1483,13 @@ local function equipBestRebirthPets()
 			total += pet.rebirth
 		end
 	end
+	syncPets(table.clone(wanted))
 	return total, equippedCount
 end
 
 -- Strength version: strength + durability pets first, remaining slots are filled with rep speed pets
 local function equipBestStrengthPets()
-	unequipConfiguredPets()
+	table.clear(wanted)
 	local pets = getOwnedConfiguredPets()
 	local equipped, count = {}, 0
 
@@ -1457,15 +1515,15 @@ local function equipBestStrengthPets()
 			count += 1
 		end
 	end
+	syncPets(table.clone(wanted))
 	return count
 end
 
 -- Reps version = equipBestFarmingPets (rep speed first up to 100, then strength)
-local petMode = "reps"     -- "reps" (default, same as the old script), "strength", or "rebirth"
+local petMode = "reps"     -- "reps" (default, same as the old script) or "strength"
 local petChosen = false    -- true once the player has picked one of them in the Fast Farming tab
 local function equipFarmingPets()
 	if petMode == "strength" then return equipBestStrengthPets() end
-	if petMode == "rebirth" then return equipBestRebirthPets() end
 	return equipBestFarmingPets()
 end
 
@@ -1577,6 +1635,7 @@ Callbacks.AutoRebirth = function(state)
 	end
 	rb.running = state
 	if state then
+		equippedSet = nil -- one full re-sync at the start (the pets may have been changed by hand in game)
 		setRebirthStatus("Status: Rebirthing", C_ON)
 		startRebirthWorker()
 	else
@@ -1585,6 +1644,7 @@ Callbacks.AutoRebirth = function(state)
 end
 Callbacks.EquipRebirthPets = function(state)
 	rb.usePets = state
+	equippedSet = nil -- the player touched a pet toggle: re-sync with the real pets on the next swap
 	persist("EquipRebirthPets", state)
 end
 Callbacks.RebirthTarget = function(v)
@@ -1765,6 +1825,7 @@ Callbacks.AutoFarmStrength = function(state)
 		st.lastCtrlProg = st.prog
 		st.stalled = 0
 		setStrengthStatus("Status: Farming", C_ON)
+		equippedSet = nil -- one full re-sync at the start (the pets may have been changed by hand in game)
 		if petChosen then task.spawn(equipFarmingPets) end
 		task.spawn(strengthLoop, st.runId)
 	else
@@ -1879,9 +1940,12 @@ task.spawn(function()
 		if flag.boosts then
 			for _, b in ipairs(BOOSTS) do
 				if not (flag.boosts and alive()) then break end
-				local tool = findTool(b[1])
-				if tool then
-					for _ = 1, 10 do muscleEvent:FireServer(b[2], tool) end
+				-- Tropical Shake is handled by Eat Shake (150 s delay), so it is skipped here while that is on
+				if not (flag.shake and b[1] == "Tropical Shake") then
+					local tool = findTool(b[1])
+					if tool then
+						for _ = 1, 10 do muscleEvent:FireServer(b[2], tool) end
+					end
 				end
 			end
 			task.wait(0.1)
@@ -2001,13 +2065,39 @@ do
 		end
 	end
 
+	-- The player's own Hide Pets setting before this script touched it. Read from the game when it exposes a
+	-- boolean flag on the player (a name with "pet" + "hide", or "show" / "visible"); nil = the game does not expose it.
+	local originalPetsHidden = nil
+	pcall(function()
+		local function judge(name, value)
+			if type(value) ~= "boolean" then return end
+			local n = name:lower()
+			if not n:find("pet", 1, true) then return end
+			if n:find("hide", 1, true) then
+				originalPetsHidden = value
+			elseif n:find("show", 1, true) or n:find("visible", 1, true) then
+				originalPetsHidden = not value
+			end
+		end
+		for k, v in pairs(lp:GetAttributes()) do judge(k, v) end
+		for _, d in ipairs(lp:GetDescendants()) do
+			if d:IsA("BoolValue") then judge(d.Name, d.Value) end
+		end
+	end)
+
 	Callbacks.HidePets = function(state)
 		if showPetsEvent then showPetsEvent:FireServer(state and "hidePets" or "showPets") end
 		setHidden(state)
 	end
-	-- on close: also send showPets to the server (the game keeps pets hidden otherwise) + restore locally
+	-- on close: restore the local changes and give the server back the player's ORIGINAL setting
+	-- (hidden stays hidden). If the original is unknown, pets are shown again, as before.
 	gui.Destroying:Connect(function()
-		pcall(function() Callbacks.HidePets(false) end)
+		pcall(function()
+			setHidden(false)
+			if showPetsEvent then
+				showPetsEvent:FireServer(originalPetsHidden == true and "hidePets" or "showPets")
+			end
+		end)
 	end)
 end
 
@@ -2145,6 +2235,7 @@ local PET_TILES = {
 }
 local function choosePets(mode, equipFn)
 	petMode, petChosen = mode, true
+	equippedSet = nil -- the player touched a pet toggle: re-sync with the real pets
 	for m, title in pairs(PET_TILES) do
 		if m ~= mode and UI.Toggles[title] then UI.Toggles[title](false, true) end
 	end
@@ -2166,7 +2257,6 @@ Callbacks.EquipStrengthPets = function(state)
 	end
 	persist("PetMode", petChosen and petMode or "none")
 end
-Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth", equipBestRebirthPets) end end
 
 ---------------------------------------------------------------------
 -- HIDE PLAYERS: hides other players' characters (can be restored).
