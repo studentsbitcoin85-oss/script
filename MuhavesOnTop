@@ -1,5 +1,5 @@
 --[[
-    Muhaves Private Farming - UI + Farming (v1.0.0)
+    Muhaves Private Farming - UI + Farming (v2)
     LocalScript. Tabs: Fast Farming / Extras / Notice.
 
     Single file: the UI (wrapped in a function) and the farming logic at the bottom.
@@ -24,7 +24,7 @@
     - Corrected texts: Controlled Speed uses server response, Max Reps box shows 650, Rebirth Target hint.
 ]]
 
-local VERSION = "1.0.0"
+local VERSION = "2"
 
 local UI = (function()
 
@@ -433,7 +433,7 @@ local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
 
--- Header greeting ("Muhaves v1.0.0 | Fast Farming - Hey, username!").
+-- Header greeting ("Muhaves v2 | Fast Farming - Hey, username!").
 -- It is as BIG as possible (up to GREET_MAX) and stretches until just before the zoom buttons,
 -- so it never gets cut off or overlaps the buttons. It is re-fitted every time the window size changes.
 local greetLbl, greetX
@@ -484,7 +484,7 @@ new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
--- One-line greeting next to PRIVATE FARMING (style: "Muhaves v1.0.0 | Fast Farming - Hey, username!")
+-- One-line greeting next to PRIVATE FARMING (style: "Muhaves v2 | Fast Farming - Hey, username!")
 do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
