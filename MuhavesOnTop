@@ -680,7 +680,7 @@ local PAGE_MAX_H = 470 -- maximum page area height; if the content is taller, th
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
 local nav = {{"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"ℹ", "Info"}}
-local navBtns = {}
+local navBtns, navLbls = {}, {}
 local charImg
 local currentNav = 0
 local navToken = 0
@@ -692,15 +692,20 @@ local function applyNav(idx, instant)
 		local on = i == idx
 		local stk = b:FindFirstChildOfClass("UIStroke")
 		local goal = {
-			BackgroundTransparency = on and 0 or 1,
-			TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(215, 215, 218),
+			-- BackgroundColor3 is MULTIPLIED by the button's UIGradient, so white = the gradient's own gray (selected),
+			-- a darker value = a dimmer gray (not selected). Both stay clearly visible on the black sidebar.
+			BackgroundTransparency = 0,
+			BackgroundColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(120, 120, 120),
 		}
+		local lblGoal = {TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 228)}
 		if instant then
 			for k, v in pairs(goal) do b[k] = v end
-			stk.Transparency = on and 0 or 1
+			for k, v in pairs(lblGoal) do navLbls[i][k] = v end
+			stk.Transparency = on and 0 or 0.4
 		else
 			TweenService:Create(b, navInfo, goal):Play()
-			TweenService:Create(stk, navInfo, {Transparency = on and 0 or 1}):Play()
+			TweenService:Create(navLbls[i], navInfo, lblGoal):Play()
+			TweenService:Create(stk, navInfo, {Transparency = on and 0 or 0.4}):Play()
 		end
 		pages[i].Visible = on
 	end
@@ -753,14 +758,16 @@ end
 
 for i, n in ipairs(nav) do
 	local b = new("TextButton", {
-		Text = "            " .. n[2], TextSize = 17, Font = F.GothamBold, TextXAlignment = LEFT, AutoButtonColor = false,
-		BackgroundColor3 = Color3.fromRGB(62, 62, 66), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
+		Text = "", AutoButtonColor = false,
+		BackgroundColor3 = Color3.new(1, 1, 1), Position = UDim2.fromOffset(8, 10 + (i - 1) * 52),
 		Size = UDim2.fromOffset(SW - 16, 44), BorderSizePixel = 0, AutoLocalize = false,
 	}, sidebar)
 	round(b, 10)
 	new("UIStroke", {Color = Color3.fromRGB(110, 110, 115), Thickness = 1}, b)
-	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(78, 78, 82), Color3.fromRGB(46, 46, 50)), Rotation = 90}, b)
+	new("UIGradient", {Color = ColorSequence.new(Color3.fromRGB(112, 112, 118), Color3.fromRGB(74, 74, 79)), Rotation = 90}, b)
+	-- the gradient tints the text of the object it sits on, so the icon and the name are separate labels on top
 	text(b, n[1], 22, 10, 22, 36, Color3.fromRGB(235, 235, 238), F.GothamBold, CENTER)
+	navLbls[i] = text(b, n[2], 17, 52, 22, SW - 16 - 60, Color3.new(1, 1, 1), F.GothamBold, LEFT)
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
