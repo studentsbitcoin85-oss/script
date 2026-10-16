@@ -1,16 +1,18 @@
 --[[
-    Muhaves Private Farming - UI + Farming (v23)
+    Muhaves Private Farming - UI + Farming (v24)
     LocalScript. Tabs: Fast Farming / Extras / Info.
 
     Single file: the UI (wrapped in a function) and the farming logic at the bottom.
     Every toggle is connected through the UI.Callbacks table. The script returns the UI table
     (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Callbacks).
 
-    v23:
-    - Header greeting is bigger and stretches all the way to the zoom buttons (never overlaps them), with "V1".
-    - Fast Farming cards use the MHV logo image as background.
-    - Info tab: Muhaves text image (logo box + footer), bolder fonts.
-    - Extras tab: tiles are back to a single row that scrolls sideways.
+    v24 (smoothness):
+    - Window is a CanvasGroup: the whole window fades as one piece (no more black cover rectangle).
+    - Minimize / restore: the window glides into / out of the small black button while fading.
+    - Intro: all images are preloaded (all tabs warmed up) BEFORE the animation starts.
+    - Background scans (portals, Hide Pets, Hide Popups, Anti Lag) use a 4 ms per frame time slicer.
+    - Portal scan and auto Hide Pets / Hide Popups start after the intro is finished.
+    - Faster tab fade-in.
 ]]
 
 local UI = (function()
@@ -50,7 +52,7 @@ local F = Enum.Font
 
 -- Smooth animation presets (a larger duration means a slower animation)
 local SMOOTH = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local FADE_IN = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+local FADE_IN = TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local FADE_OUT = TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
 -- Empty hooks that get filled in later. Every toggle or number box in the UI calls the latest version in this table.
@@ -363,22 +365,17 @@ gui.Destroying:Connect(function()
 	table.clear(outerConns)
 end)
 
-
-local win = new("Frame", {
+-- The window is a CanvasGroup: GroupTransparency fades EVERYTHING inside it (stroke, images, text) as one piece.
+-- This replaces the old black cover rectangle and makes intro / minimize / restore much smoother.
+local win = new("CanvasGroup", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
-	ClipsDescendants = true,
+	GroupTransparency = 0,
 }, gui)
 round(win, 20)
 stroke(win, Color3.fromRGB(55, 55, 58))
 
--- Black covers used for fade animations (intro when the script is executed, and tab switching).
--- Fading a cover in and out is much smoother than showing/hiding the page contents directly.
-local introCover = new("Frame", {
-	Name = "IntroCover", Size = UDim2.fromScale(1, 1), BackgroundColor3 = BLACK, BackgroundTransparency = 0,
-	BorderSizePixel = 0, Active = false, ZIndex = 100,
-}, win)
-round(introCover, 20)
+-- Black cover used only for the tab switch fade (page area).
 local pageCover = new("Frame", {
 	Name = "PageCover", Position = UDim2.new(0, 0, 0, HH), Size = UDim2.new(1, 0, 1, -HH),
 	BackgroundColor3 = BLACK, BackgroundTransparency = 1, BorderSizePixel = 0, Active = false, ZIndex = 50,
@@ -491,7 +488,7 @@ body = new("ScrollingFrame", {
 keep(cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end))
 layoutWindow(false)
 
--- Minimize: the window is hidden and a small ≡ button appears (tap = reopen, hold + drag = move).
+-- Minimize: the window glides into a small ≡ button (tap = reopen, hold + drag = move).
 -- The small button is a black box with a subtle gradient, a soft outline and a 3-line icon (drawn from Frames).
 -- It appears a bit lower on the screen (below the strength bar) and can be dragged to a new position.
 local MINI_SHOW = 0.08   -- background transparency while visible (0 = solid)
@@ -521,8 +518,8 @@ for i = 1, 3 do
 	miniLines[i] = ln
 end
 
--- Minimize / restore animation: the window slowly shrinks toward the center, then the ≡ button fades in,
--- and the reverse when restoring. Adjust the speed with the duration numbers below (larger = slower).
+-- Minimize / restore animation: the window shrinks and fades while it glides to the position of the ≡ button,
+-- then the button fades in. Restoring is the reverse. Adjust the speed with the duration numbers (larger = slower).
 local miniStroke = mini:FindFirstChildOfClass("UIStroke")
 local animBusy = false
 
@@ -545,38 +542,44 @@ local function tweenMini(a, t)
 	if miniStroke then TweenService:Create(miniStroke, info, {Transparency = miniEdge(a)}):Play() end
 end
 
+-- center of the mini button in screen pixels (the window is anchored at its center, so it glides to this point)
+local winHome
+local function miniGoal()
+	local v, mpos = cam.ViewportSize, mini.Position
+	return UDim2.fromOffset(mpos.X.Scale * v.X + mpos.X.Offset, mpos.Y.Scale * v.Y + mpos.Y.Offset + 13)
+end
+
 local function minimizeWindow()
 	if animBusy or not win.Visible then return end
 	animBusy = true
-	-- the window fades out while it shrinks
-	TweenService:Create(introCover, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0}):Play()
-	introCover.Visible = true
-	local t = TweenService:Create(scale, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut), {Scale = 0.05})
-	t:Play()
-	t.Completed:Wait()
+	winHome = win.Position
+	local info = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+	TweenService:Create(scale, info, {Scale = 0.05}):Play()
+	TweenService:Create(win, info, {Position = miniGoal(), GroupTransparency = 1}):Play()
+	task.wait(0.5)
 	win.Visible = false
+	win.Position = winHome
 	scale.Scale = targetScale() -- prepare the normal size for when it opens again
 	setMiniAlpha(1)
 	mini.Visible = true
-	tweenMini(0, 0.4)
+	tweenMini(0, 0.3)
 	animBusy = false
 end
 
 local function restoreWindow()
 	if animBusy then return end
 	animBusy = true
-	tweenMini(1, 0.3)
-	task.wait(0.3)
-	mini.Visible = false
+	tweenMini(1, 0.2)
+	local home = winHome or win.Position
+	win.Position = miniGoal()
 	scale.Scale = 0.05
-	introCover.BackgroundTransparency = 0
-	introCover.Visible = true
+	win.GroupTransparency = 1
 	win.Visible = true
-	TweenService:Create(introCover, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-	local t = TweenService:Create(scale, TweenInfo.new(0.7, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = targetScale()})
-	t:Play()
-	t.Completed:Wait()
-	introCover.Visible = false
+	local info = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	TweenService:Create(scale, info, {Scale = targetScale()}):Play()
+	TweenService:Create(win, info, {Position = home, GroupTransparency = 0}):Play()
+	task.delay(0.2, function() mini.Visible = false end)
+	task.wait(0.6)
 	animBusy = false
 end
 
@@ -718,7 +721,7 @@ local function selectNav(idx, instant)
 	navToken += 1
 	local my = navToken
 	TweenService:Create(pageCover, FADE_IN, {BackgroundTransparency = 0}):Play()
-	task.delay(0.16, function()
+	task.delay(0.13, function()
 		if my ~= navToken or not gui.Parent then return end
 		applyNav(idx, false)
 		TweenService:Create(pageCover, FADE_OUT, {BackgroundTransparency = 1}):Play()
@@ -899,15 +902,18 @@ local TILE_H = 108
 local cardW2 = cardW1 -- same width as the Farming card
 local rowViewW = cardW2 - 2 * PAD
 local ROW_VIEW_H = TILE_H + 12 -- a little extra room at the bottom for the sideways scroll bar
-local NOTE_Y = CONTENT_Y + ROW_VIEW_H + GAP
-local cardH2 = NOTE_Y + 26 + PAD
+-- The card is at least as tall as the whole tab area (SIDEMIN), so the background image covers the full tab.
+-- The tile row is centered in the free space and the note sits at the bottom.
+local cardH2 = math.max(CONTENT_Y + ROW_VIEW_H + GAP + 26 + PAD, SIDEMIN)
+local NOTE_Y = cardH2 - PAD - 26
+local ROW_Y = CONTENT_Y + math.floor((NOTE_Y - GAP - CONTENT_Y - ROW_VIEW_H) / 2)
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
 cardBG(otCard, ASSETS.ExtrasBG, 0.4) -- background image behind the whole Extras card
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
 
 local tileRow = new("ScrollingFrame", {
-	Name = "TileRow", Position = UDim2.fromOffset(PAD, CONTENT_Y), Size = UDim2.fromOffset(rowViewW, ROW_VIEW_H),
+	Name = "TileRow", Position = UDim2.fromOffset(PAD, ROW_Y), Size = UDim2.fromOffset(rowViewW, ROW_VIEW_H),
 	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
 	ScrollingDirection = Enum.ScrollingDirection.X,
 	CanvasSize = UDim2.fromOffset(#tiles * (tileW + GAP) - GAP, 0),
@@ -1042,22 +1048,38 @@ end
 ---------------------------------------------------------------------
 selectNav(1, true)
 
--- Intro animation when the script is executed: the window gently grows from a slightly smaller size
--- while the black cover fades away. It runs in its own thread so it never blocks the rest of the script.
+-- Intro animation when the script is executed.
+-- 1) the window stays invisible (GroupTransparency = 1) while every tab is "warmed up" and all images are preloaded,
+--    so nothing pops in later and switching tabs stays smooth;
+-- 2) then the window gently grows from a slightly smaller size while it fades in.
+-- It runs in its own thread so it never blocks the rest of the script.
 do
 	local target = targetScale()
 	animBusy = true
-	scale.Scale = target * 0.8
-	introCover.BackgroundTransparency = 0
-	introCover.Visible = true
+	win.GroupTransparency = 1
 	task.spawn(function()
-		task.wait(0.25) -- short pause so the executor has time to finish loading before the animation starts
+		task.wait(0.25) -- short pause so the executor has time to finish loading
 		if not gui.Parent then return end
+		for _, p in ipairs(pages) do p.Visible = true end -- warm up all tabs
+		local imgs = {}
+		for _, d in ipairs(gui:GetDescendants()) do
+			if d:IsA("ImageLabel") then imgs[#imgs + 1] = d end
+		end
+		local done = false
+		task.spawn(function()
+			pcall(function() game:GetService("ContentProvider"):PreloadAsync(imgs) end)
+			done = true
+		end)
+		local t0 = os.clock()
+		while not done and os.clock() - t0 < 3 do task.wait() end
+		if not gui.Parent then return end
+		applyNav(1, true) -- back to the first tab (this also hides the other tabs again)
+		scale.Scale = target * 0.88
+		task.wait(0.1)
 		TweenService:Create(scale, TweenInfo.new(0.9, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = target}):Play()
-		local t = TweenService:Create(introCover, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {BackgroundTransparency = 1})
+		local t = TweenService:Create(win, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {GroupTransparency = 0})
 		t:Play()
 		t.Completed:Wait()
-		introCover.Visible = false
 		animBusy = false
 	end)
 end
@@ -1086,6 +1108,18 @@ local services = {
 local lp = services.players.LocalPlayer
 local gui = UI.Gui
 local Callbacks = UI.Callbacks
+
+-- Time slicer for background scans: call step() inside a loop. It yields one frame whenever
+-- the scan has used more than 4 ms, so scans never cause frame drops (better than "wait every N items").
+local function slicer()
+	local t0 = os.clock()
+	return function()
+		if os.clock() - t0 > 0.004 then
+			task.wait()
+			t0 = os.clock()
+		end
+	end
+end
 
 local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
 
@@ -1128,12 +1162,15 @@ track(lp.Idled:Connect(function()
 	services.virtualinputmanager:SendKeyEvent(false, Enum.KeyCode.Y, false, game)
 end))
 
--- Remove RobloxForwardPortals (ads). Scanned in a separate thread that yields,
--- so it does not freeze the intro animation when the script is executed.
+-- Remove RobloxForwardPortals (ads). Scanned in a separate thread, started AFTER the intro animation
+-- and time-sliced (max 4 ms per frame), so it never freezes the animation.
 task.spawn(function()
-	for i, portal in ipairs(game:GetDescendants()) do
+	task.wait(3)
+	if not alive() then return end
+	local step = slicer()
+	for _, portal in ipairs(game:GetDescendants()) do
 		if portal.Name == "RobloxForwardPortals" then pcall(function() portal:Destroy() end) end
-		if i % 400 == 0 then task.wait() end
+		step()
 	end
 end)
 if _G.ads then
@@ -1728,10 +1765,11 @@ do
 		return added
 	end
 	local function scan()
-		for i, d in ipairs(workspace:GetDescendants()) do
+		local step = slicer()
+		for _, d in ipairs(workspace:GetDescendants()) do
 			if not on then return end
 			if isPet(d) then pcall(hideModel, d) end
-			if i % 500 == 0 then task.wait() end
+			step()
 		end
 	end
 	-- remove records of objects that no longer exist in the game
@@ -1887,10 +1925,11 @@ do
 					if on then pcall(onNew, o) end
 				end)
 				task.spawn(function()
-					for i, o in ipairs(root:GetDescendants()) do
+					local step = slicer()
+					for _, o in ipairs(root:GetDescendants()) do
 						if not on then return end
 						pcall(onExisting, o)
-						if i % 500 == 0 then task.wait() end
+						step()
 					end
 				end)
 			end
@@ -2006,11 +2045,12 @@ do
 				end)
 			end
 			task.spawn(function()
+				local step = slicer()
 				for _, root in ipairs({workspace, services.lighting}) do
-					for i, o in ipairs(root:GetDescendants()) do
+					for _, o in ipairs(root:GetDescendants()) do
 						if not on.anti then return end
 						pcall(dim, o)
-						if i % 400 == 0 then task.wait() end
+						step()
 					end
 				end
 			end)
@@ -2092,12 +2132,12 @@ end
 
 ---------------------------------------------------------------------
 -- Sync the initial toggle states in the UI (Hide Pets, Hide Popups and Anti AFK are ON from the start).
--- Delayed slightly so the heavy scans do not stutter the intro animation.
+-- Delayed until the intro animation is finished so the heavy scans do not stutter it.
 task.spawn(function()
-	task.wait(1.2)
+	task.wait(2.5)
 	if not alive() then return end
 	Callbacks.HidePets(true)
-	task.wait(0.3)
+	task.wait(1)
 	if not alive() then return end
 	Callbacks.HidePopups(true)
 end)
