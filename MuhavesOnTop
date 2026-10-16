@@ -7,7 +7,7 @@
     (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Callbacks).
 
     v24 (smoothness):
-    - Window is a CanvasGroup: the whole window fades as one piece (no more black cover rectangle).
+    - Window is a plain Frame again (CanvasGroup rendered everything to a texture = blurry text). Fades use a black cover.
     - Minimize / restore: the window glides into / out of the small black button while fading.
     - Intro: all images are preloaded (all tabs warmed up) BEFORE the animation starts.
     - Background scans (portals, Hide Pets, Hide Popups, Anti Lag) use a 4 ms per frame time slicer.
@@ -376,15 +376,22 @@ gui.Destroying:Connect(function()
 	table.clear(outerConns)
 end)
 
--- The window is a CanvasGroup: GroupTransparency fades EVERYTHING inside it (stroke, images, text) as one piece.
--- This replaces the old black cover rectangle and makes intro / minimize / restore much smoother.
-local win = new("CanvasGroup", {
+-- The window is a plain Frame so text is drawn directly and stays SHARP (a CanvasGroup renders its children
+-- into a texture first, which makes text blurry). Fades use the black introCover below.
+local win = new("Frame", {
 	Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromOffset(900, 600), BackgroundColor3 = WIN, BorderSizePixel = 0,
-	GroupTransparency = 0,
+	ClipsDescendants = true,
 }, gui)
 round(win, 20)
 stroke(win, Color3.fromRGB(55, 55, 58))
+
+-- Black cover used for intro / minimize / restore fades (same rounded corners as the window).
+local introCover = new("Frame", {
+	Name = "IntroCover", Size = UDim2.fromScale(1, 1), BackgroundColor3 = BLACK, BackgroundTransparency = 0,
+	BorderSizePixel = 0, Active = false, ZIndex = 100,
+}, win)
+round(introCover, 20)
 
 -- Black cover used only for the tab switch fade (page area).
 local pageCover = new("Frame", {
@@ -566,7 +573,9 @@ local function minimizeWindow()
 	winHome = win.Position
 	local info = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 	TweenService:Create(scale, info, {Scale = 0.05}):Play()
-	TweenService:Create(win, info, {Position = miniGoal(), GroupTransparency = 1}):Play()
+	introCover.Visible = true
+	TweenService:Create(introCover, info, {BackgroundTransparency = 0}):Play()
+	TweenService:Create(win, info, {Position = miniGoal()}):Play()
 	task.wait(0.5)
 	win.Visible = false
 	win.Position = winHome
@@ -584,13 +593,16 @@ local function restoreWindow()
 	local home = winHome or win.Position
 	win.Position = miniGoal()
 	scale.Scale = 0.05
-	win.GroupTransparency = 1
+	introCover.BackgroundTransparency = 0
+	introCover.Visible = true
 	win.Visible = true
 	local info = TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 	TweenService:Create(scale, info, {Scale = targetScale()}):Play()
-	TweenService:Create(win, info, {Position = home, GroupTransparency = 0}):Play()
+	TweenService:Create(win, info, {Position = home}):Play()
+	TweenService:Create(introCover, info, {BackgroundTransparency = 1}):Play()
 	task.delay(0.2, function() mini.Visible = false end)
 	task.wait(0.6)
+	introCover.Visible = false
 	animBusy = false
 end
 
@@ -1060,14 +1072,15 @@ end
 selectNav(1, true)
 
 -- Intro animation when the script is executed.
--- 1) the window stays invisible (GroupTransparency = 1) while every tab is "warmed up" and all images are preloaded,
+-- 1) the window stays covered (black cover) while every tab is "warmed up" and all images are preloaded,
 --    so nothing pops in later and switching tabs stays smooth;
 -- 2) then the window gently grows from a slightly smaller size while it fades in.
 -- It runs in its own thread so it never blocks the rest of the script.
 do
 	local target = targetScale()
 	animBusy = true
-	win.GroupTransparency = 1
+	introCover.BackgroundTransparency = 0
+	introCover.Visible = true
 	task.spawn(function()
 		task.wait(0.25) -- short pause so the executor has time to finish loading
 		if not gui.Parent then return end
@@ -1088,9 +1101,10 @@ do
 		scale.Scale = target * 0.88
 		task.wait(0.1)
 		TweenService:Create(scale, TweenInfo.new(0.9, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Scale = target}):Play()
-		local t = TweenService:Create(win, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {GroupTransparency = 0})
+		local t = TweenService:Create(introCover, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {BackgroundTransparency = 1})
 		t:Play()
 		t.Completed:Wait()
+		introCover.Visible = false
 		animBusy = false
 	end)
 end
