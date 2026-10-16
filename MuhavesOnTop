@@ -31,6 +31,22 @@
     - Closing the UI restores the player's original Hide Pets setting when the game exposes it.
     - Pet swapping sends only the difference (syncPets); same set = no remotes. Full re-sync when a pet toggle
       or farming is switched on.
+
+    Latest fixes:
+    - Number boxes: a single dot is a DECIMAL point (1.234 -> 1), dots are only thousand separators when there are
+      two or more groups (1.234.567). Commas / spaces / underscores are ignored and the suffixes K M B T Qa Qi Sx Sp Oc
+      No Dc work (10K = 10000). Big numbers are shown in full digits, never as 1e+15.
+    - Mini button comments corrected (the button is fixed, it cannot be dragged); unused variables removed.
+    - FPS cap restore: if the old cap cannot be read, the cap is lifted (0 = no limit) instead of forced to 60.
+    - rbClock is handed to the farming part through the returned UI table (UI.RbClock). Before, the farming part
+      indexed a nil variable and everything below that line (Strength, Extras, Hide *, Low Resource) never loaded.
+    - Auto Rebirth: when the rebirth did not happen within 10 s, the status shows "Requirement not met" and the
+      worker waits 5 s before trying again (no more endless immediate retries).
+    - Auto Rebirth rep rate now follows the Max Reps / Second box (same for every account, the old Premium 12 / 6
+      split is gone), still time based, so it no longer depends on the screen refresh rate.
+    - Auto Rebirth: switching it off while it is already off does nothing (turning Auto Farm Strength on no longer
+      overwrites the Rebirth status with "Paused" / "Target reached").
+    - Header text now reads "Muhaves V2".
 ]]
 
 local VERSION = "2"
@@ -316,8 +332,37 @@ local function toggle(p, x, cy, initial, cb)
 	return set
 end
 
+-- Reads what the player typed into a number box. Rules:
+--   * spaces, commas and underscores are ignored (1,500 / 1 500 / 1_500 = 1500)
+--   * a single dot is a DECIMAL point (1.234 = 1.234, floored to 1 later)
+--   * two or more groups of 3 digits after dots are thousand separators (1.234.567 = 1234567)
+--   * the suffixes K M B T Qa Qi Sx Sp Oc No Dc work (10k = 10000, 2.5m = 2500000)
+-- Returns nil when the text is not a number.
+local SUFFIX_MULT = {
+	k = 1e3, m = 1e6, b = 1e9, t = 1e12, qa = 1e15, qi = 1e18,
+	sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33,
+}
+local function parseNumber(s)
+	s = s:lower():gsub("[%s_,]", "")
+	local _, dots = s:gsub("%.", "")
+	if dots >= 2 and s:match("^%d%d?%d?%.%d%d%d[%.%d]*$") and not s:match("%.%d%d%d%d") then
+		s = s:gsub("%.", "")
+	end
+	local num, suf = s:match("^([%d%.]+)(%a*)$")
+	if not num then return nil end
+	local n = tonumber(num)
+	if not n then return nil end
+	if suf ~= "" then
+		local m = SUFFIX_MULT[suf]
+		if not m then return nil end
+		n *= m
+	end
+	return n
+end
+
 -- minVal / default: a value below minVal (or text that is not a number) is replaced by `default`
 -- and the box shows that replacement, so the box always displays the value that is really used.
+local MAX_INPUT = 1e18
 local function numberBox(p, x, y, w, h, value, cb, minVal, default)
 	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
@@ -332,15 +377,12 @@ local function numberBox(p, x, y, w, h, value, cb, minVal, default)
 	text(f, "▼", 8, w - 20, h / 2 + 6, 14, MUTED, F.GothamBold, CENTER)
 	local last = tonumber(value) or 0
 	tb.FocusLost:Connect(function()
-		local raw = tb.Text:gsub("%s", "")
-		-- dots are only removed when they are thousand separators (150.000 -> 150000); 6.5 stays 6.5 and is floored to 6
-		local stripped = (raw:gsub("%.%d%d%d", ""))
-		if stripped ~= raw and stripped:match("^%d%d?%d?$") then raw = (raw:gsub("%.", "")) end
-		local n = tonumber(raw)
+		local n = parseNumber(tb.Text)
 		if not n or n < (minVal or 0) then n = default or last end
-		n = math.floor(n)
+		n = math.min(math.floor(n), MAX_INPUT)
 		last = n
-		tb.Text = tostring(n)
+		-- %.0f always writes every digit (tostring would turn 1e15 into "1e+15")
+		tb.Text = string.format("%.0f", n)
 		cb(n)
 	end)
 end
@@ -455,7 +497,7 @@ local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
 
--- Header greeting ("Muhaves v2 | Fast Farming - Hey, username!").
+-- Header greeting ("Muhaves V2 | Fast Farming - Hey, username!").
 -- It is as BIG as possible (up to GREET_MAX) and stretches until just before the zoom buttons,
 -- so it never gets cut off or overlaps the buttons. It is re-fitted every time the window size changes.
 local greetLbl, greetX
@@ -506,14 +548,14 @@ new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
--- One-line greeting next to PRIVATE FARMING (style: "Muhaves v2 | Fast Farming - Hey, username!")
+-- One-line greeting next to PRIVATE FARMING (style: "Muhaves V2 | Fast Farming - Hey, username!")
 do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
 	new("Frame", {Position = UDim2.fromOffset(wx - 14, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
 	greetX = wx
 	greetLbl = new("TextLabel", {
-		BackgroundTransparency = 1, Text = "Muhaves v" .. VERSION .. " | Fast Farming - Hey, " .. LocalPlayer.Name .. "!",
+		BackgroundTransparency = 1, Text = "Muhaves V" .. VERSION .. " | Fast Farming - Hey, " .. LocalPlayer.Name .. "!",
 		TextSize = 15, Font = F.GothamBold, TextColor3 = TX,
 		Position = UDim2.fromOffset(wx, 19), Size = UDim2.fromOffset(380, 40),
 		TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Center,
@@ -557,14 +599,14 @@ body = new("ScrollingFrame", {
 keep(cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() layoutWindow(false) end))
 layoutWindow(false)
 
--- Minimize: the window glides into a small ≡ button (tap = reopen, hold + drag = move).
+-- Minimize: the window glides into a small ≡ button (tap = reopen).
 -- The small button is a black box with a subtle gradient, a soft outline and a 3-line icon (drawn from Frames).
--- It appears a bit lower on the screen (below the strength bar) and can be dragged to a new position.
+-- The button is FIXED: it cannot be moved. It always sits centered horizontally, right under the strength bar
+-- (13% of the screen height).
 local MINI_SHOW = 0.08   -- background transparency while visible (0 = solid)
 local STROKE_SHOW = 0.35 -- outline transparency while visible
--- Start position: centered, below the strength bar (17% of the screen height). A new dragged position is saved.
-local mp = Saved.MiniPos
-local miniPos = (type(mp) == "table" and #mp == 4) and UDim2.new(mp[1], mp[2], mp[3], mp[4]) or UDim2.new(0.5, 0, 0.17, 0)
+local miniPos = UDim2.new(0.5, 0, 0.13, 0)
+if Saved.MiniPos ~= nil then Saved.MiniPos = nil end -- forget an old dragged position from older versions
 local mini = new("TextButton", {
 	Name = "Mini", Text = "", AutoButtonColor = false,
 	AnchorPoint = Vector2.new(0.5, 0), Position = miniPos, Size = UDim2.fromOffset(92, 26),
@@ -660,21 +702,18 @@ end
 minBtn.MouseButton1Click:Connect(minimizeWindow)
 
 do
-	local dragging, moved, start, startPos
+	-- tap = reopen the window. The button does not move; a long swipe over it just cancels the tap.
+	local dragging, start, wasTap
 	mini.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-			dragging, moved, start, startPos = true, false, i.Position, mini.Position
+			dragging, start, wasTap = true, i.Position, true
 			TweenService:Create(miniScale, TweenInfo.new(0.15, Enum.EasingStyle.Sine), {Scale = 0.93}):Play()
 			i.Changed:Connect(function()
 				if i.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					TweenService:Create(miniScale, TweenInfo.new(0.25, Enum.EasingStyle.Sine), {Scale = 1}):Play()
-					if not moved then
+					if wasTap then
 						task.spawn(restoreWindow)
-					else
-						local p = mini.Position
-						Saved.MiniPos = {p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset}
-						saveSettings()
 					end
 				end
 			end)
@@ -683,10 +722,7 @@ do
 	keep(UserInputService.InputChanged:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - start
-			if d.Magnitude > 8 then moved = true end
-			if moved then
-				mini.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-			end
+			if d.Magnitude > 30 then dragging, wasTap = false, false end
 		end
 	end))
 end
@@ -903,8 +939,9 @@ rbRuntime.Position = UDim2.fromOffset(0, rbRuntime.Position.Y.Offset)
 rbRuntime.Size = UDim2.new(1, 0, 0, rbRuntime.Size.Y.Offset)
 
 -- saved settings (the matching callbacks are applied by the farming part at the bottom)
-local savedTarget = tostring(math.floor(tonumber(Saved.RebirthTarget) or 0))
-local savedMaxReps = tostring(math.floor(tonumber(Saved.MaxReps) or 650))
+-- %.0f writes every digit (tostring would turn a big number into 1e+15)
+local savedTarget = string.format("%.0f", math.floor(tonumber(Saved.RebirthTarget) or 0))
+local savedMaxReps = string.format("%.0f", math.floor(tonumber(Saved.MaxReps) or 650))
 
 local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RH * 5, CARD, 12)
 rbOpts.BackgroundTransparency = PANEL_T
@@ -1099,6 +1136,8 @@ end
 -- Only reads values; it does not change anything in the game.
 -- Pace per hour / day uses only the time Auto Rebirth was really running (rbClock.active is set after `rb` exists)
 -- and only the rebirths gained in that time, so waiting before farming no longer lowers the number.
+-- rbClock is returned in the UI table (UI.RbClock), because the farming part below lives outside this function
+-- and cannot see this local.
 local rbClock = {active = function() return false end}
 do
 	local rbObj, startVal, startT, tries = nil, nil, 0, 0
@@ -1201,6 +1240,7 @@ return {
 	Toggles = Toggles,
 	Saved = Saved, Save = saveSettings,
 	Abbr = abbr, -- the one number formatter, shared with the farming part
+	RbClock = rbClock, -- the farming part sets RbClock.active so the Rebirth pace only counts running time
 }
 end)()
 
@@ -1534,6 +1574,11 @@ end
 -- REBIRTH (Auto Rebirth / Equip Rebirth Pets / Rebirth Target buttons)
 -- Rebirth stats (Rebirths, Gained, Pace) are calculated by the live display in the UI.
 local ls = lp:WaitForChild("leaderstats")
+
+-- The Max Reps / Second setting, shared by Auto Farm Strength and Auto Rebirth.
+-- It lives in its own table because performRebirth is defined before the strength section (`st`) exists.
+local repLimit = {max = 650}
+
 local rb = {
 	rebirths = ls:WaitForChild("Rebirths"),
 	strength = ls:WaitForChild("Strength"),
@@ -1542,7 +1587,8 @@ local rb = {
 	targetCount = 0,     -- Rebirth Target: stop when rebirths >= this number (0 = no limit)
 }
 
-rbClock.active = function() return rb.running end
+-- hand the clock to the UI part (it was a local there, so it has to be reached through the UI table)
+UI.RbClock.active = function() return rb.running end
 
 local function setRebirthStatus(text, color)
 	UI.Rebirth.Status.Text = text
@@ -1562,12 +1608,13 @@ end
 
 local function performRebirth()
 	local target = 5000 + rb.rebirths.Value * 2550
-	-- Time based rep rate (old: 12 or 6 reps per frame, so the base rate is that x 60 FPS).
-	-- Scaled with dt like the strength loop, so a low FPS (Low Resource Mode, 20 FPS) keeps the same speed.
-	local rate = (lp.MembershipType == Enum.MembershipType.Premium and 6 or 12) * 60
+	-- Time based rep rate that follows the Max Reps / Second box (the same for every account, no Premium split).
+	-- Scaled with dt like the strength loop, so the speed does not depend on the screen refresh rate
+	-- (a low FPS in Low Resource Mode or a 144 Hz screen both give the same reps per second).
 	local tokens, last = 0, os.clock()
 
 	while rb.running and alive() and not rebirthTargetReached() and rb.strength.Value < target do
+		local rate = repLimit.max
 		local now = os.clock()
 		tokens += rate * math.min(0.1, now - last)
 		last = now
@@ -1592,6 +1639,15 @@ local function performRebirth()
 			services.replicatedstorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest")
 			task.wait(0.05)
 		until rb.rebirths.Value > before or not rb.running or not alive() or tick() - started > 10
+
+		-- The rebirth did not happen (the game may need more than the strength formula above): show it and
+		-- wait 5 s before the worker tries again, instead of hammering the server with immediate retries.
+		if rb.running and alive() and rb.rebirths.Value <= before then
+			setRebirthStatus("Status: Requirement not met", C_PAUSE)
+			local waitStart = tick()
+			while rb.running and alive() and tick() - waitStart < 5 do task.wait(0.25) end
+			if rb.running and alive() then setRebirthStatus("Status: Rebirthing", C_ON) end
+		end
 	end
 end
 
@@ -1626,6 +1682,9 @@ local function startRebirthWorker()
 end
 
 Callbacks.AutoRebirth = function(state)
+	-- already off: do nothing, so the status ("Inactive" / "Target reached") is not overwritten with "Paused"
+	-- (e.g. when Auto Farm Strength is switched on and calls AutoRebirth(false) while Rebirth was never running)
+	if not state and not rb.running then return end
 	if state and rebirthTargetReached() then
 		stopAtTarget()
 		return
@@ -1859,10 +1918,12 @@ end)
 
 -- Max Reps / Second: the UI box replaces anything below 1 with 650 and shows 650, so it always displays the real value.
 -- The fallback below (<= 0 -> 650) is only a safety net for other callers. Above 650 = lag.
+-- The same value also drives the Auto Rebirth rep rate (through repLimit).
 Callbacks.MaxReps = function(v)
 	v = tonumber(v) or 0
 	if v <= 0 then v = 650 end
 	st.maxRate = math.max(1, v)
+	repLimit.max = st.maxRate
 	st.initialRate = math.min(200, st.maxRate)
 	st.rate = math.min(st.rate, st.maxRate)
 	persist("MaxReps", st.maxRate)
@@ -2376,17 +2437,19 @@ do
 		end
 	end
 
-	-- FPS cap: true = limit to 20 FPS, false = back to the original cap
+	-- FPS cap: true = limit to 20 FPS, false = back to the original cap.
+	-- origFps is only known when the executor has getfpscap. When it is NOT known, the cap is lifted (0 = no limit)
+	-- instead of being forced to 60, so a 120 Hz screen is never locked below its refresh rate.
 	Callbacks.FPSCap = function(state)
 		state = state and true or false
 		if state == on.fps then return end
 		on.fps = state
 		if state then
+			origFps = nil
 			if getfpscap then pcall(function() origFps = getfpscap() end) end
 			if setfpscap then pcall(setfpscap, 20) end
 		elseif setfpscap then
-			-- 0 means "no limit" in executors, so it is restored as 0; 60 is only used when the old cap is unknown
-			pcall(setfpscap, type(origFps) == "number" and origFps or 60)
+			pcall(setfpscap, type(origFps) == "number" and origFps or 0)
 		end
 	end
 
