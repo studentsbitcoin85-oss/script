@@ -48,7 +48,18 @@ local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
 
 local LEFT, CENTER, RIGHT = Enum.TextXAlignment.Left, Enum.TextXAlignment.Center, Enum.TextXAlignment.Right
-local F = Enum.Font
+-- Font: Builder Sans (the clean rounded Roblox UI font). Every name used in the script is mapped here,
+-- so changing the whole look later only needs this one table. Falls back to Gotham if a font is missing.
+local function pickFont(name, fallback)
+	local ok, f = pcall(function() return Enum.Font[name] end)
+	return (ok and f) or fallback
+end
+local F = {
+	Gotham       = pickFont("BuilderSans", Enum.Font.Gotham),
+	GothamMedium = pickFont("BuilderSansMedium", Enum.Font.GothamMedium),
+	GothamBold   = pickFont("BuilderSansBold", Enum.Font.GothamBold),
+	GothamBlack  = pickFont("BuilderSansExtraBold", Enum.Font.GothamBlack),
+}
 
 -- Smooth animation presets (a larger duration means a slower animation)
 local SMOOTH = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
@@ -1121,6 +1132,25 @@ local function slicer()
 	end
 end
 
+-- Incremental tree walk: replaces GetDescendants() on big roots (game / workspace). GetDescendants builds one huge
+-- table in a single call (a frame drop that the slicer cannot split); this walks with GetChildren() and yields
+-- through the slicer between nodes. fn(instance) may return true to stop the walk.
+local function walk(root, fn)
+	local step = slicer()
+	local stack, n = {root}, 1
+	while n > 0 do
+		local inst = stack[n]
+		stack[n] = nil
+		n -= 1
+		for _, child in ipairs(inst:GetChildren()) do
+			if fn(child) then return end
+			n += 1
+			stack[n] = child
+		end
+		step()
+	end
+end
+
 local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
 
 -- Session guard: re-executing the script stops all loops from the old version.
@@ -1167,11 +1197,10 @@ end))
 task.spawn(function()
 	task.wait(3)
 	if not alive() then return end
-	local step = slicer()
-	for _, portal in ipairs(game:GetDescendants()) do
+	walk(game, function(portal)
+		if not alive() then return true end
 		if portal.Name == "RobloxForwardPortals" then pcall(function() portal:Destroy() end) end
-		step()
-	end
+	end)
 end)
 if _G.ads then
 	pcall(function() _G.ads:Disconnect() end)
@@ -1765,12 +1794,10 @@ do
 		return added
 	end
 	local function scan()
-		local step = slicer()
-		for _, d in ipairs(workspace:GetDescendants()) do
-			if not on then return end
+		walk(workspace, function(d)
+			if not on then return true end
 			if isPet(d) then pcall(hideModel, d) end
-			step()
-		end
+		end)
 	end
 	-- remove records of objects that no longer exist in the game
 	local function sweep()
@@ -1925,12 +1952,10 @@ do
 					if on then pcall(onNew, o) end
 				end)
 				task.spawn(function()
-					local step = slicer()
-					for _, o in ipairs(root:GetDescendants()) do
-						if not on then return end
+					walk(root, function(o)
+						if not on then return true end
 						pcall(onExisting, o)
-						step()
-					end
+					end)
 				end)
 			end
 			task.spawn(function()
@@ -2045,13 +2070,12 @@ do
 				end)
 			end
 			task.spawn(function()
-				local step = slicer()
 				for _, root in ipairs({workspace, services.lighting}) do
-					for _, o in ipairs(root:GetDescendants()) do
-						if not on.anti then return end
+					walk(root, function(o)
+						if not on.anti then return true end
 						pcall(dim, o)
-						step()
-					end
+					end)
+					if not on.anti then return end
 				end
 			end)
 		else
