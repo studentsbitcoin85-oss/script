@@ -1,29 +1,34 @@
 --[[
-    Muhaves Private Farming - UI + Farming (v24)
-    LocalScript. Tabs: Fast Farming / Extras / Info.
+    Muhaves Private Farming - UI + Farming (v1.0.0)
+    LocalScript. Tabs: Fast Farming / Extras / Notice.
 
     Single file: the UI (wrapped in a function) and the farming logic at the bottom.
     Every toggle is connected through the UI.Callbacks table. The script returns the UI table
     (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Callbacks).
 
-    v24 (smoothness):
-    - Window is a plain Frame again (CanvasGroup rendered everything to a texture = blurry text). Fades use a black cover.
-    - Minimize / restore: the window glides into / out of the small black button while fading.
-    - Intro: all images are preloaded (all tabs warmed up) BEFORE the animation starts.
-    - Background scans (portals, Hide Pets, Hide Popups, Anti Lag) use a 4 ms per frame time slicer.
-    - Portal scan and auto Hide Pets / Hide Popups start after the intro is finished.
-    - Faster tab fade-in.
+    Changes in this version:
+    - Auto Rebirth worker is wrapped in pcall (it can no longer die silently / get stuck with workerActive = true).
+    - Strength loop wraps FireServer in pcall.
+    - walk() is error-safe (one instance that refuses GetChildren no longer stops a whole scan).
+    - petsFolder lookups are guarded.
+    - Hide Players keeps ONE DescendantAdded connection per player (no more leak on respawn).
+    - Single VERSION constant used by the header and the Notice tab.
+    - Info tab renamed to Notice everywhere (comments, assets, variables).
+    - Image loader: modern rbxthumb first, legacy Thumbs endpoint last, 1.5 s retry delay.
+    - Corrected texts: Controlled Speed uses server response, Max Reps box shows 650, Rebirth Target hint.
 ]]
+
+local VERSION = "1.0.0"
 
 local UI = (function()
 
 local ASSETS = {
 	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
-	LogoInfo     = "131866689269133", -- gambar tulisan Muhaves (logo & footer tab Info)
+	LogoNotice   = "131866689269133", -- gambar tulisan Muhaves (logo & footer tab Notice)
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
-	InfoBG       = "106276772809647", -- latar kartu Info
+	NoticeBG     = "106276772809647", -- latar kartu Notice
 	FarmBG       = "131699469923325", -- logo MHV, latar kartu Fast Farming
 	ExtrasBG     = "79313300337438",  -- latar kartu Extras
 }
@@ -42,7 +47,7 @@ local CARD  = Color3.fromRGB(14, 14, 15)
 local LINE  = Color3.fromRGB(40, 40, 43)
 local TX    = Color3.fromRGB(240, 240, 240)
 local SUB   = Color3.fromRGB(150, 150, 156)
-local SUBB  = Color3.fromRGB(215, 215, 220) -- brighter gray, used in the Info tab so it is easy to read
+local SUBB  = Color3.fromRGB(215, 215, 220) -- brighter gray, used in the Notice tab so it is easy to read
 local MUTED = Color3.fromRGB(190, 190, 194)
 local OFFBG = Color3.fromRGB(70, 70, 74)
 local ONBG  = Color3.fromRGB(104, 104, 110)
@@ -210,6 +215,7 @@ local function hline(p, x, y, w)
 		BackgroundColor3 = LINE, BorderSizePixel = 0}, p)
 end
 
+-- legacy endpoint: only used as the LAST fallback
 local THUMB = "https://www.roblox.com/Thumbs/Asset.ashx?width=420&height=420&assetId="
 
 local function image(p, id, x, y, w, h, fallback, fsize, holder)
@@ -219,9 +225,9 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 		return text(p, fallback, fsize or 20, x, y + h / 2, w, TX, F.GothamBlack, CENTER)
 	end
 	local urls = {
-		THUMB .. numId,
+		"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420", -- modern, safest for Decal and Image assets
 		"rbxassetid://" .. numId,
-		"rbxthumb://type=Asset&id=" .. numId .. "&w=420&h=420",
+		THUMB .. numId, -- legacy, last resort only
 	}
 	local img = new("ImageLabel", {
 		BackgroundTransparency = 1, Image = urls[1],
@@ -230,8 +236,13 @@ local function image(p, id, x, y, w, h, fallback, fsize, holder)
 	}, p)
 	task.spawn(function()
 		for i = 2, #urls do
-			task.wait(4)
-			if not img.Parent or img.IsLoaded then return end
+			-- wait up to 1.5 s for the current URL to load; stop right away once it has loaded
+			local waited = 0
+			while waited < 1.5 do
+				task.wait(0.25)
+				waited += 0.25
+				if not img.Parent or img.IsLoaded then return end
+			end
 			img.Image = urls[i]
 		end
 	end)
@@ -335,7 +346,7 @@ local PAD, GAP, HH, SW = 14, 10, 78, 200
 local CX, CY = PAD + SW + PAD, PAD
 local CONTENT_Y = PAD + 44 + GAP
 
--- boldSub = true -> the subtitle uses a bolder font and a brighter color (used by the Info card)
+-- boldSub = true -> the subtitle uses a bolder font and a brighter color (used by the Notice card)
 local function cardHeader(card, icon, title, sub, status, extra, boldSub)
 	local cw = card.Size.X.Offset
 	text(card, icon, 28, PAD, PAD + 22, 36, TX, F.GothamBold, CENTER)
@@ -404,7 +415,7 @@ local cur = {w = 900, h = 600}
 local scale = new("UIScale", {}, win)
 local cam = workspace.CurrentCamera
 
--- Header greeting ("Muhaves V1 | Fast Farming - Hey, username!").
+-- Header greeting ("Muhaves v1.0.0 | Fast Farming - Hey, username!").
 -- It is as BIG as possible (up to GREET_MAX) and stretches until just before the zoom buttons,
 -- so it never gets cut off or overlaps the buttons. It is re-fitted every time the window size changes.
 local greetLbl, greetX
@@ -455,14 +466,14 @@ new("Frame", {Position = UDim2.fromOffset(240, 20), Size = UDim2.fromOffset(1, 3
 text(header, "P R I V A T E   F A R M I N G", 15, 256, 28, 400, TX, F.GothamBold)
 text(header, "Stronger   •   Faster   •   Better", 12, 258, 52, 400, SUB, F.GothamMedium)
 
--- One-line greeting next to PRIVATE FARMING (style: "Muhaves V1 | Fast Farming - Hey, username!")
+-- One-line greeting next to PRIVATE FARMING (style: "Muhaves v1.0.0 | Fast Farming - Hey, username!")
 do
 	local titleW = tw("P R I V A T E   F A R M I N G", 15, F.GothamBold)
 	local wx = 256 + titleW + 28
 	new("Frame", {Position = UDim2.fromOffset(wx - 14, 20), Size = UDim2.fromOffset(1, 38), BackgroundColor3 = LINE, BorderSizePixel = 0}, header)
 	greetX = wx
 	greetLbl = new("TextLabel", {
-		BackgroundTransparency = 1, Text = "Muhaves V1 | Fast Farming - Hey, " .. LocalPlayer.Name .. "!",
+		BackgroundTransparency = 1, Text = "Muhaves v" .. VERSION .. " | Fast Farming - Hey, " .. LocalPlayer.Name .. "!",
 		TextSize = 15, Font = F.GothamBold, TextColor3 = TX,
 		Position = UDim2.fromOffset(wx, 19), Size = UDim2.fromOffset(380, 40),
 		TextXAlignment = LEFT, TextYAlignment = Enum.TextYAlignment.Center,
@@ -797,7 +808,7 @@ do
 local p1 = newPage()
 
 local rbRows = {
-	{"Rebirth Target", "Stops Auto Rebirth at this rebirth count.", "🔄", true},
+	{"Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", "🔄", true},
 	{"Auto Rebirth", "Rebirths automatically when the requirements are met."},
 	{"Equip Rebirth Pets", "Automatically equips the best rebirth pets."},
 	{"Equip Reps Pets", "Automatically equips the best reps pets."},
@@ -805,7 +816,7 @@ local rbRows = {
 }
 local fsRows = {
 	{"Auto Farm Strength", "Smart automatic strength farming."},
-	{"Controlled Speed", "Adjusts the speed based on your ping."},
+	{"Controlled Speed", "Adjusts the speed based on server response."},
 	{"Max Reps / Second", "Recommended max 650 reps/s. Higher = lag.", "🚀", true},
 }
 local function rowsW(rows)
@@ -888,7 +899,7 @@ optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, function(s) Callba
 hline(fsOpts, 14, RH, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, function(s) Callbacks.ControlledSpeed(s) end)
 hline(fsOpts, 14, RH * 2, fsOptsW - 28)
-optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "0", function(v) Callbacks.MaxReps(v) end)
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "650", function(v) Callbacks.MaxReps(v) end)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
 fsStats.BackgroundTransparency = PANEL_T
@@ -964,7 +975,7 @@ text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black scre
 sizes[2] = {w = cardW2, h = cardH2}
 
 ---------------------------------------------------------------------
--- PAGE 3: Info (all text is bold and brighter so it is easy to read)
+-- PAGE 3: Notice (all text is bold and brighter so it is easy to read)
 -- Wrapped in do ... end so its many locals are released afterwards (Luau allows max 200 locals per function).
 do
 local p3 = newPage()
@@ -985,18 +996,18 @@ local ROW_H = 180
 local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
-local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
--- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
-cardBG(inCard, ASSETS.InfoBG, 0.45)
-cardHeader(inCard, "📢", "Notice", "About this script.", nil, nil, true)
+local ntCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
+-- latar gambar untuk kartu Notice (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
+cardBG(ntCard, ASSETS.NoticeBG, 0.45)
+cardHeader(ntCard, "📢", "Notice", "About this script.", nil, nil, true)
 
 -- logo box: the Muhaves text image, big, with the name + version under it
-local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
-image(lg, ASSETS.LogoInfo, 12, 10, w1 - 24, 100, "Muhaves", 30)
+local lg = box(ntCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
+image(lg, ASSETS.LogoNotice, 12, 10, w1 - 24, 100, "Muhaves", 30)
 text(lg, "Private Farming", 19, 0, 132, w1, TX, BLD, CENTER)
-text(lg, "v1.0.0", 13, 0, 158, w1, SUBB, BLD, CENTER)
+text(lg, "v" .. VERSION, 13, 0, 158, w1, SUBB, BLD, CENTER)
 
-local dt = box(inCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
+local dt = box(ntCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
 local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
 for i, r in ipairs(kv) do
 	local cy = 30 + (i - 1) * 60
@@ -1006,7 +1017,7 @@ for i, r in ipairs(kv) do
 end
 text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
 
-local ft = box(inCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
+local ft = box(ntCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
 text(ft, "Key Features", 17, 14, 24, 250, TX, BLD)
 for i, f in ipairs(feats) do
 	local col = i <= 3 and 0 or 1
@@ -1020,16 +1031,16 @@ end
 -- footer: Muhaves text image on the left, the bold quote in the middle, emblem on the right
 do
 	local fw = 150
-	image(inCard, ASSETS.LogoInfo, PAD, footY + 2, fw, 62, "Muhaves", 24)
+	image(ntCard, ASSETS.LogoNotice, PAD, footY + 2, fw, 62, "Muhaves", 24)
 	local qx = PAD + fw + 12
 	local qw = cardW3 - PAD - 56 - 12 - qx
 	local quote = "\"Progress is not luck, it's a system.\""
 	local qs = 17
 	while qs > 9 and tw(quote, qs, BLD) > qw do qs -= 1 end
-	text(inCard, quote, qs, qx, footY + 22, qw, TX, BLD, CENTER)
-	text(inCard, "- Muhaves", math.max(9, qs - 2), qx, footY + 48, qw, SUBB, BLD, CENTER)
+	text(ntCard, quote, qs, qx, footY + 22, qw, TX, BLD, CENTER)
+	text(ntCard, "- Muhaves", math.max(9, qs - 2), qx, footY + 48, qw, SUBB, BLD, CENTER)
 end
-image(inCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
+image(ntCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
 end
 
@@ -1156,6 +1167,7 @@ end
 -- Incremental tree walk: replaces GetDescendants() on big roots (game / workspace). GetDescendants builds one huge
 -- table in a single call (a frame drop that the slicer cannot split); this walks with GetChildren() and yields
 -- through the slicer between nodes. fn(instance) may return true to stop the walk.
+-- Error-safe: an instance that refuses GetChildren() is skipped, and an error inside fn() skips only that instance.
 local function walk(root, fn)
 	local step = slicer()
 	local stack, n = {root}, 1
@@ -1163,10 +1175,14 @@ local function walk(root, fn)
 		local inst = stack[n]
 		stack[n] = nil
 		n -= 1
-		for _, child in ipairs(inst:GetChildren()) do
-			if fn(child) then return end
-			n += 1
-			stack[n] = child
+		local ok, children = pcall(inst.GetChildren, inst)
+		if ok then
+			for _, child in ipairs(children) do
+				local okFn, stop = pcall(fn, child)
+				if okFn and stop then return end
+				n += 1
+				stack[n] = child
+			end
 		end
 		step()
 	end
@@ -1281,7 +1297,9 @@ local MAX_PET_SLOTS = 12
 local TARGET_REP_SPEED = 100
 
 local function unequipConfiguredPets()
-	for _, folder in ipairs(lp.petsFolder:GetChildren()) do
+	local pf = lp:FindFirstChild("petsFolder")
+	if not pf then return end
+	for _, folder in ipairs(pf:GetChildren()) do
 		if folder:IsA("Folder") then
 			for _, pet in ipairs(folder:GetChildren()) do
 				services.replicatedstorage.rEvents.equipPetEvent:FireServer("unequipPet", pet)
@@ -1297,7 +1315,9 @@ end
 
 local function getOwnedConfiguredPets()
 	local owned = {}
-	for _, folder in ipairs(lp.petsFolder:GetChildren()) do
+	local pf = lp:FindFirstChild("petsFolder")
+	if not pf then return owned end
+	for _, folder in ipairs(pf:GetChildren()) do
 		if folder:IsA("Folder") then
 			for _, pet in ipairs(folder:GetChildren()) do
 				local config = PETS[pet.Name]
@@ -1453,6 +1473,9 @@ local function performRebirth()
 	end
 end
 
+-- The worker body runs inside pcall: if a remote or the pets folder errors, the worker logs it, shows
+-- "Retrying" and tries again, instead of dying silently with the status still saying "Rebirthing".
+-- workerActive is reset after the loop, which is always reached, so it can never get stuck on true.
 local function startRebirthWorker()
 	if rb.workerActive then return end
 	rb.workerActive = true
@@ -1462,8 +1485,18 @@ local function startRebirthWorker()
 				stopAtTarget()
 				break
 			end
-			equipFarmingPets()
-			performRebirth()
+			local ok, err = pcall(function()
+				equipFarmingPets()
+				performRebirth()
+			end)
+			if not ok then
+				warn("[Muhaves] Rebirth error: " .. tostring(err))
+				if rb.running and alive() then
+					setRebirthStatus("Status: Retrying", C_PAUSE)
+					task.wait(2)
+					if rb.running and alive() then setRebirthStatus("Status: Rebirthing", C_ON) end
+				end
+			end
 			task.wait(0.5)
 		end
 		rb.workerActive = false
@@ -1605,6 +1638,7 @@ end
 
 -- The loop belongs to one run id. When the toggle is switched off (or on again) the id changes,
 -- so the old loop stops at its next frame and two loops can never run at the same time.
+-- FireServer is wrapped in pcall so a remote error cannot kill the loop while the status still says "Farming".
 local function strengthLoop(myId)
 	st.lastLoopAt = os.clock()
 	while st.running and st.runId == myId and alive() do
@@ -1617,7 +1651,11 @@ local function strengthLoop(myId)
 		st.tokens = math.min(st.maxBurst, st.tokens + st.rate * dt)
 		local burstLimit = math.max(1, math.min(st.maxBurst, math.ceil(st.rate * 0.05)))
 		local n = math.min(math.floor(st.tokens), burstLimit)
-		for _ = 1, n do muscleEvent:FireServer("rep") end
+		if n > 0 then
+			pcall(function()
+				for _ = 1, n do muscleEvent:FireServer("rep") end
+			end)
+		end
 		st.tokens -= n
 
 		services.runservice.Heartbeat:Wait()
@@ -2017,11 +2055,14 @@ Callbacks.EquipStrengthPets = function(state) if state then choosePets("strength
 Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth", equipBestRebirthPets) end end
 
 ---------------------------------------------------------------------
--- HIDE PLAYERS: hides other players' characters (can be restored)
+-- HIDE PLAYERS: hides other players' characters (can be restored).
+-- Exactly ONE DescendantAdded connection per player (descConn[player]). On every respawn the old one is
+-- replaced, and it is also removed when the player leaves or the feature is turned off, so nothing piles up.
 do
 	local on = false
 	local saved = setmetatable({}, {__mode = "k"})
-	local conns = {}
+	local conns = {}     -- global connections: PlayerAdded / PlayerRemoving / one CharacterAdded per player
+	local descConn = {}  -- player -> DescendantAdded connection of the CURRENT character
 
 	local function hideInst(d)
 		if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then
@@ -2029,14 +2070,15 @@ do
 			d.Transparency = 1
 		end
 	end
-	local function hideChar(c)
+	local function hideChar(p, c)
+		if descConn[p] then descConn[p]:Disconnect() end
 		for _, d in ipairs(c:GetDescendants()) do hideInst(d) end
-		conns[#conns + 1] = c.DescendantAdded:Connect(function(d) if on then hideInst(d) end end)
+		descConn[p] = c.DescendantAdded:Connect(function(d) if on then hideInst(d) end end)
 	end
 	local function watch(p)
 		if p == lp then return end
-		if p.Character then hideChar(p.Character) end
-		conns[#conns + 1] = p.CharacterAdded:Connect(function(c) if on then hideChar(c) end end)
+		if p.Character then hideChar(p, p.Character) end
+		conns[#conns + 1] = p.CharacterAdded:Connect(function(c) if on then hideChar(p, c) end end)
 	end
 
 	Callbacks.HidePlayers = function(state)
@@ -2045,9 +2087,17 @@ do
 		if on then
 			for _, p in ipairs(services.players:GetPlayers()) do watch(p) end
 			conns[#conns + 1] = services.players.PlayerAdded:Connect(function(p) if on then watch(p) end end)
+			conns[#conns + 1] = services.players.PlayerRemoving:Connect(function(p)
+				if descConn[p] then
+					descConn[p]:Disconnect()
+					descConn[p] = nil
+				end
+			end)
 		else
 			for _, c in ipairs(conns) do c:Disconnect() end
 			table.clear(conns)
+			for _, c in pairs(descConn) do c:Disconnect() end
+			table.clear(descConn)
 			for d, v in pairs(saved) do
 				if d.Parent then pcall(function() d.Transparency = v end) end
 			end
