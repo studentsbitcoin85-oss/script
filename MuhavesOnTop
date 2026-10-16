@@ -679,7 +679,7 @@ local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470 -- maximum page area height; if the content is taller, the page scrolls
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
-local nav = {{"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"ℹ", "Info"}}
+local nav = {{"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"📢", "Notice"}}
 local navBtns, navLbls = {}, {}
 local charImg
 local currentNav = 0
@@ -988,7 +988,7 @@ local cardH3 = footY + 70 + PAD
 local inCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
 -- latar gambar untuk kartu Info (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
 cardBG(inCard, ASSETS.InfoBG, 0.45)
-cardHeader(inCard, "ℹ", "Info", "About this script.", nil, nil, true)
+cardHeader(inCard, "📢", "Notice", "About this script.", nil, nil, true)
 
 -- logo box: the Muhaves text image, big, with the name + version under it
 local lg = box(inCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
