@@ -1901,7 +1901,7 @@ do
 			or ((d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam")) and "Enabled")
 		if not prop or saved[d] ~= nil then return end
 		saved[d] = {prop, d[prop]}
-		d[prop] = (prop == "Enabled") and false or 1
+		if prop == "Enabled" then d[prop] = false else d[prop] = 1 end
 	end
 	local function hideModel(m)
 		if hiddenModels[m] or services.players:GetPlayerFromCharacter(m) then return end
