@@ -8,13 +8,19 @@
 
     Changes in this version:
     - Auto Rebirth worker is wrapped in pcall (it can no longer die silently / get stuck with workerActive = true).
+    - Auto Rebirth rep rate is now time based (scaled with dt), so Low Resource Mode (20 FPS) no longer slows it down.
+    - Auto Rebirth and Auto Farm Strength switch each other off (never both at once).
+    - Closing the UI sends showPets to the server (Hide Pets no longer stays on in the game).
+    - Settings (Rebirth Target, Max Reps, pet choice) are saved to file like the zoom.
+    - Eat Shake: the 150 s delay only counts after a shake was really eaten, and turning the toggle on again eats right away.
+    - findRebirthObj also searches the player when leaderstats is missing.
     - Strength loop wraps FireServer in pcall.
     - walk() is error-safe (one instance that refuses GetChildren no longer stops a whole scan).
     - petsFolder lookups are guarded.
     - Hide Players keeps ONE DescendantAdded connection per player (no more leak on respawn).
     - Single VERSION constant used by the header and the Notice tab.
     - Info tab renamed to Notice everywhere (comments, assets, variables).
-    - Image loader: modern rbxthumb first, legacy Thumbs endpoint last, 1.5 s retry delay.
+    - Image loader: modern rbxthumb first, legacy Thumbs endpoint last, 3.5 s wait for the first URL, 1.5 s for the fallbacks.
     - Corrected texts: Controlled Speed uses server response, Max Reps box shows 650, Rebirth Target hint.
 ]]
 
@@ -112,23 +118,26 @@ local function findRebirthObj()
 	local ls = LocalPlayer:FindFirstChild("leaderstats")
 	local direct = ls and ls:FindFirstChild("Rebirths")
 	if direct and isNum(direct) then return direct end
-	for _, root in ipairs({ls, LocalPlayer}) do
-		if root then
-			for _, d in ipairs(root:GetDescendants()) do
-				if isNum(d) and d.Name:lower():find("rebirth", 1, true) then return d end
-			end
+	-- built as a list, because ipairs({nil, x}) would stop right away when leaderstats is missing
+	local roots = {}
+	if ls then roots[#roots + 1] = ls end
+	roots[#roots + 1] = LocalPlayer
+	for _, root in ipairs(roots) do
+		for _, d in ipairs(root:GetDescendants()) do
+			if isNum(d) and d.Name:lower():find("rebirth", 1, true) then return d end
 		end
 	end
 	return nil
 end
 
 ---------------------------------------------------------------------
--- Save display settings (zoom). Safe if the executor has no writefile.
+-- Save display settings (zoom) and farming settings. Safe if the executor has no writefile.
 local SAVE_FILE = "MuhavesSettings_MuscleLegends.json"
 local Saved = {}
 pcall(function()
 	if isfile and isfile(SAVE_FILE) then Saved = HttpService:JSONDecode(readfile(SAVE_FILE)) end
 end)
+if type(Saved) ~= "table" then Saved = {} end
 local function saveSettings()
 	pcall(function()
 		if writefile then writefile(SAVE_FILE, HttpService:JSONEncode(Saved)) end
@@ -865,17 +874,21 @@ local rbCard = box(p1, 0, 0, cardW1, RB_CARD_H, SEC, 16)
 cardBG(rbCard, ASSETS.FarmBG, FARM_SHADE)
 rbStatus = cardHeader(rbCard, "👑", "Fast Rebirth", "Automatic rebirths at maximum speed.", "Status: Inactive")
 
+-- saved settings (the matching callbacks are applied by the farming part at the bottom)
+local savedTarget = tostring(math.floor(tonumber(Saved.RebirthTarget) or 0))
+local savedMaxReps = tostring(math.floor(tonumber(Saved.MaxReps) or 650))
+
 local rbOpts = box(rbCard, PAD, CONTENT_Y, rbOptsW, RH * 5, CARD, 12)
 rbOpts.BackgroundTransparency = PANEL_T
-optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], nil, nil, "🔄", "0", function(v) Callbacks.RebirthTarget(v) end)
+optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], nil, nil, "🔄", savedTarget, function(v) Callbacks.RebirthTarget(v) end)
 hline(rbOpts, 14, RH, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], false, function(s) Callbacks.AutoRebirth(s) end)
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], false, function(s) Callbacks.EquipRebirthPets(s) end)
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], Saved.EquipRebirthPets == true, function(s) Callbacks.EquipRebirthPets(s) end)
 hline(rbOpts, 14, RH * 3, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 3, rbRows[4][1], rbRows[4][2], false, function(s) Callbacks.EquipRepsPets(s) end)
+optRow(rbOpts, rbOptsW, RH * 3, rbRows[4][1], rbRows[4][2], Saved.PetMode == "reps", function(s) Callbacks.EquipRepsPets(s) end)
 hline(rbOpts, 14, RH * 4, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 4, rbRows[5][1], rbRows[5][2], false, function(s) Callbacks.EquipStrengthPets(s) end)
+optRow(rbOpts, rbOptsW, RH * 4, rbRows[5][1], rbRows[5][2], Saved.PetMode == "strength", function(s) Callbacks.EquipStrengthPets(s) end)
 
 -- Stat row: name (width limited so it never overlaps the number) + value (font shrinks automatically if long)
 local function srow(parent, icon, name, value, cy, vx, vw, size, align, font, nameW)
@@ -908,7 +921,7 @@ optRow(fsOpts, fsOptsW, 0, fsRows[1][1], fsRows[1][2], false, function(s) Callba
 hline(fsOpts, 14, RH, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, RH, fsRows[2][1], fsRows[2][2], true, function(s) Callbacks.ControlledSpeed(s) end)
 hline(fsOpts, 14, RH * 2, fsOptsW - 28)
-optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", "650", function(v) Callbacks.MaxReps(v) end, 1, 650)
+optRow(fsOpts, fsOptsW, RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", savedMaxReps, function(v) Callbacks.MaxReps(v) end, 1, 650)
 
 local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
 fsStats.BackgroundTransparency = PANEL_T
@@ -1144,6 +1157,7 @@ return {
 	Extras = {Status = otStatus},
 	Callbacks = Callbacks,
 	Toggles = Toggles,
+	Saved = Saved, Save = saveSettings,
 }
 end)()
 
@@ -1160,6 +1174,14 @@ local services = {
 local lp = services.players.LocalPlayer
 local gui = UI.Gui
 local Callbacks = UI.Callbacks
+
+-- Saved settings: persist(key, value) writes to the same file as the zoom (skips the write if nothing changed)
+local Saved = UI.Saved
+local function persist(k, v)
+	if Saved[k] == v then return end
+	Saved[k] = v
+	UI.Save()
+end
 
 -- Time slicer for background scans: call step() inside a loop. It yields one frame whenever
 -- the scan has used more than 4 ms, so scans never cause frame drops (better than "wait every N items").
@@ -1440,7 +1462,7 @@ local rb = {
 	rebirths = ls:WaitForChild("Rebirths"),
 	strength = ls:WaitForChild("Strength"),
 	running = false, workerActive = false,
-	usePets = false,     -- Equip Rebirth Pets (starts OFF, the player turns it on)
+	usePets = false,     -- Equip Rebirth Pets (starts OFF, unless it was saved as ON)
 	targetCount = 0,     -- Rebirth Target: stop when rebirths >= this number (0 = no limit)
 }
 
@@ -1462,11 +1484,23 @@ end
 
 local function performRebirth()
 	local target = 5000 + rb.rebirths.Value * 2550
-	local reps = lp.MembershipType == Enum.MembershipType.Premium and 6 or 12
+	-- Time based rep rate (old: 12 or 6 reps per frame, so the base rate is that x 60 FPS).
+	-- Scaled with dt like the strength loop, so a low FPS (Low Resource Mode, 20 FPS) keeps the same speed.
+	local rate = (lp.MembershipType == Enum.MembershipType.Premium and 6 or 12) * 60
+	local tokens, last = 0, os.clock()
 
 	while rb.running and alive() and not rebirthTargetReached() and rb.strength.Value < target do
-		for _ = 1, reps do muscleEvent:FireServer("rep") end
-		task.wait(0.02)
+		local now = os.clock()
+		tokens += rate * math.min(0.1, now - last)
+		last = now
+		local n = math.floor(tokens)
+		if n > 0 then
+			tokens -= n
+			pcall(function()
+				for _ = 1, n do muscleEvent:FireServer("rep") end
+			end)
+		end
+		services.runservice.Heartbeat:Wait()
 	end
 
 	if rb.running and alive() and not rebirthTargetReached() and rb.strength.Value >= target then
@@ -1518,6 +1552,12 @@ Callbacks.AutoRebirth = function(state)
 		stopAtTarget()
 		return
 	end
+	if state then
+		-- Auto Rebirth and Auto Farm Strength both send reps: never run them together (double reps = lag)
+		Callbacks.AutoFarmStrength(false)
+		local s = UI.Toggles["opt:Auto Farm Strength"]
+		if s then s(false, true) end
+	end
 	rb.running = state
 	if state then
 		setRebirthStatus("Status: Rebirthing", C_ON)
@@ -1526,8 +1566,14 @@ Callbacks.AutoRebirth = function(state)
 		setRebirthStatus("Status: Paused", C_PAUSE)
 	end
 end
-Callbacks.EquipRebirthPets = function(state) rb.usePets = state end
-Callbacks.RebirthTarget = function(v) rb.targetCount = math.max(0, math.floor(tonumber(v) or 0)) end
+Callbacks.EquipRebirthPets = function(state)
+	rb.usePets = state
+	persist("EquipRebirthPets", state)
+end
+Callbacks.RebirthTarget = function(v)
+	rb.targetCount = math.max(0, math.floor(tonumber(v) or 0))
+	persist("RebirthTarget", rb.targetCount)
+end
 
 ---------------------------------------------------------------------
 -- STRENGTH (Auto Farm Strength / Controlled Speed / Max Reps buttons)
@@ -1678,6 +1724,12 @@ end
 Callbacks.AutoFarmStrength = function(state)
 	state = state and true or false
 	if state == st.running then return end  -- already in that state: never start a second loop
+	if state and rb.running then
+		-- Auto Rebirth and Auto Farm Strength both send reps: never run them together (double reps = lag)
+		Callbacks.AutoRebirth(false)
+		local s = UI.Toggles["opt:Auto Rebirth"]
+		if s then s(false, true) end
+	end
 	st.running = state
 	st.runId += 1
 	if state then
@@ -1732,6 +1784,7 @@ Callbacks.MaxReps = function(v)
 	st.maxRate = math.max(1, v)
 	st.initialRate = math.min(200, st.maxRate)
 	st.rate = math.min(st.rate, st.maxRate)
+	persist("MaxReps", st.maxRate)
 end
 
 -- UI numbers are refreshed 4 times per second (not on every value change) to keep things light
@@ -1760,9 +1813,15 @@ local function eatEgg()
 	end
 end
 
+-- Returns true only when a shake was really eaten, so the 150 s delay is only counted after a real meal.
+local nextShake = 0
 local function eatShake()
 	local tool = findTool("Tropical Shake")
-	if tool then muscleEvent:FireServer("tropicalShake", tool) end
+	if tool then
+		muscleEvent:FireServer("tropicalShake", tool)
+		return true
+	end
+	return false
 end
 
 task.spawn(function()
@@ -1773,7 +1832,10 @@ end)
 
 task.spawn(function()
 	while alive() do
-		if flag.shake then eatShake() task.wait(150) else task.wait(1) end
+		if flag.shake and os.clock() >= nextShake and eatShake() then
+			nextShake = os.clock() + 150
+		end
+		task.wait(1)
 	end
 end)
 
@@ -1814,7 +1876,10 @@ end)
 
 -- the loops above do the eating (they pick up the flag within 1 s), so the callbacks only set the flag
 Callbacks.EatEggs = function(s) flag.eggs = s end
-Callbacks.EatShake = function(s) flag.shake = s end
+Callbacks.EatShake = function(s)
+	flag.shake = s
+	if s then nextShake = 0 end -- turned on again = eat right away, the old delay does not hold it back
+end
 Callbacks.SpinWheel = function(s) flag.spin = s end
 Callbacks.EatAllBoosts = function(s) flag.boosts = s end
 Callbacks.AntiAFK = function(s) flag.antiAfk = s end
@@ -1923,7 +1988,10 @@ do
 		if showPetsEvent then showPetsEvent:FireServer(state and "hidePets" or "showPets") end
 		setHidden(state)
 	end
-	gui.Destroying:Connect(function() setHidden(false) end)
+	-- on close: also send showPets to the server (the game keeps pets hidden otherwise) + restore locally
+	gui.Destroying:Connect(function()
+		pcall(function() Callbacks.HidePets(false) end)
+	end)
 end
 
 ---------------------------------------------------------------------
@@ -2071,6 +2139,7 @@ Callbacks.EquipRepsPets = function(state)
 	elseif petMode == "reps" then
 		petChosen = false -- turned off: Auto Rebirth / Auto Farm no longer equip pets by themselves
 	end
+	persist("PetMode", petChosen and petMode or "none")
 end
 Callbacks.EquipStrengthPets = function(state)
 	if state then
@@ -2078,6 +2147,7 @@ Callbacks.EquipStrengthPets = function(state)
 	elseif petMode == "strength" then
 		petChosen = false
 	end
+	persist("PetMode", petChosen and petMode or "none")
 end
 Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth", equipBestRebirthPets) end end
 
@@ -2253,6 +2323,15 @@ do
 end
 
 ---------------------------------------------------------------------
+-- Apply the saved settings (the UI already shows them). Pets are NOT equipped right now,
+-- only when farming starts. persist() skips the write because the values are unchanged.
+if tonumber(Saved.RebirthTarget) then rb.targetCount = math.max(0, math.floor(Saved.RebirthTarget)) end
+if tonumber(Saved.MaxReps) then Callbacks.MaxReps(Saved.MaxReps) end
+if Saved.EquipRebirthPets == true then rb.usePets = true end
+if Saved.PetMode == "reps" or Saved.PetMode == "strength" then
+	petMode, petChosen = Saved.PetMode, true
+end
+
 -- Sync the initial toggle states in the UI (Hide Pets, Hide Popups, Hide Players and Anti AFK are ON from the start).
 -- Delayed until the intro animation is finished so the heavy scans do not stutter it.
 task.spawn(function()
