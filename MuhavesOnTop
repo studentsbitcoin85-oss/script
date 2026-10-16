@@ -862,7 +862,7 @@ optRow(rbOpts, rbOptsW, 0, rbRows[1][1], rbRows[1][2], nil, nil, "🔄", "0", fu
 hline(rbOpts, 14, RH, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH, rbRows[2][1], rbRows[2][2], false, function(s) Callbacks.AutoRebirth(s) end)
 hline(rbOpts, 14, RH * 2, rbOptsW - 28)
-optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], true, function(s) Callbacks.EquipRebirthPets(s) end)
+optRow(rbOpts, rbOptsW, RH * 2, rbRows[3][1], rbRows[3][2], false, function(s) Callbacks.EquipRebirthPets(s) end)
 hline(rbOpts, 14, RH * 3, rbOptsW - 28)
 optRow(rbOpts, rbOptsW, RH * 3, rbRows[4][1], rbRows[4][2], false, function(s) Callbacks.EquipRepsPets(s) end)
 hline(rbOpts, 14, RH * 4, rbOptsW - 28)
@@ -1430,7 +1430,7 @@ local rb = {
 	rebirths = ls:WaitForChild("Rebirths"),
 	strength = ls:WaitForChild("Strength"),
 	running = false, workerActive = false,
-	usePets = true,      -- Equip Rebirth Pets
+	usePets = false,     -- Equip Rebirth Pets (starts OFF, the player turns it on)
 	targetCount = 0,     -- Rebirth Target: stop when rebirths >= this number (0 = no limit)
 }
 
@@ -1486,7 +1486,7 @@ local function startRebirthWorker()
 				break
 			end
 			local ok, err = pcall(function()
-				equipFarmingPets()
+				if petChosen then equipFarmingPets() end -- only when Equip Reps / Strength Pets is ON
 				performRebirth()
 			end)
 			if not ok then
@@ -2050,8 +2050,20 @@ local function choosePets(mode, equipFn)
 	end
 	task.spawn(equipFn)
 end
-Callbacks.EquipRepsPets = function(state) if state then choosePets("reps", equipBestFarmingPets) end end
-Callbacks.EquipStrengthPets = function(state) if state then choosePets("strength", equipBestStrengthPets) end end
+Callbacks.EquipRepsPets = function(state)
+	if state then
+		choosePets("reps", equipBestFarmingPets)
+	elseif petMode == "reps" then
+		petChosen = false -- turned off: Auto Rebirth / Auto Farm no longer equip pets by themselves
+	end
+end
+Callbacks.EquipStrengthPets = function(state)
+	if state then
+		choosePets("strength", equipBestStrengthPets)
+	elseif petMode == "strength" then
+		petChosen = false
+	end
+end
 Callbacks.AutoEquipRebirth = function(state) if state then choosePets("rebirth", equipBestRebirthPets) end end
 
 ---------------------------------------------------------------------
