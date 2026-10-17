@@ -62,6 +62,8 @@
     - parseNumber: the thousand separator check now runs on the number part only, so 1.234.567k works.
     - Removed the unused `minimized` variable.
     - Hide Players also hides nametags (BillboardGui + Humanoid display distance); saved format is {property, value}.
+    - RobloxForwardPortals DescendantAdded listener: Destroy is now deferred and wrapped in pcall (no output noise
+      when an instance is locked).
 ]]
 
 local VERSION = "2"
@@ -897,7 +899,7 @@ end
 -- PAGE 1: Fast Farming
 -- Locals needed later (return table / other pages) are declared here; everything else lives inside the do-block
 -- and is released afterwards (Luau allows max 200 locals per function).
-local rbStatus, rbRuntime, rbRebirths, rbGained, rbHour, rbDay
+local rbStatus, rbRuntime, rbRebirths, rbGained, rbHour, rbDay, rbWeek
 local fsStatus, fsRuntime, fsStr, fsStrG, fsDura, fsDurG, fsSP, fsDP, fsSA, fsDA
 local cardW1
 do
@@ -924,13 +926,14 @@ local rbOptsW, fsOptsW = rowsW(rbRows), rowsW(fsRows)
 
 local RB_VW = 84 -- width of the number column in Rebirth Stats
 local rbNameW = math.max(tw("Rebirths", 15, F.GothamMedium), tw("Gained", 15, F.GothamMedium),
-	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium))
+	tw("Pace / Hour", 15, F.GothamMedium), tw("Pace / Day", 15, F.GothamMedium), tw("Pace / Week", 15, F.GothamMedium))
 local rbStatsMin = 14 + 30 + rbNameW + 16 + RB_VW + 14
-local PACE = "-- /s | -- /m | -- /h | -- /d"
+-- Strength pace is a small table: one column per time unit (per second / minute / hour / day / week)
+local PACE_COLS = {"/s", "/m", "/h", "/d", "/w"}
 local fsNameW = tw("Dura Average", 13, F.GothamMedium)
--- the pace column width is computed from a realistic sample (not "--") so nothing gets cut off
-local PACE_LONG = "000.00M/s | 00.00B/m | 0.00T/h | 00.00T/d"
-local fsStatsMin = 14 + 30 + fsNameW + 16 + tw(PACE_LONG, 13) + 10 + 14
+-- the column width is computed from a realistic sample (not "--") so nothing gets cut off
+local PACE_COLW = tw("000.00M", 13, F.Gotham) + 10
+local fsStatsMin = 14 + 30 + fsNameW + 16 + PACE_COLW * #PACE_COLS + 14
 
 local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
 cardW1 = inner1 + 2 * PAD
@@ -981,13 +984,16 @@ end
 
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, RB_H, CARD, 12)
 rbStats.BackgroundTransparency = PANEL_T
-text(rbStats, "Rebirth Stats", 17, 14, 28, 220, TX, F.GothamBold)
+text(rbStats, "Rebirth Stats", 17, 14, 26, 220, TX, F.GothamBold)
+hline(rbStats, 14, 50, rbStatsW - 28)
 local rvx = rbStatsW - 14 - RB_VW
 local rnW = rvx - 44 - 4
-rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 84, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-rbGained   = srow(rbStats, "📈", "Gained", "0", 130, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 176, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
-rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 222, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbRebirths = srow(rbStats, "🔁", "Rebirths", "0", 76, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbGained   = srow(rbStats, "📈", "Gained", "0", 120, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+hline(rbStats, 14, 142, rbStatsW - 28)
+rbHour     = srow(rbStats, "🕒", "Pace / Hour", "--", 164, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbDay      = srow(rbStats, "📅", "Pace / Day", "--", 208, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
+rbWeek     = srow(rbStats, "🗓", "Pace / Week", "--", 252, rvx, RB_VW, 15, RIGHT, F.GothamBold, rnW)
 
 -- Strength
 local fsCard = box(p1, 0, RB_CARD_H + GAP, cardW1, CARD_H, SEC, 16)
@@ -1010,15 +1016,32 @@ fsStats.BackgroundTransparency = PANEL_T
 text(fsStats, "Strength Stats", 17, 14, 20, 220, TX, F.GothamBold)
 local vx = 44 + fsNameW + 16
 local vnW = vx - 48
-local paceW = fsStatsW - vx - 14 -- use all the remaining box width for the pace rows
+local paceW = fsStatsW - vx - 14 -- use all the remaining box width for the pace table
+local colW = math.floor(paceW / #PACE_COLS)
+hline(fsStats, 14, 34, fsStatsW - 28)
+-- column headers sit on the title line, right above the pace columns
+for i, c in ipairs(PACE_COLS) do
+	text(fsStats, c, 12, vx + (i - 1) * colW, 20, colW, SUB, F.GothamBold, CENTER)
+end
 fsStr  = srow(fsStats, "🏋", "Strength", "0", 46, vx, 80, 13, nil, F.GothamBold, vnW)
 fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 46, paceW - 90, TX), 13, 8)
 fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
 fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
-fsSP = srow(fsStats, "🕒", "Str Pace", PACE, 92, vx, paceW, 13, nil, nil, vnW)
-fsDP = srow(fsStats, "🕒", "Dura Pace", PACE, 115, vx, paceW, 13, nil, nil, vnW)
-fsSA = srow(fsStats, "🕒", "Str Average", PACE, 138, vx, paceW, 13, nil, nil, vnW)
-fsDA = srow(fsStats, "🕒", "Dura Average", PACE, 161, vx, paceW, 13, nil, nil, vnW)
+hline(fsStats, 14, 81, fsStatsW - 28)
+-- one pace row = icon + name + one centered cell per column; returns the list of cells
+local function prow(icon, name, cy)
+	text(fsStats, icon, 15, 10, cy, 28, MUTED, F.Gotham, CENTER)
+	autoFit(text(fsStats, name, 13, 44, cy, vnW, Color3.fromRGB(205, 205, 208), F.GothamMedium), 13, 8)
+	local cells = {}
+	for i = 1, #PACE_COLS do
+		cells[i] = autoFit(text(fsStats, "--", 13, vx + (i - 1) * colW, cy, colW, TX, F.Gotham, CENTER), 13, 8)
+	end
+	return cells
+end
+fsSP = prow("🕒", "Str Pace", 92)
+fsDP = prow("🕒", "Dura Pace", 115)
+fsSA = prow("🕒", "Str Average", 138)
+fsDA = prow("🕒", "Dura Average", 161)
 
 sizes[1] = {w = cardW1, h = RB_CARD_H + CARD_H + GAP}
 end
@@ -1218,11 +1241,12 @@ do
 					local perHour = activeGain / elapsed * 3600
 					rbHour.Text = abbr(perHour)
 					rbDay.Text = abbr(perHour * 24)
+					rbWeek.Text = abbr(perHour * 168)
 				else
-					rbHour.Text, rbDay.Text = "--", "--"
+					rbHour.Text, rbDay.Text, rbWeek.Text = "--", "--", "--"
 				end
 			else
-				rbRebirths.Text, rbGained.Text, rbHour.Text, rbDay.Text = "N/A", "--", "--", "--"
+				rbRebirths.Text, rbGained.Text, rbHour.Text, rbDay.Text, rbWeek.Text = "N/A", "--", "--", "--", "--"
 			end
 			task.wait(0.5)
 		end
@@ -1272,7 +1296,7 @@ end
 
 return {
 	Gui = gui,
-	Rebirth = {Status = rbStatus, Runtime = rbRuntime, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay},
+	Rebirth = {Status = rbStatus, Runtime = rbRuntime, Rebirths = rbRebirths, Gained = rbGained, PaceHour = rbHour, PaceDay = rbDay, PaceWeek = rbWeek},
 	Strength = {Status = fsStatus, Strength = fsStr, StrengthGain = fsStrG, Durability = fsDura, DurabilityGain = fsDurG,
 		StrPace = fsSP, DuraPace = fsDP, StrAverage = fsSA, DuraAverage = fsDA, Runtime = fsRuntime},
 	Extras = {Status = otStatus},
@@ -1414,7 +1438,9 @@ if _G.ads then
 	_G.ads = nil
 end
 _G.ads = track(game.DescendantAdded:Connect(function(d)
-	if alive() and d.Name == "RobloxForwardPortals" then d:Destroy() end
+	if alive() and d.Name == "RobloxForwardPortals" then
+		task.defer(pcall, d.Destroy, d)
+	end
 end))
 
 if lp.Character and lp.Character:FindFirstChild("bodyMovementScript") then
@@ -1427,9 +1453,12 @@ local muscleEvent = lp:WaitForChild("muscleEvent")
 -- with the rounding fix), so every number in the window is written the same way.
 local formatNumber = UI.Abbr
 
-local function formatPace(r)
-	return formatNumber(r) .. "/s | " .. formatNumber(r * 60) .. "/m | "
-		.. formatNumber(r * 3600) .. "/h | " .. formatNumber(r * 86400) .. "/d"
+-- fills one pace row (5 cells: per second / minute / hour / day / week) from a rate in units per second
+local PACE_MULT = {1, 60, 3600, 86400, 604800}
+local function setPace(cells, r)
+	for i, m in ipairs(PACE_MULT) do
+		cells[i].Text = formatNumber(r * m)
+	end
 end
 
 local function findTool(name)
@@ -1844,8 +1873,8 @@ end
 local function updateAverages()
 	local e = runElapsed()
 	if e < 1 then return end
-	UI.Strength.StrAverage.Text = formatPace(st.run.str / e)
-	UI.Strength.DuraAverage.Text = formatPace(st.run.dura / e)
+	setPace(UI.Strength.StrAverage, st.run.str / e)
+	setPace(UI.Strength.DuraAverage, st.run.dura / e)
 end
 
 -- Pace = gain in the last window / the real length of that window (also shows 0 when nothing was gained)
@@ -1855,8 +1884,8 @@ local function calculatePace()
 	local elapsed = now - st.lastCalcAt
 	if elapsed < st.calcInterval then return end
 
-	UI.Strength.StrPace.Text = formatPace((st.run.str - st.win.str) / elapsed)
-	UI.Strength.DuraPace.Text = formatPace((st.run.dura - st.win.dura) / elapsed)
+	setPace(UI.Strength.StrPace, (st.run.str - st.win.str) / elapsed)
+	setPace(UI.Strength.DuraPace, (st.run.dura - st.win.dura) / elapsed)
 	st.win.str, st.win.dura = st.run.str, st.run.dura
 	st.lastCalcAt = now
 	updateAverages()
