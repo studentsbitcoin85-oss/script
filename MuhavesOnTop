@@ -54,6 +54,14 @@
       is now "Not ready".
     - InvokeServer calls (rebirth, fortune wheel) go through invokeWithTimeout (5 s), so a silent server can no
       longer hang the loops.
+
+    Review fixes (this round):
+    - Controlled Speed switched off while the status says "Slowing": the status goes back to "Farming".
+    - Spin Fortune Wheel stops itself (and its toggle turns off) after 3 failed / timed out spins in a row,
+      so waiting threads no longer pile up when the server does not answer.
+    - parseNumber: the thousand separator check now runs on the number part only, so 1.234.567k works.
+    - Removed the unused `minimized` variable.
+    - Hide Players also hides nametags (BillboardGui + Humanoid display distance); saved format is {property, value}.
 ]]
 
 local VERSION = "2"
@@ -351,12 +359,13 @@ local SUFFIX_MULT = {
 }
 local function parseNumber(s)
 	s = s:lower():gsub("[%s_,]", "")
-	local _, dots = s:gsub("%.", "")
-	if dots >= 2 and s:match("^%d%d?%d?%.%d%d%d[%.%d]*$") and not s:match("%.%d%d%d%d") then
-		s = s:gsub("%.", "")
-	end
+	-- split the number part from the suffix first, so thousand separators also work with a suffix (1.234.567k)
 	local num, suf = s:match("^([%d%.]+)(%a*)$")
 	if not num then return nil end
+	local _, dots = num:gsub("%.", "")
+	if dots >= 2 and num:match("^%d%d?%d?%.%d%d%d[%.%d]*$") and not num:match("%.%d%d%d%d") then
+		num = num:gsub("%.", "")
+	end
 	local n = tonumber(num)
 	if not n then return nil end
 	if suf ~= "" then
@@ -527,13 +536,13 @@ end
 local MINSCALE, MAXSCALE = 0.85, 2.5
 local userScale = tonumber(Saved.Zoom)
 if userScale then userScale = math.clamp(userScale, 0.5, MAXSCALE) end
-local body, minimized = nil, false
+local body = nil
 
 local function layoutWindow(animate)
 	local v = cam.ViewportSize
 	local s = userScale or math.clamp((v.X - 16) / cur.w, MINSCALE, 1)
 	local W = math.max(320, math.min(cur.w, (v.X - 16) / s))
-	local H = minimized and HH or math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
+	local H = math.min(cur.h, math.max(HH + 160, (v.Y - 16) / s))
 	if body then body.CanvasSize = UDim2.fromOffset(cur.w, cur.h - HH) end
 	fitGreet(W)
 	if animate then
@@ -830,7 +839,6 @@ local function applyNav(idx, instant)
 			TweenService:Create(g[1], SMOOTH, g[2]):Play()
 		end
 	end
-	minimized = false
 	body.Visible = true
 	body.CanvasPosition = Vector2.new(0, 0)
 	layoutWindow(not instant)
@@ -1954,6 +1962,8 @@ Callbacks.ControlledSpeed = function(state)
 	st.controlled = state
 	st.stalled = 0
 	st.rate = math.min(st.rate, st.maxRate)
+	-- the "Slowing" status is only set by Controlled Speed, so when it is switched off it must not stay on screen
+	if st.running then setStrengthStatus("Status: Farming", C_ON) end
 end
 
 -- closing the UI also switches both farming workers off (a new run id makes any running loop exit at once)
@@ -2028,14 +2038,27 @@ task.spawn(function()
 	end
 end)
 
+-- Spin Fortune Wheel. When the server does not answer (timeout) or errors 3 times in a row, the spin switches itself
+-- off together with its toggle, so abandoned InvokeServer threads cannot pile up and the player can see it stopped.
 task.spawn(function()
+	local fails = 0
 	while alive() do
 		if flag.spin then
-			pcall(function()
+			local okCall = pcall(function()
 				local rs = services.replicatedstorage
-				invokeWithTimeout(rs.rEvents.openFortuneWheelRemote, 5,
+				local answered = invokeWithTimeout(rs.rEvents.openFortuneWheelRemote, 5,
 					"openFortuneWheel", rs.shared.catalogs.fortuneWheelChances["Fortune Wheel"])
+				if not answered then error("timeout") end
 			end)
+			fails = okCall and 0 or fails + 1
+			if fails >= 3 then
+				flag.spin = false
+				fails = 0
+				local setter = UI.Toggles["Spin Fortune Wheel"]
+				if setter then setter(false, true) end
+			end
+		else
+			fails = 0
 		end
 		task.wait(1)
 	end
@@ -2370,9 +2393,10 @@ Callbacks.EquipStrengthPets = function(state)
 end
 
 ---------------------------------------------------------------------
--- HIDE PLAYERS: hides other players' characters (can be restored).
+-- HIDE PLAYERS: hides other players' characters and nametags (can be restored).
 -- Exactly ONE DescendantAdded connection per player (descConn[player]). On every respawn the old one is
 -- replaced, and it is also removed when the player leaves or the feature is turned off, so nothing piles up.
+-- saved[instance] = {property, original value}
 do
 	local on = false
 	local saved = setmetatable({}, {__mode = "k"})
@@ -2382,8 +2406,15 @@ do
 
 	local function hideInst(d)
 		if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then
-			if saved[d] == nil then saved[d] = d.Transparency end
+			if saved[d] == nil then saved[d] = {"Transparency", d.Transparency} end
 			d.Transparency = 1
+		elseif d:IsA("BillboardGui") then
+			if saved[d] == nil then saved[d] = {"Enabled", d.Enabled} end
+			d.Enabled = false
+		elseif d:IsA("Humanoid") then
+			-- hides the default name / health bar above the head
+			if saved[d] == nil then saved[d] = {"DisplayDistanceType", d.DisplayDistanceType} end
+			d.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 		end
 	end
 	local function hideChar(p, c)
@@ -2422,7 +2453,7 @@ do
 			for _, c in pairs(descConn) do c:Disconnect() end
 			table.clear(descConn)
 			for d, v in pairs(saved) do
-				if d.Parent then pcall(function() d.Transparency = v end) end
+				if d.Parent then pcall(function() d[v[1]] = v[2] end) end
 			end
 			table.clear(saved)
 		end
