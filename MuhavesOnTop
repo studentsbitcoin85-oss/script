@@ -1686,7 +1686,7 @@ local function performRebirth()
 	if rb.running and alive() and not rebirthTargetReached() and rb.strength.Value >= target then
 		if rb.usePets then
 			equipBestRebirthPets()
-			task.wait(0.25)
+			task.wait(0.1)
 		end
 		local before, started = rb.rebirths.Value, tick()
 		-- limited to 10 seconds so it does not call InvokeServer forever if the requirement is missed
@@ -1730,7 +1730,7 @@ local function startRebirthWorker()
 					if rb.running and alive() then setRebirthStatus("Status: Rebirthing", C_ON) end
 				end
 			end
-			task.wait(0.5)
+			task.wait(0.1)
 		end
 		rb.workerActive = false
 	end)
