@@ -47,6 +47,13 @@
     - Auto Rebirth: switching it off while it is already off does nothing (turning Auto Farm Strength on no longer
       overwrites the Rebirth status with "Paused" / "Target reached").
     - Header text now reads "Muhaves V2".
+    - All remaining Indonesian comments are now English.
+    - Extras tile row no longer captures touch input (vertical swipes over the tiles scroll the page); sideways
+      scrolling is a manual drag handler.
+    - Status pills are always as wide as the longest status text (no more shrunken font); "Requirement not met"
+      is now "Not ready".
+    - InvokeServer calls (rebirth, fortune wheel) go through invokeWithTimeout (5 s), so a silent server can no
+      longer hang the loops.
 ]]
 
 local VERSION = "2"
@@ -56,12 +63,12 @@ local UI = (function()
 local ASSETS = {
 	LogoHeader   = "133262254947166",
 	Character    = "96640742460759",
-	LogoNotice   = "131866689269133", -- gambar tulisan Muhaves (logo & footer tab Notice)
+	LogoNotice   = "131866689269133", -- Muhaves wordmark image (logo & footer of the Notice tab)
 	EmblemStats  = "122842326893052",
 	EmblemBottom = "112087359143806",
-	NoticeBG     = "106276772809647", -- latar kartu Notice
-	FarmBG       = "131699469923325", -- logo MHV, latar kartu Fast Farming
-	ExtrasBG     = "79313300337438",  -- latar kartu Extras
+	NoticeBG     = "106276772809647", -- Notice card background
+	FarmBG       = "131699469923325", -- MHV logo, Fast Farming card background
+	ExtrasBG     = "79313300337438",  -- Extras card background
 }
 
 local Players = game:GetService("Players")
@@ -437,8 +444,10 @@ local function cardHeader(card, icon, title, sub, status, extra, boldSub)
 	local sLbl, eLbl
 	local x = cw - PAD
 	if status then
-		x = x - pillW(status, true)
-		sLbl = pill(card, x, PAD + 6, status, true)
+		-- the status pill is always as wide as the longest status text, so the text never has to shrink
+		local sw = math.max(pillW(status, true), pillW("Status: Target reached", true))
+		x = x - sw
+		sLbl = pill(card, x, PAD + 6, status, true, sw)
 	end
 	if extra then
 		local w = pillW(extra, false) + 30
@@ -580,7 +589,7 @@ local function zbtn(txt, x)
 	local b = new("TextButton", {Text = txt, TextSize = 20, Font = F.GothamBold, TextColor3 = Color3.fromRGB(235, 235, 238),
 		BackgroundColor3 = Color3.fromRGB(70, 70, 75), BorderSizePixel = 0, AutoButtonColor = false, AutoLocalize = false,
 		Position = UDim2.new(1, x + 2, 0, 24), Size = UDim2.fromOffset(30, 30)}, header)
-	round(b, 15) -- bulat abu-abu supaya - / + langsung kelihatan
+	round(b, 15) -- round gray buttons so - / + are easy to see
 	return b
 end
 local zoomOutBtn, zoomInBtn = zbtn("-", -172), zbtn("+", -136)
@@ -1042,7 +1051,9 @@ local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and se
 
 local tileRow = new("ScrollingFrame", {
 	Name = "TileRow", Position = UDim2.fromOffset(PAD, ROW_Y), Size = UDim2.fromOffset(rowViewW, ROW_VIEW_H),
-	BackgroundTransparency = 1, BorderSizePixel = 0, Active = true,
+	-- Active = false and ScrollingEnabled = false: this row does NOT capture touch input by itself, so a vertical swipe
+	-- on top of the tiles still scrolls the page. Sideways scrolling is done by the drag handler below.
+	BackgroundTransparency = 1, BorderSizePixel = 0, Active = false, ScrollingEnabled = false,
 	ScrollingDirection = Enum.ScrollingDirection.X,
 	CanvasSize = UDim2.fromOffset(#tiles * (tileW + GAP) - GAP + 2, 0),
 	ScrollBarThickness = 6, ScrollBarImageColor3 = Color3.fromRGB(120, 120, 126), ScrollBarImageTransparency = 0.2,
@@ -1055,6 +1066,27 @@ for i, t in ipairs(tiles) do
 	Toggles[t[1]] = toggle(tile, 14, 27, t[3], t[4])
 	text(tile, t[1], 17, 14, 61, tileW - 20, TX, F.GothamBold)
 	text(tile, t[2], 12, 14, 85, tileW - 20, SUB, F.GothamMedium)
+end
+-- Manual sideways drag for the tile row (touch or mouse): only the horizontal movement scrolls the row,
+-- the vertical movement is left to the page's own scrolling.
+do
+	local dragging, startX, startCanvas = false, 0, 0
+	tileRow.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, startX, startCanvas = true, i.Position.X, tileRow.CanvasPosition.X
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	keep(UserInputService.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			-- screen pixels -> window units (the window is scaled by UIScale)
+			local maxX = math.max(0, tileRow.CanvasSize.X.Offset - rowViewW)
+			local x = math.clamp(startCanvas - (i.Position.X - startX) / scale.Scale, 0, maxX)
+			tileRow.CanvasPosition = Vector2.new(x, 0)
+		end
+	end))
 end
 text(otCard, "Low Resource Mode = Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
 	rowViewW, SUB, F.GothamMedium, CENTER)
@@ -1084,7 +1116,7 @@ local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
 local ntCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
--- latar gambar untuk kartu Notice (di belakang semua isi), ditutup lapisan gelap tipis supaya teks tetap terbaca
+-- background image for the Notice card (behind all content), covered by a thin dark layer so the text stays readable
 cardBG(ntCard, ASSETS.NoticeBG, 0.45)
 cardHeader(ntCard, "📢", "Notice", "About this script.", nil, nil, true)
 
@@ -1301,6 +1333,21 @@ local function walk(root, fn)
 		end
 		step()
 	end
+end
+
+-- InvokeServer with a time limit: if the server never answers, the call is abandoned after `timeout` seconds
+-- (the waiting thread is left behind) so the calling loop can never hang forever.
+-- Returns true + the result when the server answered in time, false otherwise.
+local function invokeWithTimeout(remote, timeout, ...)
+	local args = table.pack(...)
+	local done, ok, result = false, false, nil
+	task.spawn(function()
+		ok, result = pcall(function() return remote:InvokeServer(table.unpack(args, 1, args.n)) end)
+		done = true
+	end)
+	local t0 = tick()
+	while not done and tick() - t0 < timeout do task.wait(0.05) end
+	return done and ok, result
 end
 
 local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
@@ -1636,14 +1683,14 @@ local function performRebirth()
 		local before, started = rb.rebirths.Value, tick()
 		-- limited to 10 seconds so it does not call InvokeServer forever if the requirement is missed
 		repeat
-			services.replicatedstorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest")
+			invokeWithTimeout(services.replicatedstorage.rEvents.rebirthRemote, 5, "rebirthRequest")
 			task.wait(0.05)
 		until rb.rebirths.Value > before or not rb.running or not alive() or tick() - started > 10
 
 		-- The rebirth did not happen (the game may need more than the strength formula above): show it and
 		-- wait 5 s before the worker tries again, instead of hammering the server with immediate retries.
 		if rb.running and alive() and rb.rebirths.Value <= before then
-			setRebirthStatus("Status: Requirement not met", C_PAUSE)
+			setRebirthStatus("Status: Not ready", C_PAUSE)
 			local waitStart = tick()
 			while rb.running and alive() and tick() - waitStart < 5 do task.wait(0.25) end
 			if rb.running and alive() then setRebirthStatus("Status: Rebirthing", C_ON) end
@@ -1986,7 +2033,7 @@ task.spawn(function()
 		if flag.spin then
 			pcall(function()
 				local rs = services.replicatedstorage
-				rs.rEvents.openFortuneWheelRemote:InvokeServer(
+				invokeWithTimeout(rs.rEvents.openFortuneWheelRemote, 5,
 					"openFortuneWheel", rs.shared.catalogs.fortuneWheelChances["Fortune Wheel"])
 			end)
 		end
