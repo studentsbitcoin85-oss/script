@@ -949,9 +949,9 @@ end
 -- Rebirth Stats | white minimal premium (visual only; the S.rb* value labels are the same ones the update loop writes to).
 -- The palette lives in ONE table (RBC) so this block adds only a few locals (Luau limit: 200 per function).
 local RBC = {
-	panel = Color3.fromRGB(18, 18, 20), rowBg = Color3.fromRGB(25, 25, 28), rowLine = Color3.fromRGB(48, 48, 52),
-	iconBg = Color3.fromRGB(43, 43, 47), label = Color3.fromRGB(190, 190, 195),
-	value = Color3.fromRGB(250, 250, 252), icon = Color3.fromRGB(225, 225, 230),
+	panel = Color3.fromRGB(18, 18, 20), rowBg = Color3.fromRGB(30, 30, 33), rowLine = Color3.fromRGB(110, 110, 116),
+	iconBg = Color3.fromRGB(62, 62, 67), label = Color3.fromRGB(255, 255, 255),
+	value = Color3.fromRGB(255, 255, 255), icon = Color3.fromRGB(255, 255, 255),
 }
 local rbStats = box(rbCard, PAD + rbOptsW + GAP, CONTENT_Y, rbStatsW, RB_H, RBC.panel, 12)
 rbStats.BackgroundTransparency = 0.05
@@ -972,7 +972,7 @@ local function whiteStatRow(cy, icon, name, value)
 		BackgroundColor3 = RBC.iconBg, BorderSizePixel = 0,
 	}, row)
 	round(iconBox, 6)
-	text(iconBox, icon, 13, 0, 11, 22, RBC.icon, F.GothamBold, CENTER)
+	text(iconBox, icon, 14, 0, 11, 22, RBC.icon, F.Gotham, CENTER)
 
 	-- name takes what is left of the row; value is right-aligned in RB_VW. Both shrink their font instead of overflowing.
 	local nameW = math.max(20, rowW - 36 - RB_VW - 12)
@@ -981,12 +981,12 @@ local function whiteStatRow(cy, icon, name, value)
 	return autoFit(valueLabel, 14, 8, RB_VW)
 end
 
-S.rbRebirths = whiteStatRow(76, "↻", "Rebirths", "0")
-S.rbGained   = whiteStatRow(120, "+", "Gained", "0")
+S.rbRebirths = whiteStatRow(76, "🔁", "Rebirths", "0")
+S.rbGained   = whiteStatRow(120, "📈", "Gained", "0")
 hline(rbStats, 14, 142, rbStatsW - 28)
-S.rbHour     = whiteStatRow(164, "◷", "Pace / Hour", "--")
-S.rbDay      = whiteStatRow(208, "D", "Pace / Day", "--")
-S.rbWeek     = whiteStatRow(252, "W", "Pace / Week", "--")
+S.rbHour     = whiteStatRow(164, "🕒", "Pace / Hour", "--")
+S.rbDay      = whiteStatRow(208, "📅", "Pace / Day", "--")
+S.rbWeek     = whiteStatRow(252, "🗓", "Pace / Week", "--")
 
 -- Strength
 local fsCard = box(p1, 0, RB_CARD_H + GAP, S.cardW1, CARD_H, SEC, 16)
