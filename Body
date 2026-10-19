@@ -908,7 +908,7 @@ local inner1 = math.max(rbOptsW + GAP + rbStatsMin, fsOptsW + GAP + fsStatsMin)
 S.cardW1 = inner1 + 2 * PAD
 local rbStatsW = inner1 - rbOptsW - GAP
 local fsStatsW = inner1 - fsOptsW - GAP
-local FO = 12
+local FO = 22 -- BOX_H = 218: tall enough for the 4 compact pace rows in Strength Stats, and the option rows stay centred
 local BOX_H = RH * 3 + 2 * FO
 local CARD_H = CONTENT_Y + BOX_H + PAD
 local RB_H = RH * 5
@@ -1005,35 +1005,80 @@ hline(fsOpts, 14, FO + RH * 2, fsOptsW - 28)
 optRow(fsOpts, fsOptsW, FO + RH * 2, fsRows[3][1], fsRows[3][2], nil, nil, "🚀", savedMaxReps,
 	function(v) Callbacks.MaxReps(v) end, 1, REP_DEFAULT, REP_CAP)
 
-local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, CARD, 12)
-fsStats.BackgroundTransparency = PANEL_T
-text(fsStats, "Strength Stats", 17, 14, 19, 220, TX, F.GothamBold)
+-- Strength Stats | premium white & dark (visual only; the S.fs* labels are the ones the update loop writes to).
+-- The palette lives in ONE table (FSC) so this block adds only a few locals (Luau limit: 200 per function).
+local FSC = {
+	panel = Color3.fromRGB(245, 246, 249), row = Color3.fromRGB(39, 42, 49), icon = Color3.fromRGB(76, 82, 94),
+	white = Color3.fromRGB(255, 255, 255), muted = Color3.fromRGB(190, 197, 209),
+	title = Color3.fromRGB(27, 31, 39), subtitle = Color3.fromRGB(91, 100, 116), divider = Color3.fromRGB(211, 216, 225),
+}
+local fsStats = box(fsCard, PAD + fsOptsW + GAP, CONTENT_Y, fsStatsW, BOX_H, FSC.panel, 16)
+fsStats.BackgroundTransparency = 0
+
+text(fsStats, "Strength Stats", 17, 14, 12, fsStatsW - 28, FSC.title, F.GothamBold)
+text(fsStats, "Your strength and progress details.", 11, 14, 29, fsStatsW - 28, FSC.subtitle, F.Gotham)
+-- hline() draws a dark line, which is nearly invisible on the light panel, so the dividers use their own colour.
+new("Frame", {Position = UDim2.fromOffset(14, 47), Size = UDim2.fromOffset(fsStatsW - 28, 1),
+	BackgroundColor3 = FSC.divider, BorderSizePixel = 0}, fsStats)
+
 local vx = 44 + fsNameW + 16
-local vnW = vx - 48
 local paceW = fsStatsW - vx - 14
 local colW = math.floor(paceW / #PACE_COLS)
-hline(fsStats, 14, 35, fsStatsW - 28)
-S.fsStr  = srow(fsStats, "🏋", "Strength", "0", 48, vx, 80, 13, nil, F.GothamBold, vnW)
-S.fsStrG = autoFit(text(fsStats, "+0", 13, vx + 90, 48, paceW - 90, TX), 13, 8)
-S.fsDura = srow(fsStats, "🛡", "Durability", "0", 69, vx, 80, 13, nil, F.GothamBold, vnW)
-S.fsDurG = autoFit(text(fsStats, "+0", 13, vx + 90, 69, paceW - 90, TX), 13, 8)
-hline(fsStats, 14, 82, fsStatsW - 28)
-for i, c in ipairs(PACE_COLS) do
-	text(fsStats, c, 12, vx + (i - 1) * colW, 94, colW, SUB, F.GothamBold, CENTER)
+
+-- Summary row: name on the left, value + gain on the right. Both numbers shrink their font instead of overflowing.
+local function strengthSummary(y, icon, name, value, gain)
+	local rowW = fsStatsW - 16
+	local row = new("Frame", {
+		Position = UDim2.fromOffset(8, y), Size = UDim2.fromOffset(rowW, 28),
+		BackgroundColor3 = FSC.row, BorderSizePixel = 0,
+	}, fsStats)
+	round(row, 9)
+	local iconBox = new("Frame", {
+		Position = UDim2.fromOffset(6, 4), Size = UDim2.fromOffset(20, 20),
+		BackgroundColor3 = FSC.icon, BorderSizePixel = 0,
+	}, row)
+	round(iconBox, 6)
+	text(iconBox, icon, 12, 0, 10, 20, FSC.white, F.Gotham, CENTER)
+
+	local numW = 60
+	local labelW = math.max(30, rowW - 33 - 2 * numW - 12)
+	autoFit(text(row, name, 12, 33, 14, labelW, FSC.white, F.GothamBold), 12, 8, labelW)
+	local valueLabel = autoFit(text(row, value, 13, rowW - 2 * numW - 10, 14, numW, FSC.white, F.GothamBold, RIGHT), 13, 8, numW)
+	local gainLabel = autoFit(text(row, gain, 11, rowW - numW - 8, 14, numW, FSC.muted, F.GothamBold, RIGHT), 11, 8, numW)
+	return valueLabel, gainLabel
 end
-local function prow(icon, name, cy)
-	text(fsStats, icon, 15, 10, cy, 28, MUTED, F.Gotham, CENTER)
-	autoFit(text(fsStats, name, 13, 44, cy, vnW, Color3.fromRGB(205, 205, 208), F.GothamMedium), 13, 8)
+S.fsStr, S.fsStrG = strengthSummary(53, "🏋", "Strength", "0", "+0")
+S.fsDura, S.fsDurG = strengthSummary(84, "🛡", "Durability", "0", "+0")
+
+new("Frame", {Position = UDim2.fromOffset(14, 116), Size = UDim2.fromOffset(fsStatsW - 28, 1),
+	BackgroundColor3 = FSC.divider, BorderSizePixel = 0}, fsStats)
+
+for i, c in ipairs(PACE_COLS) do
+	text(fsStats, c, 10, vx + (i - 1) * colW, 125, colW, FSC.subtitle, F.GothamBold, CENTER)
+end
+
+-- Compact pace rows (4 x 17 px, last one ends at y = 213; FO below makes the panel tall enough for that)
+local function strengthPaceRow(icon, name, y)
+	local rowW = fsStatsW - 16
+	local row = new("Frame", {
+		Position = UDim2.fromOffset(8, y), Size = UDim2.fromOffset(rowW, 17),
+		BackgroundColor3 = FSC.row, BorderSizePixel = 0,
+	}, fsStats)
+	round(row, 5)
+	text(row, icon, 10, 3, 8, 20, FSC.muted, F.Gotham, CENTER)
+	local labelW = math.max(20, vx - 36)
+	autoFit(text(row, name, 9, 25, 8, labelW, FSC.white, F.GothamMedium), 9, 7, labelW)
 	local cells = {}
 	for i = 1, #PACE_COLS do
-		cells[i] = autoFit(text(fsStats, "--", 13, vx + (i - 1) * colW, cy, colW, TX, F.Gotham, CENTER), 13, 8)
+		local cellW = math.max(10, colW - 2)
+		cells[i] = autoFit(text(row, "--", 9, vx + (i - 1) * colW - 8, 8, cellW, FSC.white, F.Gotham, CENTER), 9, 7, cellW)
 	end
 	return cells
 end
-S.fsSP = prow("🕒", "Str Pace", 116)
-S.fsDP = prow("🕒", "Dura Pace", 137)
-S.fsSA = prow("🕒", "Str Average", 158)
-S.fsDA = prow("🕒", "Dura Average", 179)
+S.fsSP = strengthPaceRow("🕒", "Str Pace", 145)
+S.fsDP = strengthPaceRow("🕒", "Dura Pace", 162)
+S.fsSA = strengthPaceRow("🕒", "Str Average", 179)
+S.fsDA = strengthPaceRow("🕒", "Dura Average", 196)
 
 sizes[1] = {w = S.cardW1, h = RB_CARD_H + CARD_H + GAP}
 end
