@@ -272,6 +272,8 @@ local function cardBG(card, id, shadeT)
 	return bg
 end
 
+-- Toggle switch. The look changes first; if the callback errors, the switch is put back and the error is
+-- printed, so the switch can never show ON for a feature that did not start.
 local function toggle(p, x, cy, initial, cb)
 	local state = initial
 	local tr = new("TextButton", {
@@ -284,13 +286,24 @@ local function toggle(p, x, cy, initial, cb)
 		BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225), BorderSizePixel = 0,
 	}, tr)
 	round(kn, 10)
-	local function set(v, silent)
-		state = v
+	local function paint(v)
 		local i = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		TweenService:Create(tr, i, {BackgroundColor3 = state and ONBG or OFFBG}):Play()
-		TweenService:Create(kn, i, {Position = UDim2.fromOffset(state and 21 or 3, 3),
-			BackgroundColor3 = state and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
-		if not silent then cb(state) end
+		TweenService:Create(tr, i, {BackgroundColor3 = v and ONBG or OFFBG}):Play()
+		TweenService:Create(kn, i, {Position = UDim2.fromOffset(v and 21 or 3, 3),
+			BackgroundColor3 = v and Color3.new(1, 1, 1) or Color3.fromRGB(225, 225, 225)}):Play()
+	end
+	local function set(v, silent)
+		local prev = state
+		state = v
+		paint(state)
+		if not silent then
+			local ok, err = pcall(cb, state)
+			if not ok then
+				warn("[Muhaves] Toggle error: " .. tostring(err))
+				state = prev
+				paint(state)
+			end
+		end
 	end
 	tr.MouseButton1Click:Connect(function() set(not state) end)
 	return set
@@ -814,6 +827,8 @@ local function selectNav(idx, instant)
 		applyNav(idx, true)
 		return
 	end
+	-- no tab switching while the intro / minimize / restore animation is running
+	if animBusy then return end
 	if idx == (pendingNav or currentNav) then return end
 	pendingNav = idx
 	navToken += 1
