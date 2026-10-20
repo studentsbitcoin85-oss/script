@@ -756,12 +756,12 @@ end
 ---------------------------------------------------------------------
 -- Sidebar + navigation
 local pages, sizes = {}, {}
-local SIDEMIN = 300
+local SIDEMIN = 360 -- 4 nav buttons now, so the sidebar needs more room for the character image below them
 local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
-local nav = {{"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"📢", "Notice"}}
+local nav = {{"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"📢", "Notice"}, {"🏠", "Home"}}
 local navBtns, navLbls = {}, {}
 local charImg
 local currentNav = 0
@@ -802,7 +802,7 @@ local function applyNav(idx, instant)
 	pages[idx].CanvasSize = UDim2.fromOffset(0, sz.h)
 	pages[idx].CanvasPosition = Vector2.new(0, 0)
 	local sideH = H - HH - 2 * PAD
-	local charH = math.min(CHAR_MAX_H, sideH - 172 - 8)
+	local charH = math.min(CHAR_MAX_H, sideH - 224 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
 		charImg.ScaleType = Enum.ScaleType.Crop
 	end
@@ -856,7 +856,7 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-charImg = image(sidebar, ASSETS.Character, 8, 172, SW - 16, 300, "", 14)
+charImg = image(sidebar, ASSETS.Character, 8, 224, SW - 16, 300, "", 14)
 
 local function newPage()
 	local f = new("ScrollingFrame", {
@@ -886,7 +886,7 @@ local rbRows = {
 local fsRows = {
 	{"Auto Farm Strength", "Smart automatic strength farming."},
 	{"Controlled Speed", "Adjusts the speed based on server response."},
-	{"Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", "🚀", true},
+	{"Max Reps / Second", "Limit " .. REP_CAP .. " reps/s  •  above " .. REP_DEFAULT .. " may cause lag.", "🚀", true},
 }
 local function rowsW(rows)
 	local w = 0
@@ -1215,6 +1215,139 @@ do
 end
 image(ntCard, ASSETS.EmblemBottom, cardW3 - PAD - 56, footY + 2, 56, 62, "M", 32, true)
 sizes[3] = {w = cardW3, h = cardH3}
+end
+
+---------------------------------------------------------------------
+-- PAGE 4: Home. Account + connection info. Every value is read live from Roblox or the executor (nothing is faked).
+do
+local p4 = newPage()
+local H = {}
+local cardW4 = S.cardW1
+local inner = cardW4 - 2 * PAD
+local ROWH, ROWGAP = 30, 5
+local PANEL_H = 42 + 3 * ROWH + 2 * ROWGAP + 12
+local cardH4 = CONTENT_Y + PANEL_H + GAP + PANEL_H + PAD
+local colW = math.floor((inner - 16 - 8) / 2)
+
+local hmCard = box(p4, 0, 0, cardW4, cardH4, SEC, 16)
+cardBG(hmCard, ASSETS.NoticeBG, 0.45)
+cardHeader(hmCard, "🏠", "Home", "Your account and connection details.", nil, nil, true)
+
+local function panel(y, title)
+	local f = box(hmCard, PAD, y, inner, PANEL_H, CARD, 12)
+	f.BackgroundTransparency = 0.4
+	text(f, title, 17, 14, 18, inner - 28, TX, F.GothamBold)
+	hline(f, 14, 34, inner - 28)
+	return f
+end
+
+-- one label/value row. col = 0 (left) or 1 (right), r = row index 0..2. Returns the value label and the row frame.
+local function infoRow(parent, col, r, label)
+	local row = box(parent, 8 + col * (colW + 8), 42 + r * (ROWH + ROWGAP), colW, ROWH, BLACK, 8)
+	local lw = math.floor(colW * 0.45)
+	local vw = colW - lw - 24
+	autoFit(text(row, label, 14, 12, ROWH / 2, lw, SUBB, F.GothamMedium), 14, 8, lw)
+	local v = text(row, "--", 14, colW - 12 - vw, ROWH / 2, vw, TX, F.GothamBold, RIGHT)
+	return autoFit(v, 14, 8, vw), row
+end
+
+-- Player Profile
+local pf = panel(CONTENT_Y, "Player Profile")
+local avBox = box(pf, 8, 42, colW, 3 * ROWH + 2 * ROWGAP, BLACK, 10)
+local av = new("ImageLabel", {
+	BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Fit,
+	Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150",
+	Position = UDim2.fromOffset(math.floor((colW - 84) / 2), 8), Size = UDim2.fromOffset(84, 84),
+}, avBox)
+round(av, 10)
+task.spawn(function() -- fallback if the rbxthumb link did not load
+	task.wait(3)
+	if gui.Parent and not av.IsLoaded then
+		local ok, img = pcall(Players.GetUserThumbnailAsync, Players, LocalPlayer.UserId,
+			Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+		if ok and img then av.Image = img end
+	end
+end)
+H.dn = infoRow(pf, 1, 0, "Display Name")
+H.un = infoRow(pf, 1, 1, "Username")
+H.id = infoRow(pf, 1, 2, "Account ID")
+H.dn.Text = LocalPlayer.DisplayName
+H.un.Text = "@" .. LocalPlayer.Name
+H.id.Text = tostring(LocalPlayer.UserId)
+
+-- Client & Server Status
+local sp = panel(CONTENT_Y + PANEL_H + GAP, "Client & Server Status")
+H.ex = infoRow(sp, 0, 0, "Executor")
+H.cp, H.cpRow = infoRow(sp, 0, 1, "Compatibility")
+H.lt = infoRow(sp, 0, 2, "Latency")
+H.up = infoRow(sp, 1, 0, "Server Uptime")
+H.pl = infoRow(sp, 1, 1, "Players")
+H.rg = infoRow(sp, 1, 2, "Region")
+
+-- Executor name (identifyexecutor does not exist everywhere, so it runs inside pcall)
+H.ex.Text = "Unknown"
+pcall(function()
+	local n, v = identifyexecutor()
+	if n then H.ex.Text = tostring(n) .. (v and (" " .. tostring(v)) or "") end
+end)
+
+-- Compatibility = how many of the executor functions THIS script uses are available
+-- (writefile / readfile / isfile -> saved settings, setfpscap / getfpscap -> the FPS cap of Low Resource Mode).
+do
+	local checks = {writefile ~= nil, readfile ~= nil, isfile ~= nil, setfpscap ~= nil, getfpscap ~= nil}
+	local have = 0
+	for _, ok in ipairs(checks) do
+		if ok then have += 1 end
+	end
+	local word, col = "Limited", Color3.fromRGB(255, 105, 105)
+	if have == #checks then
+		word, col = "Full", Color3.fromRGB(110, 235, 140)
+	elseif have >= 3 then
+		word, col = "Partial", Color3.fromRGB(255, 205, 90)
+	end
+	local txt = word .. " (" .. have .. "/" .. #checks .. ")"
+	H.cp.Text, H.cp.TextColor3 = txt, col
+	local dot = new("Frame", {
+		Size = UDim2.fromOffset(10, 10), BackgroundColor3 = col, BorderSizePixel = 0,
+		Position = UDim2.fromOffset(math.max(12, colW - 12 - tw(txt, 14, F.GothamBold) - 16), ROWH / 2 - 5),
+	}, H.cpRow)
+	round(dot, 5)
+end
+
+-- Region = the country of this player (LocalizationService). The server's own region is not readable from the client.
+task.spawn(function()
+	local ok, r = pcall(function()
+		return game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(LocalPlayer)
+	end)
+	if gui.Parent then H.rg.Text = (ok and type(r) == "string" and r ~= "") and r or "N/A" end
+end)
+
+-- Live values: server uptime (DistributedGameTime), players, latency (Data Ping). Only refreshed while this page is shown.
+local function refresh()
+	pcall(function()
+		local t = math.floor(workspace.DistributedGameTime)
+		H.up.Text = string.format("%02d:%02d:%02d", math.floor(t / 3600), math.floor((t % 3600) / 60), t % 60)
+		H.pl.Text = #Players:GetPlayers() .. " / " .. Players.MaxPlayers
+		local ms
+		local okP, v = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+		if okP and type(v) == "number" then
+			ms = v
+		else
+			local okN, p = pcall(function() return LocalPlayer:GetNetworkPing() end)
+			if okN and type(p) == "number" then ms = p * 1000 end
+		end
+		H.lt.Text = ms and (math.floor(ms + 0.5) .. " ms") or "N/A"
+	end)
+end
+refresh()
+task.spawn(function()
+	while gui.Parent do
+		task.wait(1)
+		if p4.Visible then refresh() end
+	end
+end)
+
+sizes[4] = {w = cardW4, h = cardH4}
 end
 
 ---------------------------------------------------------------------
