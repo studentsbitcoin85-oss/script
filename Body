@@ -23,6 +23,10 @@ return (function()
 
 local LUNA_URL = "https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua"
 
+-- Home tab (muncul saat profil di pojok kiri atas sidebar ditekan): Player Profile, Client & Server Status, Discord.
+local DISCORD_INVITE = ""  -- isi KODE invite saja, tanpa "discord.gg/" (kosong = bagian Discord tidak diisi)
+local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"} -- executor yang tampil "Supported" di Compatibility
+
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
@@ -185,6 +189,14 @@ local Window = Luna:CreateWindow({
 	ConfigSettings = {ConfigFolder = "MuhavesLuna"},
 	KeySystem = false,
 })
+
+-- Home tab dibuat PERTAMA supaya profil di sidebar bisa ditekan untuk membukanya
+do
+	local home = {SupportedExecutors = SUPPORTED_EXECUTORS, Icon = 1}
+	if DISCORD_INVITE ~= "" then home.DiscordInvite = DISCORD_INVITE end
+	local okHome, errHome = pcall(function() Window:CreateHomeTab(home) end)
+	if not okHome then warn("[Muhaves] Home tab gagal dibuat: " .. tostring(errHome)) end
+end
 
 -- Kalau jendela Luna ditutup lewat tombolnya (tanpa lewat Luna:Destroy), ikut matikan penanda
 task.spawn(function()
