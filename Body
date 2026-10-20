@@ -1,7 +1,7 @@
 --[[
     Muhaves Private Farming - UI (file terpisah, di-load lewat loadstring)
     Dipanggil dari script utama: loadstring(game:HttpGet(URL))(CONST)
-    CONST = {VERSION = "2", REP_CAP = 10000, REP_DEFAULT = 659}
+    CONST = {VERSION = "2", REP_CAP = 1000, REP_DEFAULT = 10}
     Mengembalikan tabel UI (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Notice, UI.Callbacks, ...).
 
     Perubahan: tab Home diganti (Player Profile + Client & Server Status) dan ditaruh paling awal di sidebar.
@@ -18,8 +18,8 @@ return (function()
 -- Luau allows max 200 locals per function, and this function was very close to that limit.
 local S = {}
 
-local REP_CAP = CONST.REP_CAP
-local REP_DEFAULT = CONST.REP_DEFAULT
+local REP_CAP = 1000   -- batas tertinggi Max Reps / Second
+local REP_DEFAULT = 10  -- nilai awal Max Reps / Second
 
 local ASSETS = {
 	LogoHeader   = "133262254947166",
@@ -763,7 +763,7 @@ local pages, sizes = {}, {}
 local SIDEMIN = 360 -- 4 nav buttons now, so the sidebar needs more room for the character image below them
 local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470
-local DEFAULT_NAV = 2 -- jendela tetap dibuka di Fast Farming
+local DEFAULT_NAV = 1 -- jendela dibuka di Home (urutan 1 di sidebar)
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
 local nav = {{"🏠", "Home"}, {"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"📢", "Notice"}}
@@ -891,7 +891,7 @@ local rbRows = {
 local fsRows = {
 	{"Auto Farm Strength", "Smart automatic strength farming."},
 	{"Controlled Speed", "Adjusts the speed based on server response."},
-	{"Max Reps / Second", "Limit " .. REP_CAP .. " reps/s  •  above " .. REP_DEFAULT .. " may cause lag.", "🚀", true},
+	{"Max Reps / Second", "Max " .. REP_CAP .. " reps/s  •  Recommended: 650 (higher = lag)", "🚀", true},
 }
 local function rowsW(rows)
 	local w = 0
@@ -1491,6 +1491,10 @@ do
 		animBusy = false
 	end)
 end
+
+-- Pertama kali dipakai (belum ada nilai tersimpan): kirim default 10 ke bagian farming supaya sama dengan kotaknya.
+-- Callbacks.MaxReps di sini masih stub, jadi nilainya masuk Pending lalu di-replay oleh script farming.
+if tonumber(Saved.MaxReps) == nil then Callbacks.MaxReps(REP_DEFAULT) end
 
 return {
 	Gui = gui,
