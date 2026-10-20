@@ -310,9 +310,15 @@ local function fakeRow(n, init, group)
 end
 
 -- Warna status -> gaya label Luna (1 biasa, 2 hijau, 3 merah)
-local function styleOf(c)
-	if c.G > 0.9 and c.R < 0.5 then return 2 end
+-- Hijau (2) = sedang aktif, abu-abu (1) = tidak dipakai / jeda, merah (3) = error.
+local ACTIVE_WORDS = {"farming", "rebirthing", "slowing", "retrying", "not ready", "no response", "working"}
+local function styleOf(c, text)
 	if c.R > 0.9 and c.G < 0.5 then return 3 end
+	if c.G > 0.9 and c.R < 0.5 then return 2 end
+	local t = tostring(text or ""):lower()
+	for _, w in ipairs(ACTIVE_WORDS) do
+		if t:find(w, 1, true) then return 2 end
+	end
 	return 1
 end
 
@@ -336,10 +342,10 @@ local F = {
 -- Setiap grup = daftar baris pendek (1 Label Luna per baris, tidak ada kotak panjang lagi)
 local function L(t, st) return {Text = t, Style = st or 1} end
 
-renders.rbStatus = function() return {L(F.rbStatus.Text, styleOf(F.rbStatus.TextColor3))} end
-renders.fsStatus = function() return {L(F.fsStatus.Text, styleOf(F.fsStatus.TextColor3))} end
+renders.rbStatus = function() return {L(F.rbStatus.Text, styleOf(F.rbStatus.TextColor3, F.rbStatus.Text))} end
+renders.fsStatus = function() return {L(F.fsStatus.Text, styleOf(F.fsStatus.TextColor3, F.fsStatus.Text))} end
 renders.notice = function()
-	return {L("Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, styleOf(F.ntStatus.TextColor3))}
+	return {L("Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, styleOf(F.ntStatus.TextColor3, F.ntStatus.Text))}
 end
 
 renders.rb = function()
