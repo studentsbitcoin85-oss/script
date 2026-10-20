@@ -192,6 +192,24 @@ do
 	if not okHome then warn("[Muhaves] Home tab gagal dibuat: " .. tostring(errHome)) end
 end
 
+-- UI Size: UIScale di jendela Luna (slider di tab Extras). Disimpan di Saved.UiScale.
+local uiScale = math.clamp(tonumber(Saved.UiScale) or 100, 60, 130)
+local scaleObj
+local saveToken = 0
+local function applyScale(v)
+	v = math.clamp(tonumber(v) or 100, 60, 130)
+	uiScale = v
+	if scaleObj and scaleObj.Parent then scaleObj.Scale = v / 100 end
+	saveToken += 1
+	local my = saveToken
+	task.delay(1, function()
+		if my == saveToken and Saved.UiScale ~= v then
+			Saved.UiScale = v
+			saveSettings()
+		end
+	end)
+end
+
 task.spawn(function()
 	local roots = {}
 	local okH, h = pcall(function() return gethui and gethui() or nil end)
@@ -199,18 +217,28 @@ task.spawn(function()
 	roots[#roots + 1] = CoreGui
 	local rg = CoreGui:FindFirstChild("RobloxGui")
 	if rg then roots[#roots + 1] = rg end
-	task.wait(0.5)
 	local lunaGui
-	for _, root in ipairs(roots) do
-		for _, c in ipairs(root:GetChildren()) do
-			if c:IsA("ScreenGui") and c.Name ~= "Luna-Old" and c:FindFirstChild("SmartWindow") then
-				lunaGui = c
-				break
+	for _ = 1, 20 do
+		task.wait(0.5)
+		for _, root in ipairs(roots) do
+			for _, c in ipairs(root:GetChildren()) do
+				if c:IsA("ScreenGui") and c.Name ~= "Luna-Old" and c:FindFirstChild("SmartWindow") then
+					lunaGui = c
+					break
+				end
 			end
+			if lunaGui then break end
 		end
 		if lunaGui then break end
 	end
 	if lunaGui then
+		local win = lunaGui:FindFirstChild("SmartWindow")
+		if win then
+			local us = Instance.new("UIScale")
+			us.Scale = uiScale / 100
+			us.Parent = win
+			scaleObj = us
+		end
 		lunaGui.AncestryChanged:Connect(function()
 			if not lunaGui.Parent then closeAll() end
 		end)
@@ -274,54 +302,74 @@ local F = {
 	exStatus = fake("Ready", nil),
 }
 
-local function statusRender(f)
-	return function()
-		return {Text = f.Text, Style = styleOf(f.TextColor3)}
-	end
+-- Setiap grup = daftar baris pendek (1 Label Luna per baris, tidak ada kotak panjang lagi)
+local function L(t, st) return {Text = t, Style = st or 1} end
+
+renders.rbStatus = function() return {L(F.rbStatus.Text, styleOf(F.rbStatus.TextColor3))} end
+renders.fsStatus = function() return {L(F.fsStatus.Text, styleOf(F.fsStatus.TextColor3))} end
+renders.notice = function()
+	return {L("Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, styleOf(F.ntStatus.TextColor3))}
 end
-renders.rbStatus = statusRender(F.rbStatus)
-renders.fsStatus = statusRender(F.fsStatus)
 
 renders.rb = function()
-	return {Text = table.concat({
-		"Rebirths      " .. F.rbRebirths.Text,
-		"Gained         +" .. F.rbGained.Text,
-		"",
-		"Pace / Hour   " .. F.rbHour.Text,
-		"Pace / Day    " .. F.rbDay.Text,
-		"Pace / Week  " .. F.rbWeek.Text,
-		"",
-		"Runtime        " .. F.rbRuntime.Text,
-	}, "\n")}
+	return {
+		L("Rebirths: " .. F.rbRebirths.Text .. "  (+" .. F.rbGained.Text .. ")"),
+		L("Pace: " .. F.rbHour.Text .. "/h · " .. F.rbDay.Text .. "/d · " .. F.rbWeek.Text .. "/w"),
+		L("Runtime: " .. F.rbRuntime.Text),
+	}
 end
 
 renders.fs = function()
-	return {Text = table.concat({
-		"Strength       " .. F.fsStr.Text .. "   (" .. F.fsStrG.Text .. ")",
-		"Durability     " .. F.fsDura.Text .. "   (" .. F.fsDurG.Text .. ")",
-		"",
-		"Runtime        " .. F.fsRuntime.Text,
-	}, "\n")}
+	return {
+		L("Strength: " .. F.fsStr.Text .. "  (" .. F.fsStrG.Text .. ")"),
+		L("Durability: " .. F.fsDura.Text .. "  (" .. F.fsDurG.Text .. ")"),
+		L("Runtime: " .. F.fsRuntime.Text),
+	}
 end
 
 local PACE_UNITS = {"/s", "/m", "/h", "/d", "/w"}
-local function paceBlock(title, cells)
+local function paceLine(name, cells)
 	local parts = {}
 	for i, u in ipairs(PACE_UNITS) do parts[i] = cells[i].Text .. u end
-	return title .. "\n    " .. table.concat(parts, "  •  ")
+	return L(name .. ": " .. table.concat(parts, " · "))
 end
 renders.pace = function()
-	return {Text = table.concat({
-		paceBlock("Strength Pace", F.fsSP),
-		paceBlock("Durability Pace", F.fsDP),
-		"",
-		paceBlock("Strength Average", F.fsSA),
-		paceBlock("Durability Average", F.fsDA),
-	}, "\n")}
+	return {
+		paceLine("Str Pace", F.fsSP),
+		paceLine("Dura Pace", F.fsDP),
+		paceLine("Str Avg", F.fsSA),
+		paceLine("Dura Avg", F.fsDA),
+	}
 end
 
-renders.notice = function()
-	return {Text = "Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, Style = styleOf(F.ntStatus.TextColor3)}
+-- Buat Label Luna untuk satu grup
+local function makeLabels(tab, group)
+	local list = {}
+	for i, s in ipairs(renders[group]()) do
+		list[i] = tab:CreateLabel({Text = s.Text, Style = s.Style})
+	end
+	els[group] = list
+end
+
+-- Update Label. Versi Luna berbeda: ada yang Set({Text=,Style=}), ada yang Set(text, style).
+-- Dicoba dua-duanya, bentuk yang berhasil diingat per label.
+local labelMode = setmetatable({}, {__mode = "k"})
+local warnedSet = false
+local function setLabel(el, s)
+	if labelMode[el] ~= "str" then
+		if pcall(el.Set, el, {Text = s.Text, Style = s.Style}) then
+			labelMode[el] = "tbl"
+			return
+		end
+	end
+	if pcall(el.Set, el, s.Text, s.Style) then
+		labelMode[el] = "str"
+		return
+	end
+	if not warnedSet then
+		warnedSet = true
+		warn("[Muhaves] Label:Set gagal di versi Luna ini, teks status tidak bisa di-update.")
+	end
 end
 
 ---------------------------------------------------------------------
@@ -385,21 +433,21 @@ local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAUL
 
 -- 1) Fast Rebirth
 TabFarm:CreateSection("Fast Rebirth")
-els.rbStatus = TabFarm:CreateLabel({Text = F.rbStatus.Text, Style = 1})
+makeLabels(TabFarm, "rbStatus")
 addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
 addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
-els.rb = TabFarm:CreateParagraph({Title = "Rebirth Stats", Text = renders.rb().Text})
+makeLabels(TabFarm, "rb")
 
 divider(TabFarm)
 
 -- 2) Fast Strength
 TabFarm:CreateSection("Fast Strength")
-els.fsStatus = TabFarm:CreateLabel({Text = F.fsStatus.Text, Style = 1})
+makeLabels(TabFarm, "fsStatus")
 addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
 addToggle(TabFarm, "Controlled Speed", "Adjusts the speed based on server response.", true, "ControlledSpeed")
 addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", savedMaxReps, "MaxReps", 1, REP_DEFAULT, REP_CAP)
-els.fs = TabFarm:CreateParagraph({Title = "Strength Stats", Text = renders.fs().Text})
-els.pace = TabFarm:CreateParagraph({Title = "Pace", Text = renders.pace().Text})
+makeLabels(TabFarm, "fs")
+makeLabels(TabFarm, "pace")
 
 divider(TabFarm)
 
@@ -427,10 +475,22 @@ divider(TabExtra)
 TabExtra:CreateSection("Performance")
 addToggle(TabExtra, "Low Resource Mode", "Hides popups + 3D off + 20 FPS + Anti Lag + black screen.", false, "LowResource")
 
+divider(TabExtra)
+
+TabExtra:CreateSection("Interface")
+TabExtra:CreateSlider({
+	Name = "UI Size",
+	Description = "Shrink or enlarge this window (60% - 130%).",
+	Range = {60, 130},
+	Increment = 5,
+	CurrentValue = uiScale,
+	Callback = function(v) applyScale(v) end,
+})
+
 ---------------------------------------------------------------------
 -- TAB 3: Notice
 TabNotice:CreateSection("Status")
-els.notice = TabNotice:CreateLabel({Text = renders.notice().Text, Style = 1})
+makeLabels(TabNotice, "notice")
 
 divider(TabNotice)
 
@@ -455,7 +515,12 @@ task.spawn(function()
 			dirty[name] = nil
 			local r, e = renders[name], els[name]
 			if r and e then
-				pcall(function() e:Set(r()) end)
+				local ok, list = pcall(r)
+				if ok then
+					for i, line in ipairs(list) do
+						if e[i] then setLabel(e[i], line) end
+					end
+				end
 			end
 		end
 	end
