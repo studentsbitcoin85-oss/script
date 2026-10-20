@@ -3,25 +3,26 @@
     UI di-load dari GitHub lewat loadstring, bagian farming ada di file ini.
     Tabs: Fast Farming / Extras / Notice.
     Setiap toggle terhubung lewat tabel UI.Callbacks.
+
+    Perubahan:
+    - Max Reps / Second maksimum 500 (REP_CAP)
+    - Cara farming Strength dan Rebirth mengikuti script Silence
+    - Pet (Reps / Strength / Rebirth) tetap logika lama: ON manual, bisa dimatikan
 ]]
 
--- Konstanta yang dipakai UI dan farming. REP_CAP = nilai tertinggi kotak Max Reps / Second (500),
--- REP_DEFAULT = nilai awal kotak Max Reps / Second (50).
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- FIX: re-execute -> hancurkan UI lama dulu. Event Destroying jalan sinkron, jadi semua handler restore
--- sesi lama (Low Resource, Hide, FPS cap) selesai sebelum sesi baru mulai.
+-- Re-execute -> hancurkan UI lama dulu.
 do
 	local old = _G.MuhavesGui
 	if old then pcall(function() old:Destroy() end) end
 	_G.MuhavesGui = nil
 end
 
-local CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 50}
+local CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 10}
 
 local UI_URL = "https://raw.githubusercontent.com/studentsbitcoin85-oss/script/main/Body"
 
--- Kalau UI gagal dimuat: tampilkan error aslinya dan hapus UI setengah jadi (supaya tidak menutupi layar).
 local function failUI(msg)
 	warn("[Muhaves] Gagal memuat UI: " .. tostring(msg))
 	pcall(function()
@@ -39,15 +40,7 @@ if not okUI or type(UI) ~= "table" then return failUI(UI) end
 _G.MuhavesGui = UI.Gui
 
 ---------------------------------------------------------------------
--- FARMING: logic from the farming script, connected to the UI through UI.Callbacks
---
--- Order of this part:
---   1. helpers + session guard
---   2. everything that does NOT need a required game object (Anti AFK, ads, Low Resource Mode with Hide Visuals)
---   3. the need() block: required objects are looked up (in parallel). If one is missing, the script stops here
---      and only the features from step 2 stay alive.
---   4. everything that needs those objects (pets, Auto Rebirth, Auto Farm Strength, Eat / Spin / Boosts)
---   5. replay of the clicks that happened while steps 3-4 were still loading (UI.Pending)
+-- FARMING
 local services = {
 	players = game:GetService("Players"),
 	replicatedstorage = game:GetService("ReplicatedStorage"),
@@ -58,11 +51,10 @@ local lp = services.players.LocalPlayer
 local gui = UI.Gui
 local Callbacks = UI.Callbacks
 
--- Every name the script looks up in the game lives here.
 local NAMES = {
 	petsFolder = "petsFolder",
 	bodyMovement = "bodyMovementScript",
-	removeBodyMovement = false, -- default OFF: removes the game's own script; turn on only after testing
+	removeBodyMovement = false,
 	ads = "RobloxForwardPortals",
 	remote = {
 		equipPet = "equipPetEvent",
@@ -79,7 +71,6 @@ local function resolvePath(root, path)
 	return root
 end
 
--- Saved settings: persist(key, value) writes to the same file as the zoom (skips the write if nothing changed)
 local Saved = UI.Saved
 local function persist(k, v)
 	if Saved[k] == v then return end
@@ -87,7 +78,6 @@ local function persist(k, v)
 	UI.Save()
 end
 
--- Sets a toggle's look without calling its callback.
 local function setToggle(name, state)
 	local setter = UI.Toggles[name]
 	if setter then
@@ -97,7 +87,6 @@ local function setToggle(name, state)
 	end
 end
 
--- Time slicer for background scans: yields one frame whenever the scan has used more than 4 ms.
 local function slicer()
 	local t0 = os.clock()
 	return function()
@@ -108,7 +97,6 @@ local function slicer()
 	end
 end
 
--- Incremental tree walk: replaces GetDescendants() on big roots. fn(instance) may return true to stop the walk.
 local function walk(root, fn)
 	local step = slicer()
 	local stack, n = {root}, 1
@@ -130,7 +118,7 @@ local function walk(root, fn)
 	end
 end
 
--- InvokeServer with a time limit. At most MAX_INFLIGHT calls can be waiting at the same time.
+-- InvokeServer with a time limit. Returns: ok, result, why ("busy" / "timeout" / nil)
 local inflight, MAX_INFLIGHT = 0, 4
 local function invokeWithTimeout(remote, timeout, ...)
 	if inflight >= MAX_INFLIGHT then return false, nil, "busy" end
@@ -158,14 +146,12 @@ end
 
 local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
 
--- Session guard: re-executing the script stops all loops from the old version.
 local SESSION_ID = (_G.MuhavesFarmingSession or 0) + 1
 _G.MuhavesFarmingSession = SESSION_ID
 local function alive()
 	return _G.MuhavesFarmingSession == SESSION_ID and gui.Parent ~= nil
 end
 
--- Error-proof background loop: every pass of fn runs inside pcall.
 local function loop(fn)
 	task.spawn(function()
 		while alive() do
@@ -223,8 +209,20 @@ task.spawn(function()
 		end)
 	end
 end)
+for _, getRoot in ipairs({
+	function() return game:GetService("CoreGui") end,
+	function() return workspace end,
+}) do
+	pcall(function()
+		track(getRoot().DescendantAdded:Connect(function(d)
+			if alive() and d.Name == NAMES.ads then
+				task.defer(pcall, d.Destroy, d)
+			end
+		end))
+	end)
+end
 
--- bodyMovementScript
+-- bodyMovementScript: removed only when NAMES.removeBodyMovement = true.
 local function removeBMS(char)
 	if not NAMES.removeBodyMovement then return end
 	local s = char:WaitForChild(NAMES.bodyMovement, 5)
@@ -290,10 +288,505 @@ function Shared.release(inst, owner)
 end
 
 ---------------------------------------------------------------------
--- HIDE PETS / POPUPS / PLAYERS / LOW RESOURCE MODE
--- (Bagian visual & anti lag tetap dipertahankan seperti sebelumnya)
----------------------------------------------------------------------
+-- HIDE PETS
+do
+	local on = false
+	local gen = 0
+	local saved = {}
+	local hiddenModels = {}
+	local names, conns = {}, {}
 
+	local function hideInst(d)
+		local prop, value
+		if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then
+			prop, value = "Transparency", 1
+		elseif d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") then
+			prop, value = "Enabled", false
+		end
+		if not prop or saved[d] ~= nil then return end
+		if pcall(Shared.hold, d, prop, "pets", value) then
+			saved[d] = true
+		end
+	end
+	local function hideModel(m)
+		if hiddenModels[m] or services.players:GetPlayerFromCharacter(m) then return end
+		hiddenModels[m] = true
+		hideInst(m)
+		for _, d in ipairs(m:GetDescendants()) do hideInst(d) end
+	end
+	local function inHiddenModel(d)
+		local a = d.Parent
+		while a and a ~= workspace do
+			if hiddenModels[a] then return true end
+			a = a.Parent
+		end
+		return false
+	end
+	local function isPet(d)
+		return (d:IsA("Model") or d:IsA("BasePart")) and names[d.Name] == true
+	end
+	local function refreshNames()
+		local added = false
+		for _, p in ipairs(services.players:GetPlayers()) do
+			local pf = p:FindFirstChild(NAMES.petsFolder)
+			if pf then
+				for _, folder in ipairs(pf:GetChildren()) do
+					if folder:IsA("Folder") then
+						for _, pet in ipairs(folder:GetChildren()) do
+							if not names[pet.Name] then names[pet.Name] = true added = true end
+						end
+					end
+				end
+			end
+		end
+		return added
+	end
+	local function scan(my)
+		walk(workspace, function(d)
+			if not on or gen ~= my then return true end
+			if isPet(d) then pcall(hideModel, d) end
+		end)
+	end
+	local function sweep()
+		for d in pairs(saved) do
+			if not d:IsDescendantOf(game) then saved[d] = nil end
+		end
+		for m in pairs(hiddenModels) do
+			if not m:IsDescendantOf(game) then hiddenModels[m] = nil end
+		end
+	end
+
+	local function setHidden(state)
+		if state == on then return end
+		on = state
+		gen += 1
+		local my = gen
+		if on then
+			for k in pairs(PETS) do names[k] = true end
+			refreshNames()
+			conns[#conns + 1] = workspace.DescendantAdded:Connect(function(d)
+				if not on then return end
+				if isPet(d) then
+					pcall(hideModel, d)
+				elseif inHiddenModel(d) then
+					pcall(hideInst, d)
+				end
+			end)
+			task.spawn(scan, my)
+			task.spawn(function()
+				local n = 0
+				while on and gen == my and alive() do
+					task.wait(3)
+					n += 1
+					if on and gen == my and refreshNames() then scan(my) end
+					if n % 10 == 0 then sweep() end
+				end
+			end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for d in pairs(saved) do pcall(Shared.release, d, "pets") end
+			table.clear(saved)
+			table.clear(hiddenModels)
+		end
+	end
+
+	local sentHide = false
+	local wanted = false
+	Callbacks.HidePets = function(state, serverOnly)
+		wanted = state and true or false
+		if showPetsEvent then
+			showPetsEvent:FireServer(state and "hidePets" or "showPets")
+			sentHide = wanted
+		end
+		if not serverOnly then setHidden(state) end
+	end
+	Callbacks.SyncPetsServer = function()
+		if showPetsEvent and wanted and not sentHide then
+			showPetsEvent:FireServer("hidePets")
+			sentHide = true
+		end
+	end
+	gui.Destroying:Connect(function()
+		pcall(function()
+			setHidden(false)
+			if sentHide and showPetsEvent then
+				showPetsEvent:FireServer("showPets")
+			end
+		end)
+	end)
+end
+
+---------------------------------------------------------------------
+-- HIDE POPUPS
+do
+	local on = false
+	local gen = 0
+	local STRICT = true
+	local POPUP_PATTERNS = {"popup", "pop_up", "pop up", "notif", "toast"}
+	local GAIN = "^%s*%+%s*[%d%.,]"
+	local saved = {}
+	local objConns = {}
+	local rootConns = {}
+
+	local function link(o, c)
+		local t = objConns[o]
+		if not t then t = {} objConns[o] = t end
+		t[#t + 1] = c
+	end
+	local function drop(o)
+		local t = objConns[o]
+		if t then
+			for _, c in ipairs(t) do c:Disconnect() end
+			objConns[o] = nil
+		end
+	end
+	local function sweep()
+		for o in pairs(objConns) do
+			if not o:IsDescendantOf(game) then
+				drop(o)
+				saved[o] = nil
+			end
+		end
+		for o in pairs(saved) do
+			if not o:IsDescendantOf(game) then saved[o] = nil end
+		end
+	end
+
+	local function propOf(o)
+		if o:IsA("ScreenGui") or o:IsA("BillboardGui") then return "Enabled" end
+		if o:IsA("GuiObject") then return "Visible" end
+	end
+	local function nameMatch(n)
+		n = n:lower()
+		for _, p in ipairs(POPUP_PATTERNS) do
+			if n:find(p, 1, true) then return true end
+		end
+		return false
+	end
+	local function mine(o)
+		if o:IsDescendantOf(gui) then return true end
+		local top = o:IsA("ScreenGui") and o or o:FindFirstAncestorWhichIsA("ScreenGui") or o
+		return top.Name:sub(1, 7) == "Muhaves"
+	end
+	local function hide(o)
+		local prop = propOf(o)
+		if not prop or saved[o] ~= nil then return end
+		local original = o[prop]
+		local viaShared = o:IsA("BillboardGui")
+		if viaShared then
+			if not pcall(Shared.hold, o, prop, "popups", false) then return end
+		else
+			if not pcall(function() o[prop] = false end) then return end
+		end
+		saved[o] = {prop, original, viaShared}
+		link(o, o:GetPropertyChangedSignal(prop):Connect(function()
+			if on and o[prop] ~= false then o[prop] = false end
+		end))
+	end
+	local function rules(o)
+		if nameMatch(o.Name) then
+			hide(o)
+		elseif o:IsA("TextLabel") then
+			local bb = o:FindFirstAncestorWhichIsA("BillboardGui")
+			local function test()
+				if on and o.Text:match(GAIN) then hide(bb or o) end
+			end
+			test()
+			if bb then link(o, o:GetPropertyChangedSignal("Text"):Connect(test)) end
+		end
+	end
+	local function onExisting(o)
+		local prop = propOf(o)
+		if not prop or mine(o) then return end
+		rules(o)
+		if STRICT and not o:IsA("BillboardGui") and o[prop] == false then
+			link(o, o:GetPropertyChangedSignal(prop):Connect(function()
+				if on and o[prop] == true then hide(o) end
+			end))
+		end
+	end
+	local function onNew(o)
+		local prop = propOf(o)
+		if not prop or mine(o) then return end
+		if STRICT then hide(o) else rules(o) end
+	end
+
+	local function setHidden(state)
+		if state == on then return end
+		on = state
+		gen += 1
+		local my = gen
+		if on then
+			for _, root in ipairs({lp:WaitForChild("PlayerGui"), workspace}) do
+				rootConns[#rootConns + 1] = root.DescendantAdded:Connect(function(o)
+					if on then pcall(onNew, o) end
+				end)
+				task.spawn(function()
+					walk(root, function(o)
+						if not on or gen ~= my then return true end
+						pcall(onExisting, o)
+					end)
+				end)
+			end
+			task.spawn(function()
+				while on and gen == my and alive() do
+					task.wait(30)
+					if on and gen == my then sweep() end
+				end
+			end)
+		else
+			for _, c in ipairs(rootConns) do c:Disconnect() end
+			table.clear(rootConns)
+			for o in pairs(objConns) do drop(o) end
+			for o, v in pairs(saved) do
+				if v[3] then
+					pcall(Shared.release, o, "popups")
+				elseif o.Parent then
+					pcall(function() o[v[1]] = v[2] end)
+				end
+			end
+			table.clear(saved)
+		end
+	end
+
+	Callbacks.HidePopups = setHidden
+	gui.Destroying:Connect(function() setHidden(false) end)
+end
+
+---------------------------------------------------------------------
+-- HIDE PLAYERS
+do
+	local on = false
+	local saved = setmetatable({}, {__mode = "k"})
+	local conns = {}
+	local charConn = {}
+	local descConn = {}
+
+	local function hideInst(d)
+		if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then
+			if saved[d] == nil then saved[d] = {"Transparency", d.Transparency} end
+			d.Transparency = 1
+		elseif d:IsA("BillboardGui") then
+			if saved[d] == nil and pcall(Shared.hold, d, "Enabled", "players", false) then
+				saved[d] = {"Enabled", true, true}
+			end
+		elseif d:IsA("Humanoid") then
+			if saved[d] == nil then saved[d] = {"DisplayDistanceType", d.DisplayDistanceType} end
+			d.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		end
+	end
+	local function hideChar(p, c)
+		if descConn[p] then descConn[p]:Disconnect() end
+		for _, d in ipairs(c:GetDescendants()) do hideInst(d) end
+		descConn[p] = c.DescendantAdded:Connect(function(d) if on then hideInst(d) end end)
+	end
+	local function watch(p)
+		if p == lp then return end
+		if p.Character then hideChar(p, p.Character) end
+		if charConn[p] then charConn[p]:Disconnect() end
+		charConn[p] = p.CharacterAdded:Connect(function(c) if on then hideChar(p, c) end end)
+	end
+
+	Callbacks.HidePlayers = function(state)
+		if state == on then return end
+		on = state
+		if on then
+			for _, p in ipairs(services.players:GetPlayers()) do watch(p) end
+			conns[#conns + 1] = services.players.PlayerAdded:Connect(function(p) if on then watch(p) end end)
+			conns[#conns + 1] = services.players.PlayerRemoving:Connect(function(p)
+				if charConn[p] then
+					charConn[p]:Disconnect()
+					charConn[p] = nil
+				end
+				if descConn[p] then
+					descConn[p]:Disconnect()
+					descConn[p] = nil
+				end
+			end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for _, c in pairs(charConn) do c:Disconnect() end
+			table.clear(charConn)
+			for _, c in pairs(descConn) do c:Disconnect() end
+			table.clear(descConn)
+			for d, v in pairs(saved) do
+				if v[3] then
+					pcall(Shared.release, d, "players")
+				elseif d.Parent then
+					pcall(function() d[v[1]] = v[2] end)
+				end
+			end
+			table.clear(saved)
+		end
+	end
+	gui.Destroying:Connect(function() Callbacks.HidePlayers(false) end)
+end
+
+-- Hide Visuals (only used by Low Resource Mode)
+do
+	local popupsOnly = Callbacks.HidePopups
+	local petsOnly = Callbacks.HidePets
+	Callbacks.HideVisuals = function(state)
+		state = state and true or false
+		popupsOnly(state)
+		if state then
+			petsOnly(true, true)
+		else
+			petsOnly(false)
+		end
+	end
+end
+
+---------------------------------------------------------------------
+-- LOW RESOURCE MODE
+do
+	local on = {anti = false, fps = false, black = false, r3d = true, low = false}
+	local saved = setmetatable({}, {__mode = "k"})
+	local conns = {}
+	local overlay, origQuality, origShadows, origFps
+	local antiGen = 0
+
+	local function dim(o)
+		if o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Beam") or o:IsA("Smoke")
+			or o:IsA("Fire") or o:IsA("Sparkles") or o:IsA("PostEffect") then
+			if saved[o] == nil then
+				Shared.hold(o, "Enabled", "lag", false)
+				saved[o] = true
+			end
+		end
+	end
+
+	Callbacks.AntiLag = function(state)
+		state = state and true or false
+		if state == on.anti then return end
+		on.anti = state
+		antiGen += 1
+		local my = antiGen
+		if state then
+			pcall(function() origQuality = settings().Rendering.QualityLevel end)
+			pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+			origShadows = services.lighting.GlobalShadows
+			services.lighting.GlobalShadows = false
+			for _, root in ipairs({workspace, services.lighting}) do
+				conns[#conns + 1] = root.DescendantAdded:Connect(function(o)
+					if on.anti then pcall(dim, o) end
+				end)
+			end
+			task.spawn(function()
+				for _, root in ipairs({workspace, services.lighting}) do
+					walk(root, function(o)
+						if not on.anti or antiGen ~= my then return true end
+						pcall(dim, o)
+					end)
+					if not on.anti or antiGen ~= my then return end
+				end
+			end)
+			task.spawn(function()
+				while on.anti and antiGen == my and alive() do
+					task.wait(5)
+					for o in pairs(saved) do
+						if o.Parent and o.Enabled ~= false then
+							pcall(function() o.Enabled = false end)
+						end
+					end
+				end
+			end)
+		else
+			for _, c in ipairs(conns) do c:Disconnect() end
+			table.clear(conns)
+			for o in pairs(saved) do pcall(Shared.release, o, "lag") end
+			table.clear(saved)
+			if origShadows ~= nil then services.lighting.GlobalShadows = origShadows end
+			if origQuality then pcall(function() settings().Rendering.QualityLevel = origQuality end) end
+		end
+	end
+
+	Callbacks.FPSCap = function(state)
+		state = state and true or false
+		if state == on.fps then return end
+		on.fps = state
+		if state then
+			origFps = nil
+			if getfpscap then pcall(function() origFps = getfpscap() end) end
+			if setfpscap then pcall(setfpscap, 20) end
+		elseif setfpscap then
+			pcall(setfpscap, type(origFps) == "number" and origFps or 0)
+		end
+	end
+
+	Callbacks.Render3D = function(enabled)
+		enabled = enabled and true or false
+		if enabled == on.r3d then return end
+		on.r3d = enabled
+		pcall(function() services.runservice:Set3dRenderingEnabled(enabled) end)
+	end
+
+	local function setBlack(state)
+		state = state and true or false
+		if state == on.black then return end
+		on.black = state
+		if state then
+			overlay = Instance.new("ScreenGui")
+			overlay.Name = "MuhavesBlack"
+			overlay.ResetOnSpawn = false
+			overlay.IgnoreGuiInset = true
+			overlay.DisplayOrder = 5
+			local f = Instance.new("Frame")
+			f.Size = UDim2.fromScale(1, 1)
+			f.BackgroundColor3 = Color3.new(0, 0, 0)
+			f.BorderSizePixel = 0
+			f.Active = false
+			f.Parent = overlay
+			overlay.Parent = lp:WaitForChild("PlayerGui")
+		elseif overlay then
+			overlay:Destroy()
+			overlay = nil
+		end
+	end
+
+	Callbacks.LowResource = function(state)
+		state = state and true or false
+		if state == on.low then return end
+		on.low = state
+		if state then
+			Callbacks.AntiLag(true)
+			Callbacks.FPSCap(true)
+			setBlack(true)
+			Callbacks.Render3D(false)
+		else
+			Callbacks.Render3D(true)
+			setBlack(false)
+			Callbacks.FPSCap(false)
+			Callbacks.AntiLag(false)
+		end
+	end
+	gui.Destroying:Connect(function() Callbacks.LowResource(false) end)
+end
+
+do
+	local lowOnly = Callbacks.LowResource
+	local active = false
+	Callbacks.LowResource = function(state)
+		state = state and true or false
+		if state == active then return end
+		active = state
+		if state then
+			local ok, err = pcall(Callbacks.HideVisuals, true)
+			if not ok then warn("[Muhaves] Hide Visuals: " .. tostring(err)) end
+			lowOnly(true)
+		else
+			lowOnly(false)
+			local ok, err = pcall(Callbacks.HideVisuals, false)
+			if not ok then warn("[Muhaves] Hide Visuals: " .. tostring(err)) end
+		end
+	end
+	gui.Destroying:Connect(function() Callbacks.LowResource(false) end)
+end
+
+---------------------------------------------------------------------
+-- REQUIRED OBJECTS
 local missing = {}
 local function need(parent, name)
 	local o = parent and parent:WaitForChild(name, 15)
@@ -331,6 +824,14 @@ parallel(
 	end
 )
 
+if rEvents then
+	task.spawn(function() fortuneRemote = rEvents:WaitForChild(NAMES.remote.fortune, 10) end)
+	task.spawn(function()
+		showPetsEvent = rEvents:WaitForChild(NAMES.remote.showPets, 10)
+		if showPetsEvent and Callbacks.SyncPetsServer then pcall(Callbacks.SyncPetsServer) end
+	end)
+end
+
 if #missing > 0 or not (muscleEvent and rebirthsV and strengthV and duraV and rEvents and equipPetEvent and rebirthRemote) then
 	for _, l in ipairs({UI.Rebirth.Status, UI.Strength.Status}) do
 		l.Text, l.TextColor3 = "Status: Error", Color3.fromRGB(255, 90, 90)
@@ -338,6 +839,22 @@ if #missing > 0 or not (muscleEvent and rebirthsV and strengthV and duraV and rE
 	UI.Notice.Status.Text = "Error"
 	UI.Notice.Status.TextColor3 = Color3.fromRGB(255, 105, 105)
 	UI.Notice.Check.Text = "❌"
+	local NEEDS_GAME = {
+		AutoRebirth = "Auto Rebirth", AutoFarmStrength = "Auto Farm Strength",
+		EquipRebirthPets = "Equip Rebirth Pets", EquipRepsPets = "Equip Reps Pets", EquipStrengthPets = "Equip Strength Pets",
+		EatEggs = "Eat Eggs (Auto)", EatShake = "Eat Shake (Auto)", SpinWheel = "Spin Fortune Wheel", EatAllBoosts = "Eat All Boosts",
+	}
+	for name, title in pairs(NEEDS_GAME) do
+		Callbacks[name] = function(s)
+			if s then
+				setToggle(title, false)
+				warn("[Muhaves] " .. title .. " is unavailable: required game objects were not found.")
+			end
+		end
+		setToggle(title, false)
+	end
+	table.clear(UI.Pending)
+	warn("[Muhaves] Farming is off, missing: " .. table.concat(missing, ", "))
 	return UI
 end
 
@@ -345,6 +862,7 @@ UI.Notice.Status.Text = "Working"
 UI.RebirthSource.obj = rebirthsV
 
 local formatNumber = UI.Abbr
+
 local PACE_MULT = {1, 60, 3600, 86400, 604800}
 local function setPace(cells, r)
 	for i, m in ipairs(PACE_MULT) do
@@ -358,8 +876,7 @@ local function findTool(name)
 end
 
 ---------------------------------------------------------------------
--- PETS & GOVERNOR LOGIC (Diperbarui mengikuti Silence)
----------------------------------------------------------------------
+-- PETS (logika lama: ON manual lewat toggle, bisa dimatikan)
 local MAX_PET_SLOTS = 12
 local TARGET_REP_SPEED = 150
 
@@ -493,71 +1010,26 @@ local function equipFarmingPets()
 end
 
 ---------------------------------------------------------------------
--- GOVERNOR & PING GUARD (Silence Standard)
----------------------------------------------------------------------
+-- REP SENDING (gaya Silence)
 local REP_CAP = CONST.REP_CAP
 local REP_DEFAULT = CONST.REP_DEFAULT
-local MAX_DT = 0.5
-local MAX_REP_PER_FRAME = math.ceil(REP_CAP * MAX_DT)
+
+-- progress.n counts every gain of Strength / Durability WHILE a farming loop is running (see onValue).
 local progress = {n = 0}
 
-local Gov = {}
-Gov.__index = Gov
-local function govFloor(maxRate) return math.min(maxRate, math.max(10, math.floor(maxRate * 0.3))) end
-local CAP_CREEP_EVERY, CAP_CREEP_STEP = 60, 2
-function Gov.new()
-	return setmetatable({rate = 0, max = REP_CAP, min = 10, cap = REP_CAP, capAt = 0, lastMax = REP_CAP,
-		stalled = 0, lastAt = 0, lastProg = 0, interval = 0.5}, Gov)
-end
-function Gov:reset(maxRate, prog, controlled)
-	self.max, self.lastMax = maxRate, maxRate
-	self.min = govFloor(maxRate)
-	self.cap, self.capAt = maxRate, os.clock()
-	self.rate = controlled and math.max(self.min, math.floor(maxRate * 0.3)) or maxRate
-	self.stalled, self.lastAt, self.lastProg = 0, os.clock(), prog
-end
-function Gov:backoff()
-	self.cap = math.max(self.min, self.rate * 0.9)
-	self.capAt = os.clock()
-	self.rate = math.max(self.min, self.rate * 0.65)
-end
-function Gov:rearm(prog)
-	self.stalled, self.lastAt, self.lastProg = 0, os.clock(), prog
-end
-function Gov:update(prog, controlled)
-	if not controlled then
-		self.rate = self.max
-		return nil
-	end
+-- Token bucket: sends reps at `rate` per second, at most `maxBurst` per call.
+local function sendReps(state, rate, maxBurst, canSend)
 	local now = os.clock()
-	if self.max ~= self.lastMax then
-		self.lastMax, self.cap, self.capAt = self.max, self.max, now
+	local elapsed = math.clamp(now - (state.LastAt or now), 0, 0.1)
+	state.LastAt = now
+	state.Tokens = math.min(maxBurst, (state.Tokens or 0) + rate * elapsed)
+	local sent = 0
+	while state.Tokens >= 1 and canSend() do
+		muscleEvent:FireServer("rep")
+		state.Tokens -= 1
+		sent += 1
 	end
-	self.min = govFloor(self.max)
-	self.cap = math.clamp(self.cap, self.min, self.max)
-	self.rate = math.clamp(self.rate, self.min, self.cap)
-	if now - self.lastAt < self.interval then return nil end
-	self.lastAt = now
-	local state
-	if prog ~= self.lastProg then
-		self.stalled = 0
-		if self.rate < self.cap then self.rate = math.min(self.cap, self.rate * 1.12) end
-		if self.cap < self.max and now - self.capAt >= CAP_CREEP_EVERY then
-			self.cap = math.min(self.max, self.cap + CAP_CREEP_STEP)
-			self.capAt = now
-		end
-		state = "ok"
-	else
-		self.stalled += 1
-		if self.stalled >= 2 then
-			self.cap = math.max(self.min, self.rate * 0.9)
-			self.capAt = now
-			self.rate = math.max(self.min, self.rate * 0.65)
-			state = "slow"
-		end
-	end
-	self.lastProg = prog
-	return state
+	return sent
 end
 
 local function charAlive()
@@ -566,55 +1038,18 @@ local function charAlive()
 	return h ~= nil and h.Health > 0
 end
 
-local function readDataPing()
-	local ok, ping = pcall(function()
-		return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
-	end)
-	if ok and type(ping) == "number" and ping == ping and ping >= 0 and ping < math.huge then
-		return ping
-	end
-end
-
-local PingGuard = {limit = 350, resume = 300, recovery = 2, paused = false, okSince = nil, checkedAt = 0}
-function PingGuard.update(controlled)
-	if not controlled then
-		local was = PingGuard.paused
-		PingGuard.paused, PingGuard.okSince = false, nil
-		return false, was and "resume" or nil
-	end
-	local now = os.clock()
-	if now - PingGuard.checkedAt < 0.25 then return PingGuard.paused, nil end
-	PingGuard.checkedAt = now
-	local p = readDataPing()
-	if not p then return PingGuard.paused, nil end
-	if p > PingGuard.limit then
-		local was = PingGuard.paused
-		PingGuard.paused, PingGuard.okSince = true, nil
-		return true, (not was) and "pause" or nil
-	end
-	if PingGuard.paused then
-		if p < PingGuard.resume then
-			PingGuard.okSince = PingGuard.okSince or now
-			if now - PingGuard.okSince >= PingGuard.recovery then
-				PingGuard.paused, PingGuard.okSince = false, nil
-				return false, "resume"
-			end
-		else
-			PingGuard.okSince = nil
-		end
-	end
-	return PingGuard.paused, nil
-end
-
 ---------------------------------------------------------------------
--- REBIRTH & STRENGTH LOOPS
----------------------------------------------------------------------
+-- REBIRTH (Auto Rebirth / Equip Rebirth Pets / Rebirth Target)
 local repLimit = {max = REP_DEFAULT, controlled = true}
-local rbGov = Gov.new()
+
 local rb = {
-	rebirths = rebirthsV, strength = strengthV,
-	running = false, workerActive = false, usePets = false, targetCount = 0, timeouts = 0, backoff = 10,
+	rebirths = rebirthsV,
+	strength = strengthV,
+	running = false, workerActive = false,
+	usePets = false,
+	targetCount = 0,
 }
+
 UI.RbClock.active = function() return rb.running end
 
 local function setRebirthStatus(text, color)
@@ -632,75 +1067,134 @@ local function stopAtTarget()
 	setToggle("Auto Rebirth", false)
 end
 
+-- Strength gained per rep, learned across cycles (Silence style).
 local rbPerRep = nil
+local RB_AD = {TargetSeconds = 3, MinRate = 3, MaxRate = 50, ProbeRate = 10, ProbeReps = 10, FeedbackTimeout = 1}
+local RB_COOLDOWN = 6
+local rbNextRequestAt = 0
+
+-- Silence style: the 6 s cooldown is also counted from the moment a rebirth is confirmed (value went up).
+local lastRebirthValue = rebirthsV.Value
+track(rebirthsV.Changed:Connect(function(v)
+	if v > lastRebirthValue then rbNextRequestAt = os.clock() + RB_COOLDOWN end
+	lastRebirthValue = v
+end))
+
 local function performRebirth()
-	local target = 5000 + rb.rebirths.Value * 2550
-	local tokens, last = 0, os.clock()
-	local gov = rbGov
-	gov.stalled, gov.lastAt = 0, os.clock()
-	local held = false
-	local startStr, sent = rb.strength.Value, 0
-	local lastSentAt = os.clock()
-	local limit = rbPerRep and math.max(10, math.ceil(math.max(0, target - startStr) / rbPerRep)) or 10
-
-	while rb.running and alive() and not rebirthTargetReached() and rb.strength.Value < target do
-		gov.max = repLimit.max
-		local hold
-		if not charAlive() then
-			hold = "Status: Waiting for respawn"
+	local startReb = rb.rebirths.Value
+	local target = 5000 + startReb * 2550
+	local c = {
+		StartStrength = rb.strength.Value, SampleStrength = rb.strength.Value,
+		SampleAt = os.clock(), LastSentAt = os.clock(), Sent = 0,
+		Tokens = 0, LastAt = os.clock(), StatusAt = -math.huge, Seconds = 0,
+	}
+	local rate = RB_AD.ProbeRate
+	local function calcRate()
+		if rbPerRep and rbPerRep > 0 then
+			local reps = math.max(1, math.ceil(math.max(0, target - c.StartStrength) / rbPerRep))
+			rate = math.clamp(reps / RB_AD.TargetSeconds, RB_AD.MinRate, RB_AD.MaxRate)
 		else
-			local paused, ev = PingGuard.update(repLimit.controlled)
-			if ev == "pause" then gov:backoff() elseif ev == "resume" then gov:rearm(progress.n) end
-			if paused then hold = "Status: Waiting (ping)" end
+			rate = RB_AD.ProbeRate
 		end
-		if hold then
-			held = true
-			tokens, last = 0, os.clock()
-			setRebirthStatus(hold, C_PAUSE)
-			services.runservice.Heartbeat:Wait()
-			continue
-		end
-		if held then
-			held = false
-			gov:rearm(progress.n)
-			setRebirthStatus("Status: Rebirthing", C_ON)
-		end
-
-		local str = rb.strength.Value
-		if sent > 0 and str > startStr then
-			rbPerRep = (str - startStr) / sent
-		end
-		if sent >= limit then
-			tokens, last = 0, os.clock()
-			gov:rearm(progress.n)
-			services.runservice.Heartbeat:Wait()
-			continue
-		end
-
-		local s = gov:update(progress.n, repLimit.controlled)
+	end
+	local function learn(final)
 		local now = os.clock()
-		tokens = math.min(MAX_REP_PER_FRAME, tokens + gov.rate * math.min(MAX_DT, now - last))
-		last = now
-		local n = math.min(math.floor(tokens), MAX_REP_PER_FRAME, limit - sent)
-		if n > 0 then
-			tokens -= n
-			sent += n
-			lastSentAt = now
-			pcall(function()
-				for _ = 1, n do muscleEvent:FireServer("rep") end
-			end)
+		if not final and now - c.SampleAt < 0.25 then return end
+		local str = rb.strength.Value
+		local gain = str - c.StartStrength
+		if gain > 0 and c.Sent > 0 and (final or str > c.SampleStrength) then
+			rbPerRep = gain / c.Sent
+			c.SampleStrength = str
 		end
+		calcRate()
+		c.SampleAt = now
+	end
+	calcRate()
+	c.Budget = rbPerRep and math.max(RB_AD.ProbeReps,
+		math.ceil(math.max(0, target - c.StartStrength) / rbPerRep)) or RB_AD.ProbeReps
+
+	local function needs()
+		return rb.running and alive() and not rebirthTargetReached()
+			and rb.rebirths.Value == startReb and rb.strength.Value < target
+	end
+
+	local lastT = os.clock()
+	while needs() do
+		local now = os.clock()
+		if charAlive() then
+			c.Seconds += math.max(0, now - lastT)
+			learn()
+			if c.Sent >= c.Budget then
+				c.Tokens, c.LastAt = 0, now
+				if now - c.LastSentAt >= RB_AD.FeedbackTimeout then
+					local missingStr = math.max(0, target - rb.strength.Value)
+					local extra = rbPerRep and math.ceil(missingStr / rbPerRep) or RB_AD.ProbeReps
+					c.Budget = c.Sent + math.clamp(extra, math.ceil(RB_AD.ProbeReps / 2), RB_AD.ProbeReps)
+				end
+			else
+				local budget = c.Budget - c.Sent
+				local sent = sendReps(c, rate, 5, function()
+					if budget <= 0 or not needs() then return false end
+					budget -= 1
+					return true
+				end)
+				c.Sent += sent
+				if sent > 0 then c.LastSentAt = now end
+			end
+			if now - c.StatusAt >= 0.25 then
+				setRebirthStatus("Status: Rebirthing", C_ON)
+				c.StatusAt = now
+			end
+		else
+			c.Tokens, c.LastAt = 0, now
+			setRebirthStatus("Status: Waiting for respawn", C_PAUSE)
+		end
+		lastT = now
 		services.runservice.Heartbeat:Wait()
 	end
 
-	if rb.running and alive() and not rebirthTargetReached() and rb.strength.Value >= target then
-		if rb.usePets then
-			equipBestRebirthPets()
+	if not (rb.running and alive()) or rb.rebirths.Value ~= startReb or rebirthTargetReached() then return end
+	learn(true)
+	if rb.usePets then
+		equipBestRebirthPets()
+		task.wait(0.25)
+	end
+	while rb.running and alive() and rb.rebirths.Value == startReb and not rebirthTargetReached() do
+		local remaining = rbNextRequestAt - os.clock()
+		if remaining > 0 then
+			task.wait(math.min(remaining, 0.1))
+		else
+			rbNextRequestAt = os.clock() + RB_COOLDOWN
+			pcall(function() rebirthRemote:InvokeServer("rebirthRequest") end)
+		end
+	end
+end
+
+local function startRebirthWorker()
+	if rb.workerActive then return end
+	rb.workerActive = true
+	task.spawn(function()
+		while rb.running and alive() do
+			if rebirthTargetReached() then
+				stopAtTarget()
+				break
+			end
+			local ok, err = pcall(function()
+				if petChosen then equipFarmingPets() end
+				performRebirth()
+			end)
+			if not ok then
+				warn("[Muhaves] Rebirth error: " .. tostring(err))
+				if rb.running and alive() then
+					setRebirthStatus("Status: Retrying", C_PAUSE)
+					task.wait(2)
+					if rb.running and alive() then setRebirthStatus("Status: Rebirthing", C_ON) end
+				end
+			end
 			task.wait(0.1)
 		end
-		local before = rb.rebirths.Value
-		invokeWithTimeout(rebirthRemote, 5, "rebirthRequest")
-	end
+		rb.workerActive = false
+	end)
 end
 
 Callbacks.AutoRebirth = function(state)
@@ -710,26 +1204,19 @@ Callbacks.AutoRebirth = function(state)
 		return
 	end
 	if state then
+		-- Auto Rebirth and Auto Farm Strength both send reps: never run them together
 		Callbacks.AutoFarmStrength(false)
 		setToggle("Auto Farm Strength", false)
 	end
 	rb.running = state
 	if state then
 		equippedSet = nil
-		rb.timeouts, rb.backoff = 0, 10
-		rbGov:reset(repLimit.max, progress.n, repLimit.controlled)
 		setRebirthStatus("Status: Rebirthing", C_ON)
-		task.spawn(function()
-			while rb.running and alive() do
-				pcall(performRebirth)
-				task.wait(0.1)
-			end
-		end)
+		startRebirthWorker()
 	else
 		setRebirthStatus("Status: Paused", C_PAUSE)
 	end
 end
-
 Callbacks.EquipRebirthPets = function(state)
 	rb.usePets = state
 	equippedSet = nil
@@ -741,17 +1228,24 @@ Callbacks.RebirthTarget = function(v)
 end
 
 ---------------------------------------------------------------------
--- STRENGTH SETUP & MAX REPS (Maksimal 500, Default 50)
----------------------------------------------------------------------
+-- STRENGTH (Auto Farm Strength / Controlled Speed / Max Reps)
 local st = {
-	strength = strengthV, durability = duraV,
-	running = false, runId = 0, controlled = true,
+	strength = strengthV,
+	durability = duraV,
+	running = false,
+	runId = 0,
+	controlled = true,
 	startedAt = 0, totalElapsed = 0, timerStarted = false, baselineSet = false,
 	calcInterval = 10,
 	maxRate = REP_DEFAULT, rate = REP_DEFAULT,
-	tokens = 0, last = {str = 0, dura = 0}, gain = {str = 0, dura = 0}, run = {str = 0, dura = 0}, win = {str = 0, dura = 0},
+	last = {str = 0, dura = 0},
+	gain = {str = 0, dura = 0},
+	run  = {str = 0, dura = 0},
+	win  = {str = 0, dura = 0},
+	lastCalcAt = 0,
 }
 st.last.str, st.last.dura = st.strength.Value, st.durability.Value
+st.lastCalcAt = os.clock()
 
 local function setStrengthStatus(text, color)
 	UI.Strength.Status.Text = text
@@ -763,48 +1257,99 @@ local function onValue(key, new)
 	st.last[key] = new
 	if d <= 0 then return end
 	if st.running or rb.running then progress.n += 1 end
-	if not st.running then return end
+	if not st.running or not st.timerStarted then return end
 	st.gain[key] += d
-	if not st.timerStarted then
-		st.timerStarted = true
-		st.startedAt = os.clock()
-		st.win.str, st.win.dura = st.run.str, st.run.dura
-	else
-		st.run[key] += d
-	end
+	st.run[key] += d
 end
 track(st.strength.Changed:Connect(function(v) onValue("str", v) end))
 track(st.durability.Changed:Connect(function(v) onValue("dura", v) end))
 
-local strGov = Gov.new()
+local function runElapsed()
+	local e = st.totalElapsed
+	if st.running and st.timerStarted then e += os.clock() - st.startedAt end
+	return e
+end
+
+local function updateRuntime()
+	local e = runElapsed()
+	UI.Strength.Runtime.Text = string.format("🕒 %dd %dh %dm %ds",
+		math.floor(e / 86400), math.floor((e % 86400) / 3600), math.floor((e % 3600) / 60), math.floor(e % 60))
+end
+
+local function updateStats()
+	UI.Strength.Strength.Text = formatNumber(st.strength.Value)
+	UI.Strength.StrengthGain.Text = "+" .. formatNumber(st.gain.str)
+	UI.Strength.Durability.Text = formatNumber(st.durability.Value)
+	UI.Strength.DurabilityGain.Text = "+" .. formatNumber(st.gain.dura)
+end
+
+local function updateAverages()
+	local e = runElapsed()
+	if e < 1 then return end
+	setPace(UI.Strength.StrAverage, st.run.str / e)
+	setPace(UI.Strength.DuraAverage, st.run.dura / e)
+end
+
+local function calculatePace()
+	if not st.running or not st.timerStarted then return end
+	local now = os.clock()
+	local elapsed = now - st.lastCalcAt
+	if elapsed < st.calcInterval then return end
+
+	setPace(UI.Strength.StrPace, (st.run.str - st.win.str) / elapsed)
+	setPace(UI.Strength.DuraPace, (st.run.dura - st.win.dura) / elapsed)
+	st.win.str, st.win.dura = st.run.str, st.run.dura
+	st.lastCalcAt = now
+	updateAverages()
+end
+
+-- Strength rate control (Silence style): start at 200 reps/s, +12% every 0.5 s while the server answers,
+-- -35% after 2 silent intervals. Max Reps is the ceiling.
+local ST_INITIAL, ST_BURST = 200, 24
+local stState = {Tokens = 0, LastAt = os.clock()}
+local ctl = {at = os.clock(), prog = 0, stalled = 0}
+
+local function resetStrengthCtl()
+	st.rate = st.controlled and math.min(ST_INITIAL, st.maxRate) or st.maxRate
+	stState.Tokens, stState.LastAt = 0, os.clock()
+	ctl.at, ctl.prog, ctl.stalled = os.clock(), progress.n, 0
+end
+
+local function updateAdaptiveRate()
+	local now = os.clock()
+	st.rate = math.min(st.rate, st.maxRate)
+	if now - ctl.at < 0.5 then return end
+	if progress.n ~= ctl.prog then
+		ctl.stalled = 0
+		st.rate = math.min(st.maxRate, st.rate * 1.12)
+		setStrengthStatus(st.timerStarted and "Status: Farming" or "Status: Preparing", C_ON)
+	else
+		ctl.stalled += 1
+	end
+	if ctl.stalled >= 2 then
+		st.rate = math.max(math.min(ST_INITIAL, st.maxRate), st.rate * 0.65)
+		stState.Tokens = 0
+		setStrengthStatus("Status: Slowing", C_PAUSE)
+	end
+	ctl.at, ctl.prog = now, progress.n
+end
+
+-- Timer and gain counting start only once the rate has reached Max Reps (warm-up is not measured).
+local function startMeasurement()
+	if not st.running or st.timerStarted or st.rate < st.maxRate then return end
+	local now = os.clock()
+	st.timerStarted = true
+	st.startedAt, st.lastCalcAt = now, now
+	st.win.str, st.win.dura = st.run.str, st.run.dura
+end
+
 local function strengthLoop(myId)
-	local lastLoopAt = os.clock()
-	while st.running and st.runId == myId and alive() do
-		local now = os.clock()
-		local dt = math.min(MAX_DT, now - lastLoopAt)
-		lastLoopAt = now
-
-		if not charAlive() then
-			services.runservice.Heartbeat:Wait()
-			continue
-		end
-
-		if st.controlled then
-			strGov.max = st.maxRate
-			strGov:update(progress.n, true)
-			st.rate = strGov.rate
-		else
-			st.rate = st.maxRate
-		end
-
-		st.tokens = math.min(MAX_REP_PER_FRAME, st.tokens + st.rate * dt)
-		local n = math.min(math.floor(st.tokens), MAX_REP_PER_FRAME)
-		if n > 0 then
-			pcall(function()
-				for _ = 1, n do muscleEvent:FireServer("rep") end
-			end)
-			st.tokens -= n
-		end
+	resetStrengthCtl()
+	local function canSend() return st.running and st.runId == myId and alive() end
+	while canSend() do
+		if st.controlled then updateAdaptiveRate() else st.rate = st.maxRate end
+		startMeasurement()
+		sendReps(stState, st.rate, ST_BURST, canSend)
 		services.runservice.Heartbeat:Wait()
 	end
 end
@@ -823,38 +1368,210 @@ Callbacks.AutoFarmStrength = function(state)
 			st.gain.str, st.gain.dura = 0, 0
 			st.baselineSet = true
 		end
-		strGov:reset(st.maxRate, progress.n, st.controlled)
-		setStrengthStatus("Status: Farming", C_ON)
+		st.timerStarted, st.startedAt = false, 0
+		st.win.str, st.win.dura = st.run.str, st.run.dura
+		st.lastCalcAt = os.clock()
+		setStrengthStatus(st.controlled and "Status: Preparing" or "Status: Farming", C_ON)
+		equippedSet = nil
+		if petChosen then task.spawn(equipFarmingPets) end
 		task.spawn(strengthLoop, st.runId)
 	else
-		setStrengthStatus("Status: Paused", C_PAUSE)
+		if st.timerStarted and st.startedAt > 0 then
+			st.totalElapsed += os.clock() - st.startedAt
+		end
+		st.startedAt, st.timerStarted = 0, false
+		updateAverages()
+		if st.baselineSet then setStrengthStatus("Status: Paused", C_PAUSE)
+		else setStrengthStatus("Status: Inactive", C_IDLE) end
+		updateRuntime()
 	end
 end
 
 Callbacks.ControlledSpeed = function(state)
-	st.controlled = state and true or false
-	repLimit.controlled = st.controlled
+	state = state and true or false
+	st.controlled = state
+	repLimit.controlled = state
+	resetStrengthCtl()
+	if st.running then setStrengthStatus(st.timerStarted and "Status: Farming" or "Status: Preparing", C_ON) end
+	if rb.running then setRebirthStatus("Status: Rebirthing", C_ON) end
 end
 
--- PENGATURAN MAX REPS (Max: 500, Default: 50, Reset ke default jika kosong/0)
+gui.Destroying:Connect(function()
+	st.running = false
+	st.runId += 1
+	rb.running = false
+end)
+
+-- Max Reps / Second: clamped to [1, REP_CAP]. Input 0 / kosong -> default (REP_DEFAULT).
 Callbacks.MaxReps = function(v)
-	local num = tonumber(v)
-	if not num or num <= 0 then
-		v = REP_DEFAULT
-	else
-		v = math.clamp(math.floor(num), 1, REP_CAP)
-	end
+	v = tonumber(v) or REP_DEFAULT
+	if v <= 0 then v = REP_DEFAULT end
+	v = math.clamp(math.floor(v), 1, REP_CAP)
 	st.maxRate = v
 	repLimit.max = v
 	st.rate = math.min(st.rate, v)
 	persist("MaxReps", v)
 end
 
--- Inisialisasi konfigurasi tersimpan
-if tonumber(Saved.MaxReps) then
-	Callbacks.MaxReps(Saved.MaxReps)
-else
-	Callbacks.MaxReps(REP_DEFAULT)
+local tickCount = 0
+loop(function()
+	updateStats()
+	tickCount += 1
+	if tickCount % 4 == 0 then
+		updateRuntime()
+		calculatePace()
+	end
+	task.wait(0.25)
+end)
+
+---------------------------------------------------------------------
+-- EXTRAS
+
+local function eatEgg()
+	local tool = findTool(NAMES.tools.egg)
+	if tool then
+		for _ = 1, 10 do muscleEvent:FireServer("proteinEgg", tool) end
+	end
 end
+
+local nextShake = 0
+local function eatShake()
+	local tool = findTool(NAMES.tools.shake)
+	if tool then
+		muscleEvent:FireServer("tropicalShake", tool)
+		return true
+	end
+	return false
+end
+
+loop(function()
+	if flag.eggs then eatEgg() task.wait(0.5) else task.wait(1) end
+end)
+
+loop(function()
+	if flag.shake and os.clock() >= nextShake and eatShake() then
+		nextShake = os.clock() + 150
+	end
+	task.wait(1)
+end)
+
+task.spawn(function()
+	local fails = 0
+	while alive() do
+		if flag.spin then
+			local okCall = pcall(function()
+				if not fortuneRemote then error("remote not found: " .. NAMES.remote.fortune) end
+				local chances = resolvePath(services.replicatedstorage, NAMES.fortuneChances)
+				local okInv, _, why = invokeWithTimeout(fortuneRemote, 5, "openFortuneWheel", chances)
+				if why == "busy" then return end
+				if not okInv then error(why or "invoke failed") end
+			end)
+			fails = okCall and 0 or fails + 1
+			if fails >= 3 then
+				fails = 0
+				warn("[Muhaves] Fortune Wheel: no answer from the server, trying again in 20 s.")
+				for _ = 1, 80 do
+					if not (alive() and flag.spin) then break end
+					task.wait(0.25)
+				end
+			end
+		else
+			fails = 0
+		end
+		task.wait(1)
+	end
+end)
+
+local BOOSTS = {
+	{NAMES.tools.shake, "tropicalShake"}, {"Energy Shake", "energyShake"}, {"Protein Bar", "proteinBar"},
+	{"TOUGH Bar", "toughBar"}, {"Protein Shake", "proteinShake"}, {"ULTRA Shake", "ultraShake"},
+	{"Energy Bar", "energyBar"},
+}
+loop(function()
+	if flag.boosts then
+		for _, b in ipairs(BOOSTS) do
+			if not (flag.boosts and alive()) then break end
+			if not (flag.shake and b[1] == NAMES.tools.shake) then
+				local tool = findTool(b[1])
+				if tool then
+					for _ = 1, 10 do muscleEvent:FireServer(b[2], tool) end
+				end
+			end
+		end
+		task.wait(0.5)
+	else
+		task.wait(1)
+	end
+end)
+
+Callbacks.EatEggs = function(s) flag.eggs = s end
+Callbacks.EatShake = function(s)
+	flag.shake = s
+	if s then nextShake = 0 end
+end
+Callbacks.SpinWheel = function(s) flag.spin = s end
+Callbacks.EatAllBoosts = function(s) flag.boosts = s end
+
+-- Equip Reps Pets / Equip Strength Pets: dua set pet yang saling mematikan (hanya satu aktif).
+local PET_TILES = {
+	reps = "Equip Reps Pets", strength = "Equip Strength Pets",
+}
+local function choosePets(mode, equipFn)
+	petMode, petChosen = mode, true
+	equippedSet = nil
+	for m, title in pairs(PET_TILES) do
+		if m ~= mode then setToggle(title, false) end
+	end
+	task.spawn(equipFn)
+end
+Callbacks.EquipRepsPets = function(state)
+	if state then
+		choosePets("reps", equipBestFarmingPets)
+	elseif petMode == "reps" then
+		petChosen = false
+	end
+	persist("PetMode", petChosen and petMode or "none")
+end
+Callbacks.EquipStrengthPets = function(state)
+	if state then
+		choosePets("strength", equipBestStrengthPets)
+	elseif petMode == "strength" then
+		petChosen = false
+	end
+	persist("PetMode", petChosen and petMode or "none")
+end
+
+---------------------------------------------------------------------
+-- Setelah respawn: catatan pet di-reset dan pet farming dipasang lagi (kalau toggle pet ON).
+track(lp.CharacterAdded:Connect(function()
+	equippedSet = nil
+	if (st.running or rb.running) and petChosen then
+		task.delay(3, function()
+			if alive() and (st.running or rb.running) and petChosen then pcall(equipFarmingPets) end
+		end)
+	end
+end))
+
+-- Terapkan setting tersimpan. Pet TIDAK dipasang sekarang, hanya saat farming mulai.
+if tonumber(Saved.RebirthTarget) then rb.targetCount = math.max(0, math.floor(Saved.RebirthTarget)) end
+if tonumber(Saved.MaxReps) then Callbacks.MaxReps(Saved.MaxReps) end
+if Saved.EquipRebirthPets == true then rb.usePets = true end
+if Saved.PetMode == "reps" or Saved.PetMode == "strength" then
+	petMode, petChosen = Saved.PetMode, true
+end
+
+---------------------------------------------------------------------
+-- REPLAY klik yang terjadi saat objek game masih dicari (UI.Pending).
+local queue = {}
+for name, e in pairs(UI.Pending) do queue[#queue + 1] = {name = name, t = e.t, v = e.v} end
+table.sort(queue, function(a, b) return a.t < b.t end)
+for _, e in ipairs(queue) do
+	local fn = Callbacks[e.name]
+	if fn then
+		local ok, err = pcall(fn, e.v)
+		if not ok then warn("[Muhaves] Replay " .. e.name .. ": " .. tostring(err)) end
+	end
+end
+table.clear(UI.Pending)
 
 return UI
