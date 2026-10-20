@@ -6,7 +6,7 @@
     jadi script farming tidak perlu diubah. Judul toggle TIDAK diubah (dipakai setToggle() di farming).
 
     Perubahan tampilan saja:
-    * Fast Farming: Rebirth -> Strength -> Pets dipisah per section, ada divider.
+    * Fast Farming: Strength -> Rebirth -> Pets dipisah per section, ada divider.
     * Extras: dibagi Auto Eat / Automation / Performance.
     * Teks statistik dibuat rata & lebih mudah dibaca.
     * Notice: status + info + cara pakai singkat.
@@ -716,20 +716,11 @@ local function addNumberInput(tab, name, desc, initial, cbName, minVal, default,
 end
 
 ---------------------------------------------------------------------
--- TAB 1: Fast Farming  (Rebirth -> Strength -> Pets)
+-- TAB 1: Fast Farming  (Strength -> Rebirth -> Pets)
 local savedTarget = math.floor(tonumber(Saved.RebirthTarget) or 0)
 local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAULT), 1, REP_CAP)
 
--- 1) Fast Rebirth
-TabFarm:CreateSection("Fast Rebirth")
-makeLabels(TabFarm, "rbStatus")
-addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
-addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
-makeLabels(TabFarm, "rb")
-
-divider(TabFarm)
-
--- 2) Fast Strength
+-- 1) Fast Strength
 TabFarm:CreateSection("Fast Strength")
 makeLabels(TabFarm, "fsStatus")
 addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
@@ -737,6 +728,15 @@ addToggle(TabFarm, "Controlled Speed", "Adjusts the speed based on server respon
 addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", savedMaxReps, "MaxReps", 1, REP_DEFAULT, REP_CAP)
 makeLabels(TabFarm, "fs")
 makeLabels(TabFarm, "pace")
+
+divider(TabFarm)
+
+-- 2) Fast Rebirth
+TabFarm:CreateSection("Fast Rebirth")
+makeLabels(TabFarm, "rbStatus")
+addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
+addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
+makeLabels(TabFarm, "rb")
 
 divider(TabFarm)
 
