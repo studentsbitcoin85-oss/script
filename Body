@@ -324,12 +324,12 @@ end
 
 local F = {
 	rbStatus = fake("Status: Inactive", "rbStatus"),
-	rbRuntime = fake("0d 0h 0m 0s", "rbRt"),
+	rbRuntime = fake("0d 0h 0m 0s", "rbStatus"),
 	rbRebirths = fake("0", "rb"), rbGained = fake("0", "rb"),
 	rbHour = fake("--", "rb"), rbDay = fake("--", "rb"), rbWeek = fake("--", "rb"),
 
 	fsStatus = fake("Status: Inactive", "fsStatus"),
-	fsRuntime = fake("0d 0h 0m 0s", "fsRt"),
+	fsRuntime = fake("0d 0h 0m 0s", "fsStatus"),
 	fsStr = fake("0", "fs"), fsStrG = fake("+0", "fs"),
 	fsDura = fake("0", "fs"), fsDurG = fake("+0", "fs"),
 	fsSP = fakeRow(5, "--", "pace"), fsDP = fakeRow(5, "--", "pace"),
@@ -342,14 +342,15 @@ local F = {
 -- Setiap grup = daftar baris pendek (1 Label Luna per baris, tidak ada kotak panjang lagi)
 local function L(t, st) return {Text = t, Style = st or 1} end
 
-renders.rbStatus = function() return {L(F.rbStatus.Text, styleOf(F.rbStatus.TextColor3, F.rbStatus.Text))} end
-renders.fsStatus = function() return {L(F.fsStatus.Text, styleOf(F.fsStatus.TextColor3, F.fsStatus.Text))} end
+renders.rbStatus = function()
+	return {L(F.rbStatus.Text .. "   •   " .. F.rbRuntime.Text, styleOf(F.rbStatus.TextColor3, F.rbStatus.Text))}
+end
+renders.fsStatus = function()
+	return {L(F.fsStatus.Text .. "   •   " .. F.fsRuntime.Text, styleOf(F.fsStatus.TextColor3, F.fsStatus.Text))}
+end
 renders.notice = function()
 	return {L("Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, styleOf(F.ntStatus.TextColor3, F.ntStatus.Text))}
 end
-
-renders.rbRt = function() return {L("Runtime: " .. F.rbRuntime.Text)} end
-renders.fsRt = function() return {L("Runtime: " .. F.fsRuntime.Text)} end
 
 renders.rb = function()
 	return {
@@ -472,7 +473,6 @@ local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAUL
 -- 1) Fast Rebirth
 TabFarm:CreateSection("Fast Rebirth")
 makeLabels(TabFarm, "rbStatus")
-makeLabels(TabFarm, "rbRt")
 addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
 addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
 makeLabels(TabFarm, "rb")
@@ -482,7 +482,6 @@ divider(TabFarm)
 -- 2) Fast Strength
 TabFarm:CreateSection("Fast Strength")
 makeLabels(TabFarm, "fsStatus")
-makeLabels(TabFarm, "fsRt")
 addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
 addToggle(TabFarm, "Controlled Speed", "Adjusts the speed based on server response.", true, "ControlledSpeed")
 addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", savedMaxReps, "MaxReps", 1, REP_DEFAULT, REP_CAP)
