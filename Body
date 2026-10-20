@@ -4,7 +4,8 @@
     CONST = {VERSION = "2", REP_CAP = 1000, REP_DEFAULT = 10}
     Mengembalikan tabel UI (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Notice, UI.Callbacks, ...).
 
-    Perubahan: tab Home diganti (Player Profile + Client & Server Status) dan ditaruh paling awal di sidebar.
+    Tabs (urutan sidebar): Home / Fast Farming / Extras / Notice.
+    Home = Player Profile + Client & Server Status.
 ]]
 
 local CONST = ...
@@ -18,8 +19,8 @@ return (function()
 -- Luau allows max 200 locals per function, and this function was very close to that limit.
 local S = {}
 
-local REP_CAP = 1000   -- batas tertinggi Max Reps / Second
-local REP_DEFAULT = 10  -- nilai awal Max Reps / Second
+-- Batas Max Reps / Second diambil dari script utama (CONST), jadi cukup diubah di satu tempat.
+local REP_CAP, REP_DEFAULT = CONST.REP_CAP, CONST.REP_DEFAULT
 
 local ASSETS = {
 	LogoHeader   = "133262254947166",
@@ -345,6 +346,8 @@ local function parseNumber(s)
 end
 
 local MAX_INPUT = 1e18
+-- Input yang tidak valid (bukan angka / di bawah minimum) mengembalikan kotak ke nilai terakhir yang sah.
+-- Parameter "default" tidak dipakai lagi; dibiarkan supaya pemanggilan lama tetap jalan.
 local function numberBox(p, x, y, w, h, value, cb, minVal, default, maxVal)
 	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
@@ -357,7 +360,7 @@ local function numberBox(p, x, y, w, h, value, cb, minVal, default, maxVal)
 	local last = tonumber(value) or 0
 	local function commit()
 		local n = parseNumber(tb.Text)
-		if not n or n < (minVal or 0) then n = default or last end
+		if not n or n < (minVal or 0) then n = last end
 		n = math.min(math.floor(n), maxVal or MAX_INPUT)
 		last = n
 		tb.Text = string.format("%.0f", n)
@@ -1097,7 +1100,7 @@ local tiles = {
 	{"Spin Fortune Wheel", "Spins the fortune wheel.", false, function(st) Callbacks.SpinWheel(st) end},
 	{"Eat All Boosts", "Eats all boosts (may lag).", false, function(st) Callbacks.EatAllBoosts(st) end},
 	{"Anti AFK", "Prevents idle kicks.", true, function(st) Callbacks.AntiAFK(st) end},
-	{"Low Resource Mode", "Hides visuals + 3D off + 20 FPS.", false, function(st) Callbacks.LowResource(st) end},
+	{"Low Resource Mode", "Hides popups + 3D off + 20 FPS.", false, function(st) Callbacks.LowResource(st) end},
 }
 local tileW = 44
 for _, t in ipairs(tiles) do
@@ -1150,7 +1153,7 @@ do
 		end
 	end))
 end
-text(otCard, "Low Resource Mode = Hide Visuals (pets, players, popups) + Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
+text(otCard, "Low Resource Mode = Hide Popups + Hide Pets (server) + Render 3D Off + FPS 20 + Anti Lag + black screen.", 12, PAD, NOTE_Y + 10,
 	rowViewW, SUB, F.GothamMedium, CENTER)
 
 sizes[2] = {w = cardW2, h = cardH2}
@@ -1162,7 +1165,7 @@ local p3 = newPage()
 local BLD = F.GothamBold
 local w1 = math.max(190, tw("Private Farming", 19, BLD)) + 2 * PAD
 local lblW = math.max(tw("Made by", 14, BLD), tw("Game", 14, BLD), tw("Status", 14, BLD))
-local workW = tw("Working", 18, BLD)
+local workW = math.max(tw("Working", 18, BLD), tw("Loading", 18, BLD))
 local valW = math.max(tw("MuhavesDevs", 18, BLD), tw("Muscle Legends", 18, BLD), workW + 34)
 local w2 = 14 + lblW + 20 + valW + 14
 local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Low Resource Mode"}
@@ -1186,7 +1189,8 @@ text(lg, "Private Farming", 19, 0, 132, w1, TX, BLD, CENTER)
 text(lg, "v" .. VERSION, 13, 0, 158, w1, SUBB, BLD, CENTER)
 
 local dt = box(ntCard, PAD + w1 + GAP, CONTENT_Y, w2, ROW_H, CARD, 12)
-local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Working"}}
+-- Status mulai dari "Loading"; script utama mengubahnya jadi "Working" / "Error" setelah objek game dicek.
+local kv = {{"Made by", "MuhavesDevs"}, {"Game", "Muscle Legends"}, {"Status", "Loading"}}
 for i, r in ipairs(kv) do
 	local cy = 30 + (i - 1) * 60
 	text(dt, r[1], 14, 14, cy, lblW + 10, SUBB, BLD)
@@ -1194,7 +1198,7 @@ for i, r in ipairs(kv) do
 	if i == 3 then S.ntStatus = vl end
 	if i < 3 then hline(dt, 14, cy + 30, w2 - 28) end
 end
-S.ntCheck = text(dt, "✅", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
+S.ntCheck = text(dt, "⏳", 18, 14 + lblW + 20 + workW + 6, 150, 28, TX, F.Gotham, CENTER)
 
 local ft = box(ntCard, PAD + w1 + GAP + w2 + GAP, CONTENT_Y, w3, ROW_H, CARD, 12)
 text(ft, "Key Features", 17, 14, 24, 250, TX, BLD)
@@ -1232,7 +1236,7 @@ local H = {}
 -- Pengaturan Home (isi manual kalau perlu)
 local DISCORD_INVITE = ""   -- isi KODE invite saja, tanpa "discord.gg/" (kosong = bagian Discord disembunyikan)
 local REGION_OVERRIDE = ""  -- isi kode negara, mis. "ID" (kosong = deteksi otomatis, bisa meleset di cloud emulator)
-local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"} -- executor yang tampil "Supported"
+local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"} -- executor yang tampil "Listed"
 
 local cardW4 = S.cardW1
 local inner = cardW4 - 2 * PAD
@@ -1305,13 +1309,13 @@ pcall(function()
 	if n then H.ex.Text = tostring(n) .. (v and (" " .. tostring(v)) or "") end
 end)
 
--- Compatibility = nama executor dicocokkan dengan daftar SUPPORTED_EXECUTORS (bukan hasil tes asli)
+-- Compatibility = nama executor dicocokkan dengan daftar SUPPORTED_EXECUTORS (bukan tes asli, jadi labelnya "Listed")
 do
 	local word, col = "Untested", Color3.fromRGB(255, 190, 70)
 	local low = H.ex.Text:lower()
 	for _, name in ipairs(SUPPORTED_EXECUTORS) do
 		if low:find(name:lower(), 1, true) then
-			word, col = "Supported", Color3.fromRGB(110, 235, 140)
+			word, col = "Listed", Color3.fromRGB(110, 235, 140)
 			break
 		end
 	end
