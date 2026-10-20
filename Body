@@ -24,6 +24,7 @@ return (function()
 local LUNA_URL = "https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua"
 
 local DISCORD_INVITE = ""  -- isi KODE invite saja, tanpa "discord.gg/" (kosong = bagian Discord tidak diisi)
+local REGION_OVERRIDE = ""  -- isi manual kode negara, mis. "ID" (kosong = deteksi otomatis)
 local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"}
 
 local Players = game:GetService("Players")
@@ -175,10 +176,30 @@ anchor.Destroying:Connect(closeAll)
 
 ---------------------------------------------------------------------
 -- Jendela + tab
+-- Anti kedip: GUI baru yang muncul selama Luna membangun jendela langsung disembunyikan.
+-- Jendela baru ditampilkan setelah SEMUA elemen selesai dibuat (buildDone) dan avatar siap.
+local buildDone = false
+local held, watchConns = {}, {}
+do
+	local roots0 = {CoreGui}
+	local okG, g = pcall(function() return gethui and gethui() or nil end)
+	if okG and g then roots0[#roots0 + 1] = g end
+	for _, root in ipairs(roots0) do
+		pcall(function()
+			watchConns[#watchConns + 1] = root.ChildAdded:Connect(function(c)
+				if c:IsA("ScreenGui") and c ~= anchor then
+					if held[c] == nil then held[c] = c.Enabled end
+					c.Enabled = false
+				end
+			end)
+		end)
+	end
+end
+
 local Window = Luna:CreateWindow({
 	Name = "Muhaves Private Farming",
 	Subtitle = "V" .. VERSION,
-	LoadingEnabled = true,
+	LoadingEnabled = false,
 	LoadingTitle = "Muhaves",
 	LoadingSubtitle = "Private Farming",
 	ConfigSettings = {ConfigFolder = "MuhavesLuna"},
@@ -340,11 +361,20 @@ task.spawn(function()
 		-- Sembunyikan jendela dulu: avatar profil Luna sempat menampilkan gambar placeholder (avatar orang lain)
 		-- sebelum foto kamu selesai dimuat. Ditampilkan lagi setelah foto kamu siap.
 		pcall(function() lunaGui.Enabled = false end)
+		-- GUI lain yang ikut tersembunyi oleh penjaga di atas dikembalikan seperti semula
+		for _, c in ipairs(watchConns) do c:Disconnect() end
+		table.clear(watchConns)
+		for c, en in pairs(held) do
+			if c ~= lunaGui and c.Parent then pcall(function() c.Enabled = en end) end
+		end
+		table.clear(held)
 		task.spawn(function()
 			pcall(function()
 				Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
 			end)
-			task.wait(1.5)
+			local t0 = os.clock()
+			while not buildDone and os.clock() - t0 < 8 do task.wait(0.05) end
+			task.wait(0.4)
 			if lunaGui.Parent then pcall(function() lunaGui.Enabled = true end) end
 		end)
 		local win = lunaGui:FindFirstChild("SmartWindow")
@@ -359,6 +389,14 @@ task.spawn(function()
 		lunaGui.AncestryChanged:Connect(function()
 			if not lunaGui.Parent then closeAll() end
 		end)
+	else
+		-- Jendela Luna tidak ditemukan: kembalikan semua GUI yang tadi disembunyikan
+		for _, c in ipairs(watchConns) do c:Disconnect() end
+		table.clear(watchConns)
+		for c, en in pairs(held) do
+			if c.Parent then pcall(function() c.Enabled = en end) end
+		end
+		table.clear(held)
 	end
 end)
 
@@ -592,6 +630,11 @@ if DISCORD_INVITE ~= "" then
 end
 
 task.spawn(function()
+	if REGION_OVERRIDE ~= "" then
+		homeData.region = REGION_OVERRIDE:upper()
+		refreshHome()
+		return
+	end
 	pcall(function()
 		local code = game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(LocalPlayer)
 		if code and code ~= "" then homeData.region = tostring(code) end
@@ -829,6 +872,7 @@ do
 end
 
 ---------------------------------------------------------------------
+buildDone = true
 return {
 	Gui = anchor,
 	Rebirth = {Status = F.rbStatus, Runtime = F.rbRuntime, Rebirths = F.rbRebirths, Gained = F.rbGained,
