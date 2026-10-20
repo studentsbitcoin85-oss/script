@@ -5,10 +5,12 @@
     Setiap toggle terhubung lewat tabel UI.Callbacks.
 ]]
 
--- Konstanta yang dipakai UI dan farming. REP_CAP = 500, REP_DEFAULT = 50.
+-- Konstanta yang dipakai UI dan farming. REP_CAP = nilai tertinggi kotak Max Reps / Second (500),
+-- REP_DEFAULT = nilai awal kotak Max Reps / Second (50).
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- FIX: re-execute -> hancurkan UI lama dulu. Event Destroying jalan sinkron.
+-- FIX: re-execute -> hancurkan UI lama dulu. Event Destroying jalan sinkron, jadi semua handler restore
+-- sesi lama (Low Resource, Hide, FPS cap) selesai sebelum sesi baru mulai.
 do
 	local old = _G.MuhavesGui
 	if old then pcall(function() old:Destroy() end) end
@@ -19,6 +21,7 @@ local CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 50}
 
 local UI_URL = "https://raw.githubusercontent.com/studentsbitcoin85-oss/script/main/Body"
 
+-- Kalau UI gagal dimuat: tampilkan error aslinya dan hapus UI setengah jadi (supaya tidak menutupi layar).
 local function failUI(msg)
 	warn("[Muhaves] Gagal memuat UI: " .. tostring(msg))
 	pcall(function()
@@ -36,8 +39,15 @@ if not okUI or type(UI) ~= "table" then return failUI(UI) end
 _G.MuhavesGui = UI.Gui
 
 ---------------------------------------------------------------------
--- SERVICES & HELPERS
----------------------------------------------------------------------
+-- FARMING: logic from the farming script, connected to the UI through UI.Callbacks
+--
+-- Order of this part:
+--   1. helpers + session guard
+--   2. everything that does NOT need a required game object (Anti AFK, ads, Low Resource Mode with Hide Visuals)
+--   3. the need() block: required objects are looked up (in parallel). If one is missing, the script stops here
+--      and only the features from step 2 stay alive.
+--   4. everything that needs those objects (pets, Auto Rebirth, Auto Farm Strength, Eat / Spin / Boosts)
+--   5. replay of the clicks that happened while steps 3-4 were still loading (UI.Pending)
 local services = {
 	players = game:GetService("Players"),
 	replicatedstorage = game:GetService("ReplicatedStorage"),
@@ -48,10 +58,11 @@ local lp = services.players.LocalPlayer
 local gui = UI.Gui
 local Callbacks = UI.Callbacks
 
+-- Every name the script looks up in the game lives here.
 local NAMES = {
 	petsFolder = "petsFolder",
 	bodyMovement = "bodyMovementScript",
-	removeBodyMovement = false,
+	removeBodyMovement = false, -- default OFF: removes the game's own script; turn on only after testing
 	ads = "RobloxForwardPortals",
 	remote = {
 		equipPet = "equipPetEvent",
@@ -68,6 +79,7 @@ local function resolvePath(root, path)
 	return root
 end
 
+-- Saved settings: persist(key, value) writes to the same file as the zoom (skips the write if nothing changed)
 local Saved = UI.Saved
 local function persist(k, v)
 	if Saved[k] == v then return end
@@ -75,6 +87,7 @@ local function persist(k, v)
 	UI.Save()
 end
 
+-- Sets a toggle's look without calling its callback.
 local function setToggle(name, state)
 	local setter = UI.Toggles[name]
 	if setter then
@@ -84,6 +97,7 @@ local function setToggle(name, state)
 	end
 end
 
+-- Time slicer for background scans: yields one frame whenever the scan has used more than 4 ms.
 local function slicer()
 	local t0 = os.clock()
 	return function()
@@ -94,6 +108,7 @@ local function slicer()
 	end
 end
 
+-- Incremental tree walk: replaces GetDescendants() on big roots. fn(instance) may return true to stop the walk.
 local function walk(root, fn)
 	local step = slicer()
 	local stack, n = {root}, 1
@@ -115,6 +130,7 @@ local function walk(root, fn)
 	end
 end
 
+-- InvokeServer with a time limit. At most MAX_INFLIGHT calls can be waiting at the same time.
 local inflight, MAX_INFLIGHT = 0, 4
 local function invokeWithTimeout(remote, timeout, ...)
 	if inflight >= MAX_INFLIGHT then return false, nil, "busy" end
@@ -142,12 +158,14 @@ end
 
 local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
 
+-- Session guard: re-executing the script stops all loops from the old version.
 local SESSION_ID = (_G.MuhavesFarmingSession or 0) + 1
 _G.MuhavesFarmingSession = SESSION_ID
 local function alive()
 	return _G.MuhavesFarmingSession == SESSION_ID and gui.Parent ~= nil
 end
 
+-- Error-proof background loop: every pass of fn runs inside pcall.
 local function loop(fn)
 	task.spawn(function()
 		while alive() do
@@ -191,7 +209,7 @@ track(lp.Idled:Connect(function()
 end))
 Callbacks.AntiAFK = function(s) flag.antiAfk = s end
 
--- Remove Ads
+-- Remove RobloxForwardPortals (ads)
 task.spawn(function()
 	task.wait(3)
 	if not alive() then return end
@@ -205,18 +223,6 @@ task.spawn(function()
 		end)
 	end
 end)
-for _, getRoot in ipairs({
-	function() return game:GetService("CoreGui") end,
-	function() return workspace end,
-}) do
-	pcall(function()
-		track(getRoot().DescendantAdded:Connect(function(d)
-			if alive() and d.Name == NAMES.ads then
-				task.defer(pcall, d.Destroy, d)
-			end
-		end))
-	end)
-end
 
 -- bodyMovementScript
 local function removeBMS(char)
@@ -229,4 +235,626 @@ track(lp.CharacterAdded:Connect(function(c) task.spawn(removeBMS, c) end))
 
 local showPetsEvent, fortuneRemote
 
-----------------------------------------------------------------
+---------------------------------------------------------------------
+-- PETS table
+local PETS = {
+	["Omega Overlord"]    = {repSpeed = 20, strength = 0,  durability = 0,  rebirth = 0},
+	["Swift Samurai"]     = {repSpeed = 15, strength = 0,  durability = 0,  rebirth = 0},
+	["Powercore Hound"]   = {repSpeed = 0,  strength = 25, durability = 15, rebirth = 0},
+	["Titanium Hydra"]    = {repSpeed = 0,  strength = 0,  durability = 0,  rebirth = 2},
+	["Tribal Overlord"]   = {repSpeed = 0,  strength = 0,  durability = 0,  rebirth = 2},
+	["Inferno Unicorn"]   = {repSpeed = 0,  strength = 25, durability = 25, rebirth = 0},
+	["Common Boss Pet"]   = {repSpeed = 5,  strength = 0,  durability = 0,  rebirth = 0},
+	["Rare Boss Pet"]     = {repSpeed = 7,  strength = 0,  durability = 0,  rebirth = 0},
+	["Epic Boss Pet"]     = {repSpeed = 10, strength = 0,  durability = 0,  rebirth = 0},
+	["Rainbow Boss Pet"]  = {repSpeed = 10, strength = 7,  durability = 0,  rebirth = 0},
+	["Legendary Boss Pet"] = {repSpeed = 10, strength = 10, durability = 0,  rebirth = 0},
+	["Mythic Boss Pet"]   = {repSpeed = 10, strength = 20, durability = 0,  rebirth = 0},
+	["Inferno Drake"]     = {repSpeed = 40, strength = 0,  durability = 0,  rebirth = 0},
+}
+
+---------------------------------------------------------------------
+-- SHARED PROPERTY LOCKS
+local Shared = {
+	orig = setmetatable({}, {__mode = "k"}),
+	holders = setmetatable({}, {__mode = "k"}),
+}
+function Shared.hold(inst, prop, owner, value)
+	local h = Shared.holders[inst]
+	local fresh = h == nil
+	if fresh then
+		local okRead, orig = pcall(function() return inst[prop] end)
+		if not okRead then error(orig, 0) end
+		h = {}
+		Shared.holders[inst] = h
+		Shared.orig[inst] = {prop, orig}
+	end
+	local ok, err = pcall(function() inst[prop] = value end)
+	if not ok then
+		if fresh then
+			Shared.holders[inst], Shared.orig[inst] = nil, nil
+		end
+		error(err, 0)
+	end
+	h[owner] = true
+end
+function Shared.release(inst, owner)
+	local h = Shared.holders[inst]
+	if not h or not h[owner] then return end
+	h[owner] = nil
+	if next(h) == nil then
+		local o = Shared.orig[inst]
+		Shared.holders[inst], Shared.orig[inst] = nil, nil
+		if o and inst.Parent then inst[o[1]] = o[2] end
+	end
+end
+
+---------------------------------------------------------------------
+-- HIDE PETS / POPUPS / PLAYERS / LOW RESOURCE MODE
+-- (Bagian visual & anti lag tetap dipertahankan seperti sebelumnya)
+---------------------------------------------------------------------
+
+local missing = {}
+local function need(parent, name)
+	local o = parent and parent:WaitForChild(name, 15)
+	if not o then
+		missing[#missing + 1] = name
+		warn("[Muhaves] Not found: " .. name)
+	end
+	return o
+end
+
+local function parallel(...)
+	local fns, pending = {...}, select("#", ...)
+	for _, fn in ipairs(fns) do
+		task.spawn(function()
+			pcall(fn)
+			pending -= 1
+		end)
+	end
+	while pending > 0 do task.wait() end
+end
+
+local muscleEvent, ls, rebirthsV, strengthV, duraV, rEvents, equipPetEvent, rebirthRemote
+parallel(
+	function() muscleEvent = need(lp, "muscleEvent") end,
+	function()
+		ls = need(lp, "leaderstats")
+		rebirthsV = need(ls, "Rebirths")
+		strengthV = need(ls, "Strength")
+	end,
+	function() duraV = need(lp, "Durability") end,
+	function()
+		rEvents = need(services.replicatedstorage, "rEvents")
+		equipPetEvent = need(rEvents, NAMES.remote.equipPet)
+		rebirthRemote = need(rEvents, NAMES.remote.rebirth)
+	end
+)
+
+if #missing > 0 or not (muscleEvent and rebirthsV and strengthV and duraV and rEvents and equipPetEvent and rebirthRemote) then
+	for _, l in ipairs({UI.Rebirth.Status, UI.Strength.Status}) do
+		l.Text, l.TextColor3 = "Status: Error", Color3.fromRGB(255, 90, 90)
+	end
+	UI.Notice.Status.Text = "Error"
+	UI.Notice.Status.TextColor3 = Color3.fromRGB(255, 105, 105)
+	UI.Notice.Check.Text = "❌"
+	return UI
+end
+
+UI.Notice.Status.Text = "Working"
+UI.RebirthSource.obj = rebirthsV
+
+local formatNumber = UI.Abbr
+local PACE_MULT = {1, 60, 3600, 86400, 604800}
+local function setPace(cells, r)
+	for i, m in ipairs(PACE_MULT) do
+		cells[i].Text = formatNumber(r * m)
+	end
+end
+
+local function findTool(name)
+	local char, bp = lp.Character, lp:FindFirstChild("Backpack")
+	return (char and char:FindFirstChild(name)) or (bp and bp:FindFirstChild(name))
+end
+
+---------------------------------------------------------------------
+-- PETS & GOVERNOR LOGIC (Diperbarui mengikuti Silence)
+---------------------------------------------------------------------
+local MAX_PET_SLOTS = 12
+local TARGET_REP_SPEED = 150
+
+local function unequipConfiguredPets()
+	local pf = lp:FindFirstChild(NAMES.petsFolder)
+	if not pf then return end
+	for _, folder in ipairs(pf:GetChildren()) do
+		if folder:IsA("Folder") then
+			for _, pet in ipairs(folder:GetChildren()) do
+				equipPetEvent:FireServer("unequipPet", pet)
+			end
+		end
+	end
+	task.wait(0.1)
+end
+
+local equippedSet = nil
+local petLock = false
+
+local function syncPets(desired)
+	while petLock do task.wait(0.05) end
+	petLock = true
+	local ok, err = pcall(function()
+		local ev = equipPetEvent
+		local want = {}
+		for _, inst in ipairs(desired) do want[inst] = true end
+		if equippedSet == nil then
+			unequipConfiguredPets()
+			equippedSet = {}
+		else
+			for inst in pairs(equippedSet) do
+				if not want[inst] then
+					if inst.Parent then ev:FireServer("unequipPet", inst) end
+					equippedSet[inst] = nil
+				end
+			end
+		end
+		for _, inst in ipairs(desired) do
+			if not equippedSet[inst] then
+				ev:FireServer("equipPet", inst)
+				equippedSet[inst] = true
+			end
+		end
+	end)
+	petLock = false
+	if not ok then
+		equippedSet = nil
+		error(err, 0)
+	end
+end
+
+local function getOwnedConfiguredPets()
+	local owned = {}
+	local pf = lp:FindFirstChild(NAMES.petsFolder)
+	if not pf then return owned end
+	for _, folder in ipairs(pf:GetChildren()) do
+		if folder:IsA("Folder") then
+			for _, pet in ipairs(folder:GetChildren()) do
+				local config = PETS[pet.Name]
+				if config then
+					table.insert(owned, {
+						instance = pet, name = pet.Name,
+						repSpeed = config.repSpeed or 0, strength = config.strength or 0,
+						durability = config.durability or 0, rebirth = config.rebirth or 0,
+					})
+				end
+			end
+		end
+	end
+	return owned
+end
+
+local function sRep(p) return p.repSpeed end
+local function sStr(p) return p.strength + p.durability end
+local function sReb(p) return p.rebirth end
+
+local function total(chosen, score)
+	local t = 0
+	for _, p in ipairs(chosen.list) do t += score(p) end
+	return t
+end
+
+local function pick(pets, score, chosen, limit, stopWhen)
+	local list = {}
+	for _, p in ipairs(pets) do
+		if not chosen.set[p.instance] and score(p) > 0 then list[#list + 1] = p end
+	end
+	table.sort(list, function(a, b) return score(a) > score(b) end)
+	for _, p in ipairs(list) do
+		if #chosen.list >= limit or (stopWhen and stopWhen(chosen)) then break end
+		chosen.set[p.instance] = true
+		chosen.list[#chosen.list + 1] = p
+	end
+end
+
+local function equipBy(passes)
+	local chosen = {set = {}, list = {}}
+	local pets = getOwnedConfiguredPets()
+	for _, pass in ipairs(passes) do
+		pick(pets, pass[1], chosen, MAX_PET_SLOTS, pass[2])
+	end
+	local inst = {}
+	for i, p in ipairs(chosen.list) do inst[i] = p.instance end
+	syncPets(inst)
+	return chosen
+end
+
+local function equipBestFarmingPets()
+	local c = equipBy({
+		{sRep, function(ch) return total(ch, sRep) >= TARGET_REP_SPEED end},
+		{sStr},
+	})
+	return total(c, sRep), #c.list
+end
+
+local function equipBestRebirthPets()
+	local c = equipBy({{sReb}})
+	return total(c, sReb), #c.list
+end
+
+local function equipBestStrengthPets()
+	local c = equipBy({{sStr}, {sRep}})
+	return #c.list
+end
+
+local petMode = "reps"
+local petChosen = false
+local function equipFarmingPets()
+	if petMode == "strength" then return equipBestStrengthPets() end
+	return equipBestFarmingPets()
+end
+
+---------------------------------------------------------------------
+-- GOVERNOR & PING GUARD (Silence Standard)
+---------------------------------------------------------------------
+local REP_CAP = CONST.REP_CAP
+local REP_DEFAULT = CONST.REP_DEFAULT
+local MAX_DT = 0.5
+local MAX_REP_PER_FRAME = math.ceil(REP_CAP * MAX_DT)
+local progress = {n = 0}
+
+local Gov = {}
+Gov.__index = Gov
+local function govFloor(maxRate) return math.min(maxRate, math.max(10, math.floor(maxRate * 0.3))) end
+local CAP_CREEP_EVERY, CAP_CREEP_STEP = 60, 2
+function Gov.new()
+	return setmetatable({rate = 0, max = REP_CAP, min = 10, cap = REP_CAP, capAt = 0, lastMax = REP_CAP,
+		stalled = 0, lastAt = 0, lastProg = 0, interval = 0.5}, Gov)
+end
+function Gov:reset(maxRate, prog, controlled)
+	self.max, self.lastMax = maxRate, maxRate
+	self.min = govFloor(maxRate)
+	self.cap, self.capAt = maxRate, os.clock()
+	self.rate = controlled and math.max(self.min, math.floor(maxRate * 0.3)) or maxRate
+	self.stalled, self.lastAt, self.lastProg = 0, os.clock(), prog
+end
+function Gov:backoff()
+	self.cap = math.max(self.min, self.rate * 0.9)
+	self.capAt = os.clock()
+	self.rate = math.max(self.min, self.rate * 0.65)
+end
+function Gov:rearm(prog)
+	self.stalled, self.lastAt, self.lastProg = 0, os.clock(), prog
+end
+function Gov:update(prog, controlled)
+	if not controlled then
+		self.rate = self.max
+		return nil
+	end
+	local now = os.clock()
+	if self.max ~= self.lastMax then
+		self.lastMax, self.cap, self.capAt = self.max, self.max, now
+	end
+	self.min = govFloor(self.max)
+	self.cap = math.clamp(self.cap, self.min, self.max)
+	self.rate = math.clamp(self.rate, self.min, self.cap)
+	if now - self.lastAt < self.interval then return nil end
+	self.lastAt = now
+	local state
+	if prog ~= self.lastProg then
+		self.stalled = 0
+		if self.rate < self.cap then self.rate = math.min(self.cap, self.rate * 1.12) end
+		if self.cap < self.max and now - self.capAt >= CAP_CREEP_EVERY then
+			self.cap = math.min(self.max, self.cap + CAP_CREEP_STEP)
+			self.capAt = now
+		end
+		state = "ok"
+	else
+		self.stalled += 1
+		if self.stalled >= 2 then
+			self.cap = math.max(self.min, self.rate * 0.9)
+			self.capAt = now
+			self.rate = math.max(self.min, self.rate * 0.65)
+			state = "slow"
+		end
+	end
+	self.lastProg = prog
+	return state
+end
+
+local function charAlive()
+	local c = lp.Character
+	local h = c and c:FindFirstChildOfClass("Humanoid")
+	return h ~= nil and h.Health > 0
+end
+
+local function readDataPing()
+	local ok, ping = pcall(function()
+		return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+	end)
+	if ok and type(ping) == "number" and ping == ping and ping >= 0 and ping < math.huge then
+		return ping
+	end
+end
+
+local PingGuard = {limit = 350, resume = 300, recovery = 2, paused = false, okSince = nil, checkedAt = 0}
+function PingGuard.update(controlled)
+	if not controlled then
+		local was = PingGuard.paused
+		PingGuard.paused, PingGuard.okSince = false, nil
+		return false, was and "resume" or nil
+	end
+	local now = os.clock()
+	if now - PingGuard.checkedAt < 0.25 then return PingGuard.paused, nil end
+	PingGuard.checkedAt = now
+	local p = readDataPing()
+	if not p then return PingGuard.paused, nil end
+	if p > PingGuard.limit then
+		local was = PingGuard.paused
+		PingGuard.paused, PingGuard.okSince = true, nil
+		return true, (not was) and "pause" or nil
+	end
+	if PingGuard.paused then
+		if p < PingGuard.resume then
+			PingGuard.okSince = PingGuard.okSince or now
+			if now - PingGuard.okSince >= PingGuard.recovery then
+				PingGuard.paused, PingGuard.okSince = false, nil
+				return false, "resume"
+			end
+		else
+			PingGuard.okSince = nil
+		end
+	end
+	return PingGuard.paused, nil
+end
+
+---------------------------------------------------------------------
+-- REBIRTH & STRENGTH LOOPS
+---------------------------------------------------------------------
+local repLimit = {max = REP_DEFAULT, controlled = true}
+local rbGov = Gov.new()
+local rb = {
+	rebirths = rebirthsV, strength = strengthV,
+	running = false, workerActive = false, usePets = false, targetCount = 0, timeouts = 0, backoff = 10,
+}
+UI.RbClock.active = function() return rb.running end
+
+local function setRebirthStatus(text, color)
+	UI.Rebirth.Status.Text = text
+	UI.Rebirth.Status.TextColor3 = color
+end
+
+local function rebirthTargetReached()
+	return rb.targetCount > 0 and rb.rebirths.Value >= rb.targetCount
+end
+
+local function stopAtTarget()
+	rb.running = false
+	setRebirthStatus("Status: Target reached", C_PAUSE)
+	setToggle("Auto Rebirth", false)
+end
+
+local rbPerRep = nil
+local function performRebirth()
+	local target = 5000 + rb.rebirths.Value * 2550
+	local tokens, last = 0, os.clock()
+	local gov = rbGov
+	gov.stalled, gov.lastAt = 0, os.clock()
+	local held = false
+	local startStr, sent = rb.strength.Value, 0
+	local lastSentAt = os.clock()
+	local limit = rbPerRep and math.max(10, math.ceil(math.max(0, target - startStr) / rbPerRep)) or 10
+
+	while rb.running and alive() and not rebirthTargetReached() and rb.strength.Value < target do
+		gov.max = repLimit.max
+		local hold
+		if not charAlive() then
+			hold = "Status: Waiting for respawn"
+		else
+			local paused, ev = PingGuard.update(repLimit.controlled)
+			if ev == "pause" then gov:backoff() elseif ev == "resume" then gov:rearm(progress.n) end
+			if paused then hold = "Status: Waiting (ping)" end
+		end
+		if hold then
+			held = true
+			tokens, last = 0, os.clock()
+			setRebirthStatus(hold, C_PAUSE)
+			services.runservice.Heartbeat:Wait()
+			continue
+		end
+		if held then
+			held = false
+			gov:rearm(progress.n)
+			setRebirthStatus("Status: Rebirthing", C_ON)
+		end
+
+		local str = rb.strength.Value
+		if sent > 0 and str > startStr then
+			rbPerRep = (str - startStr) / sent
+		end
+		if sent >= limit then
+			tokens, last = 0, os.clock()
+			gov:rearm(progress.n)
+			services.runservice.Heartbeat:Wait()
+			continue
+		end
+
+		local s = gov:update(progress.n, repLimit.controlled)
+		local now = os.clock()
+		tokens = math.min(MAX_REP_PER_FRAME, tokens + gov.rate * math.min(MAX_DT, now - last))
+		last = now
+		local n = math.min(math.floor(tokens), MAX_REP_PER_FRAME, limit - sent)
+		if n > 0 then
+			tokens -= n
+			sent += n
+			lastSentAt = now
+			pcall(function()
+				for _ = 1, n do muscleEvent:FireServer("rep") end
+			end)
+		end
+		services.runservice.Heartbeat:Wait()
+	end
+
+	if rb.running and alive() and not rebirthTargetReached() and rb.strength.Value >= target then
+		if rb.usePets then
+			equipBestRebirthPets()
+			task.wait(0.1)
+		end
+		local before = rb.rebirths.Value
+		invokeWithTimeout(rebirthRemote, 5, "rebirthRequest")
+	end
+end
+
+Callbacks.AutoRebirth = function(state)
+	if not state and not rb.running then return end
+	if state and rebirthTargetReached() then
+		stopAtTarget()
+		return
+	end
+	if state then
+		Callbacks.AutoFarmStrength(false)
+		setToggle("Auto Farm Strength", false)
+	end
+	rb.running = state
+	if state then
+		equippedSet = nil
+		rb.timeouts, rb.backoff = 0, 10
+		rbGov:reset(repLimit.max, progress.n, repLimit.controlled)
+		setRebirthStatus("Status: Rebirthing", C_ON)
+		task.spawn(function()
+			while rb.running and alive() do
+				pcall(performRebirth)
+				task.wait(0.1)
+			end
+		end)
+	else
+		setRebirthStatus("Status: Paused", C_PAUSE)
+	end
+end
+
+Callbacks.EquipRebirthPets = function(state)
+	rb.usePets = state
+	equippedSet = nil
+	persist("EquipRebirthPets", state)
+end
+Callbacks.RebirthTarget = function(v)
+	rb.targetCount = math.max(0, math.floor(tonumber(v) or 0))
+	persist("RebirthTarget", rb.targetCount)
+end
+
+---------------------------------------------------------------------
+-- STRENGTH SETUP & MAX REPS (Maksimal 500, Default 50)
+---------------------------------------------------------------------
+local st = {
+	strength = strengthV, durability = duraV,
+	running = false, runId = 0, controlled = true,
+	startedAt = 0, totalElapsed = 0, timerStarted = false, baselineSet = false,
+	calcInterval = 10,
+	maxRate = REP_DEFAULT, rate = REP_DEFAULT,
+	tokens = 0, last = {str = 0, dura = 0}, gain = {str = 0, dura = 0}, run = {str = 0, dura = 0}, win = {str = 0, dura = 0},
+}
+st.last.str, st.last.dura = st.strength.Value, st.durability.Value
+
+local function setStrengthStatus(text, color)
+	UI.Strength.Status.Text = text
+	UI.Strength.Status.TextColor3 = color
+end
+
+local function onValue(key, new)
+	local d = new - st.last[key]
+	st.last[key] = new
+	if d <= 0 then return end
+	if st.running or rb.running then progress.n += 1 end
+	if not st.running then return end
+	st.gain[key] += d
+	if not st.timerStarted then
+		st.timerStarted = true
+		st.startedAt = os.clock()
+		st.win.str, st.win.dura = st.run.str, st.run.dura
+	else
+		st.run[key] += d
+	end
+end
+track(st.strength.Changed:Connect(function(v) onValue("str", v) end))
+track(st.durability.Changed:Connect(function(v) onValue("dura", v) end))
+
+local strGov = Gov.new()
+local function strengthLoop(myId)
+	local lastLoopAt = os.clock()
+	while st.running and st.runId == myId and alive() do
+		local now = os.clock()
+		local dt = math.min(MAX_DT, now - lastLoopAt)
+		lastLoopAt = now
+
+		if not charAlive() then
+			services.runservice.Heartbeat:Wait()
+			continue
+		end
+
+		if st.controlled then
+			strGov.max = st.maxRate
+			strGov:update(progress.n, true)
+			st.rate = strGov.rate
+		else
+			st.rate = st.maxRate
+		end
+
+		st.tokens = math.min(MAX_REP_PER_FRAME, st.tokens + st.rate * dt)
+		local n = math.min(math.floor(st.tokens), MAX_REP_PER_FRAME)
+		if n > 0 then
+			pcall(function()
+				for _ = 1, n do muscleEvent:FireServer("rep") end
+			end)
+			st.tokens -= n
+		end
+		services.runservice.Heartbeat:Wait()
+	end
+end
+
+Callbacks.AutoFarmStrength = function(state)
+	state = state and true or false
+	if state == st.running then return end
+	if state and rb.running then
+		Callbacks.AutoRebirth(false)
+		setToggle("Auto Rebirth", false)
+	end
+	st.running = state
+	st.runId += 1
+	if state then
+		if not st.baselineSet then
+			st.gain.str, st.gain.dura = 0, 0
+			st.baselineSet = true
+		end
+		strGov:reset(st.maxRate, progress.n, st.controlled)
+		setStrengthStatus("Status: Farming", C_ON)
+		task.spawn(strengthLoop, st.runId)
+	else
+		setStrengthStatus("Status: Paused", C_PAUSE)
+	end
+end
+
+Callbacks.ControlledSpeed = function(state)
+	st.controlled = state and true or false
+	repLimit.controlled = st.controlled
+end
+
+-- PENGATURAN MAX REPS (Max: 500, Default: 50, Reset ke default jika kosong/0)
+Callbacks.MaxReps = function(v)
+	local num = tonumber(v)
+	if not num or num <= 0 then
+		v = REP_DEFAULT
+	else
+		v = math.clamp(math.floor(num), 1, REP_CAP)
+	end
+	st.maxRate = v
+	repLimit.max = v
+	st.rate = math.min(st.rate, v)
+	persist("MaxReps", v)
+end
+
+-- Inisialisasi konfigurasi tersimpan
+if tonumber(Saved.MaxReps) then
+	Callbacks.MaxReps(Saved.MaxReps)
+else
+	Callbacks.MaxReps(REP_DEFAULT)
+end
+
+return UI
