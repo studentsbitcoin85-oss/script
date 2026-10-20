@@ -190,26 +190,87 @@ local Window = Luna:CreateWindow({
 -- Font tebal + kotak input ringkas (rata tengah, lebar tetap). Dijalankan ke semua elemen Luna.
 local FONT_BOLD = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
 local INPUT_W = 110
-local AVATAR_MARK = "\u{200B}"
-local function injectAvatar(o)
-	local card = o.Parent
-	if not card or card:FindFirstChild("MuhavesAvatar") then return end
-	local img = Instance.new("ImageLabel")
-	img.Name = "MuhavesAvatar"
-	img.BackgroundTransparency = 1
-	img.AnchorPoint = Vector2.new(0.5, 0.5)
-	img.Position = UDim2.new(0.5, 0, 0.5, 0)
-	img.Size = UDim2.fromOffset(84, 84)
-	img.ZIndex = 10
-	img.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, 10)
-	c.Parent = img
-	img.Parent = card
+-- Kartu Home custom (avatar kiri + info kanan, grid 2 kolom). Kartu Paragraph Luna dipakai sebagai wadah,
+-- isi aslinya disembunyikan dan diganti Frame buatan sendiri dengan warna yang diambil dari kartu Luna.
+local PROFILE_MARK = "\u{200B}profile"
+local STATUS_MARK = "\u{200B}status"
+local CARD_SETUP = {}
+
+local function prepCard(o, height)
+	local a, depth = o.Parent, 0
+	while a and a.Parent and not a.Parent:FindFirstChildOfClass("UIListLayout") and depth < 8 do
+		a = a.Parent
+		depth += 1
+	end
+	if not (a and a.Parent and a:IsA("GuiObject") and a.Parent:FindFirstChildOfClass("UIListLayout")) then return nil end
+	if a:FindFirstChild("MuhavesCard") then return nil end
+	for _, ch in ipairs(a:GetChildren()) do
+		if ch:IsA("GuiObject") then ch.Visible = false end
+	end
+	pcall(function() a.AutomaticSize = Enum.AutomaticSize.None end)
+	local function fit()
+		if a.Size.Y.Scale ~= 0 or a.Size.Y.Offset ~= height then
+			a.Size = UDim2.new(a.Size.X.Scale, a.Size.X.Offset, 0, height)
+		end
+	end
+	fit()
+	a:GetPropertyChangedSignal("Size"):Connect(fit)
+	a.ClipsDescendants = true
+	local holder = Instance.new("Frame")
+	holder.Name = "MuhavesCard"
+	holder.BackgroundTransparency = 1
+	holder.BorderSizePixel = 0
+	holder.Position = UDim2.fromOffset(8, 8)
+	holder.Size = UDim2.new(1, -16, 1, -16)
+	holder.Parent = a
+	return a, holder
 end
+
+local function cellColor(card)
+	local base = card.BackgroundColor3
+	return base:Lerp(Color3.new(1, 1, 1), 0.07)
+end
+
+-- satu sel: nama di kiri, nilai rata kanan. Mengembalikan label nilai.
+local function cell(parent, x0, y0, w, h, key, value, color)
+	local f = Instance.new("Frame")
+	f.BackgroundColor3 = color
+	f.BorderSizePixel = 0
+	f.Position = UDim2.new(x0, 2, y0, 2)
+	f.Size = UDim2.new(w, -4, h, -4)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = f
+	local k = Instance.new("TextLabel")
+	k.BackgroundTransparency = 1
+	k.Position = UDim2.fromOffset(10, 0)
+	k.Size = UDim2.new(0.5, -10, 1, 0)
+	k.Text = key
+	k.TextColor3 = Color3.fromRGB(235, 235, 235)
+	k.TextSize = 13
+	k.TextXAlignment = Enum.TextXAlignment.Left
+	k.TextTruncate = Enum.TextTruncate.AtEnd
+	k.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+	k.Parent = f
+	local v = Instance.new("TextLabel")
+	v.BackgroundTransparency = 1
+	v.Position = UDim2.new(0.4, 0, 0, 0)
+	v.Size = UDim2.new(0.6, -10, 1, 0)
+	v.Text = value
+	v.TextColor3 = Color3.fromRGB(255, 255, 255)
+	v.TextSize = 13
+	v.TextXAlignment = Enum.TextXAlignment.Right
+	v.TextTruncate = Enum.TextTruncate.AtEnd
+	v.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+	v.Parent = f
+	f.Parent = parent
+	return v, f
+end
+
 local function restyle(o)
-	if o:IsA("TextLabel") and o.Text == AVATAR_MARK then
-		task.defer(function() pcall(injectAvatar, o) end)
+	if o:IsA("TextLabel") and CARD_SETUP[o.Text] then
+		local fn = CARD_SETUP[o.Text]
+		task.defer(function() pcall(fn, o) end)
 	end
 	if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
 		pcall(function() o.FontFace = FONT_BOLD end)
@@ -438,48 +499,88 @@ local function setLabel(el, s)
 end
 
 ---------------------------------------------------------------------
--- TAB HOME (layout klasik)
-F.hmPing = fake("--", "home")
-F.hmTime = fake("00:00:00", "home")
-F.hmPlayers = fake("--", "home")
-F.hmRegion = fake("--", "home")
-F.hmCompat = fake("Untested", "home")
+-- TAB HOME (kartu custom, mirip layout klasik)
 local execName = "Unknown"
 pcall(function()
 	local n = (identifyexecutor and identifyexecutor()) or (getexecutorname and getexecutorname()) or "Unknown"
 	execName = tostring(n)
 end)
+local compat = "Untested"
 do
 	local low = execName:lower()
 	for _, name in ipairs(SUPPORTED_EXECUTORS) do
-		if low:find(name:lower(), 1, true) then F.hmCompat.Text = "Supported" break end
+		if low:find(name:lower(), 1, true) then compat = "Supported" break end
 	end
 end
 
-renders.home = function()
-	return {
-		L("Executor: " .. execName),
-		L("Compatibility: " .. F.hmCompat.Text, F.hmCompat.Text == "Supported" and 2 or 1),
-		L("Latency: " .. F.hmPing.Text),
-		L("Server Time: " .. F.hmTime.Text),
-		L("Players: " .. F.hmPlayers.Text),
-		L("Region: " .. F.hmRegion.Text),
+local homeData = {exec = execName, compat = compat, ping = "--", time = "00:00:00", players = "--", region = "--"}
+local HOME = {} -- label nilai per kunci (diisi saat kartu Status dibuat)
+local function refreshHome()
+	for k, lbl in pairs(HOME) do
+		if lbl.Parent then
+			lbl.Text = (k == "compat" and "● " or "") .. homeData[k]
+			if k == "compat" then
+				lbl.TextColor3 = homeData.compat == "Supported" and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(255, 190, 70)
+			end
+		end
+	end
+end
+
+CARD_SETUP[PROFILE_MARK] = function(o)
+	local card, holder = prepCard(o, 130)
+	if not card then return end
+	local col = cellColor(card)
+	local av = Instance.new("Frame")
+	av.BackgroundColor3 = col
+	av.BorderSizePixel = 0
+	av.Position = UDim2.fromOffset(2, 2)
+	av.Size = UDim2.new(0.36, -4, 1, -4)
+	local ac = Instance.new("UICorner")
+	ac.CornerRadius = UDim.new(0, 8)
+	ac.Parent = av
+	local img = Instance.new("ImageLabel")
+	img.BackgroundTransparency = 1
+	img.AnchorPoint = Vector2.new(0.5, 0.5)
+	img.Position = UDim2.fromScale(0.5, 0.5)
+	img.Size = UDim2.fromOffset(84, 84)
+	img.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
+	local ic = Instance.new("UICorner")
+	ic.CornerRadius = UDim.new(0, 10)
+	ic.Parent = img
+	img.Parent = av
+	av.Parent = holder
+	local rows = {
+		{"Display Name", LocalPlayer.DisplayName},
+		{"Username", "@" .. LocalPlayer.Name},
+		{"Account ID", tostring(LocalPlayer.UserId)},
 	}
+	for i, r in ipairs(rows) do
+		cell(holder, 0.36, (i - 1) / 3, 0.64, 1 / 3, r[1], r[2], col)
+	end
+end
+
+CARD_SETUP[STATUS_MARK] = function(o)
+	local card, holder = prepCard(o, 124)
+	if not card then return end
+	local col = cellColor(card)
+	local items = {
+		{"Executor", "exec"}, {"Compatibility", "compat"}, {"Latency", "ping"},
+		{"Server Time", "time"}, {"Players", "players"}, {"Region", "region"},
+	}
+	for i, it in ipairs(items) do
+		local column = i <= 3 and 0 or 0.5
+		local row = (i - 1) % 3
+		HOME[it[2]] = (cell(holder, column, row / 3, 0.5, 1 / 3, it[1], homeData[it[2]], col))
+	end
+	refreshHome()
 end
 
 TabHome:CreateSection("Player Profile")
-TabHome:CreateParagraph({Title = AVATAR_MARK, Text = "\n\n\n\n\n"})
-TabHome:CreateLabel({Text = "Display Name: " .. LocalPlayer.DisplayName, Style = 1})
-TabHome:CreateLabel({Text = "Username: @" .. LocalPlayer.Name, Style = 1})
-TabHome:CreateLabel({Text = "Account ID: " .. LocalPlayer.UserId, Style = 1})
-
-divider(TabHome)
-
+TabHome:CreateParagraph({Title = PROFILE_MARK, Text = " "})
 TabHome:CreateSection("Client & Server Status")
-makeLabels(TabHome, "home")
+TabHome:CreateParagraph({Title = STATUS_MARK, Text = " "})
 
 if DISCORD_INVITE ~= "" then
-	divider(TabHome)
 	TabHome:CreateSection("Discord Community")
 	TabHome:CreateButton({
 		Name = "Join Discord",
@@ -493,23 +594,25 @@ end
 task.spawn(function()
 	pcall(function()
 		local code = game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(LocalPlayer)
-		if code and code ~= "" then F.hmRegion.Text = tostring(code) end
+		if code and code ~= "" then homeData.region = tostring(code) end
 	end)
-	-- cadangan kalau pemanggilan di atas gagal: bagian region dari locale akun (mis. "id-id" -> ID)
-	if F.hmRegion.Text == "--" then
+	-- cadangan: bagian region dari locale akun (mis. "id-id" -> ID)
+	if homeData.region == "--" then
 		pcall(function()
 			local reg = tostring(LocalPlayer.LocaleId):match("[-_](%a+)$")
-			if reg then F.hmRegion.Text = reg:upper() end
+			if reg then homeData.region = reg:upper() end
 		end)
 	end
+	refreshHome()
 end)
 task.spawn(function()
 	while anchor.Parent do
 		pcall(function()
-			F.hmPing.Text = string.format("%d ms", math.floor(LocalPlayer:GetNetworkPing() * 2000 + 0.5))
+			homeData.ping = string.format("%d ms", math.floor(LocalPlayer:GetNetworkPing() * 2000 + 0.5))
 			local t = math.floor(workspace.DistributedGameTime)
-			F.hmTime.Text = string.format("%02d:%02d:%02d", math.floor(t / 3600), math.floor((t % 3600) / 60), t % 60)
-			F.hmPlayers.Text = #Players:GetPlayers() .. " / " .. Players.MaxPlayers
+			homeData.time = string.format("%02d:%02d:%02d", math.floor(t / 3600), math.floor((t % 3600) / 60), t % 60)
+			homeData.players = #Players:GetPlayers() .. " / " .. Players.MaxPlayers
+			refreshHome()
 		end)
 		task.wait(1)
 	end
