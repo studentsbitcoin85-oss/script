@@ -247,8 +247,7 @@ task.spawn(function()
 	local rg = CoreGui:FindFirstChild("RobloxGui")
 	if rg then roots[#roots + 1] = rg end
 	local lunaGui
-	for _ = 1, 20 do
-		task.wait(0.5)
+	for _ = 1, 40 do
 		for _, root in ipairs(roots) do
 			for _, c in ipairs(root:GetChildren()) do
 				if c:IsA("ScreenGui") and c.Name ~= "Luna-Old" and c:FindFirstChild("SmartWindow") then
@@ -259,8 +258,19 @@ task.spawn(function()
 			if lunaGui then break end
 		end
 		if lunaGui then break end
+		task.wait(0.1)
 	end
 	if lunaGui then
+		-- Sembunyikan jendela dulu: avatar profil Luna sempat menampilkan gambar placeholder (avatar orang lain)
+		-- sebelum foto kamu selesai dimuat. Ditampilkan lagi setelah foto kamu siap.
+		pcall(function() lunaGui.Enabled = false end)
+		task.spawn(function()
+			pcall(function()
+				Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+			end)
+			task.wait(1.5)
+			if lunaGui.Parent then pcall(function() lunaGui.Enabled = true end) end
+		end)
 		local win = lunaGui:FindFirstChild("SmartWindow")
 		if win then
 			local us = Instance.new("UIScale")
