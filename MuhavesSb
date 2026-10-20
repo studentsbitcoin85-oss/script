@@ -1,497 +1,232 @@
 --[[
-    Muhaves Private Farming - UI versi LUNA (pengganti file "Body").
-    Dipanggil dari script farming: loadstring(game:HttpGet(URL))(CONST)
-    Mengembalikan tabel UI yang SAMA dengan UI lama (UI.Gui, UI.Rebirth, UI.Strength, UI.Notice,
-    UI.Callbacks, UI.Toggles, UI.Pending, UI.Saved, UI.Save, UI.Abbr, UI.RbClock, UI.RebirthSource),
-    jadi script farming tidak perlu diubah.
-
-    Catatan:
-    * UI.Gui = ScreenGui kecil tak terlihat bernama "MuhavesUI" (penanda hidup/mati sesi untuk farming).
-      Kalau jendela Luna ditutup / Luna:Destroy() dipanggil, penanda ini ikut dihapus -> semua loop farming berhenti
-      dan Low Resource Mode dikembalikan (sama seperti tombol X di UI lama).
-    * Teks status / stats ditampilkan lewat Label / Paragraph Luna dan di-update paling cepat tiap 0,5 detik.
+    Muhaves Private Farming - Script utama (LocalScript / executor)
+    UI di-load dari GitHub lewat loadstring, bagian farming ada di file ini.
+    Tabs: Fast Farming / Extras / Notice.
+    Setiap toggle terhubung lewat tabel UI.Callbacks.
 ]]
 
-local CONST = ...
-assert(type(CONST) == "table", "[Muhaves] UI: CONST tidak dikirim dari script utama")
+-- Konstanta yang dipakai UI dan farming. REP_CAP = 500, REP_DEFAULT = 50.
+if not game:IsLoaded() then game.Loaded:Wait() end
 
-local VERSION = CONST.VERSION
-local REP_CAP = CONST.REP_CAP
-local REP_DEFAULT = CONST.REP_DEFAULT
-
-return (function()
-
-local LUNA_URL = "https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua"
-
-local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
-local LocalPlayer = Players.LocalPlayer
-
----------------------------------------------------------------------
--- Hooks yang diganti oleh bagian farming. Klik sebelum farming siap disimpan di Pending lalu di-replay.
-local Pending = {}
-local Callbacks = {}
-for _, name in ipairs({
-	"AutoRebirth", "EquipRebirthPets", "RebirthTarget", "AutoFarmStrength", "ControlledSpeed", "MaxReps",
-	"EatEggs", "EatShake", "SpinWheel", "EatAllBoosts", "AntiAFK",
-	"LowResource", "EquipRepsPets", "EquipStrengthPets",
-}) do
-	Callbacks[name] = function(v) Pending[name] = {t = os.clock(), v = v} end
+-- FIX: re-execute -> hancurkan UI lama dulu. Event Destroying jalan sinkron.
+do
+	local old = _G.MuhavesGui
+	if old then pcall(function() old:Destroy() end) end
+	_G.MuhavesGui = nil
 end
 
----------------------------------------------------------------------
--- Simpan pengaturan (aman kalau executor tidak punya writefile)
-local SAVE_FILE = "MuhavesSettings_MuscleLegends.json"
-local Saved = {}
-pcall(function()
-	if isfile and isfile(SAVE_FILE) then Saved = HttpService:JSONDecode(readfile(SAVE_FILE)) end
-end)
-if type(Saved) ~= "table" then Saved = {} end
-local function saveSettings()
+local CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 50}
+
+local UI_URL = "https://raw.githubusercontent.com/studentsbitcoin85-oss/script/main/Body"
+
+local function failUI(msg)
+	warn("[Muhaves] Gagal memuat UI: " .. tostring(msg))
 	pcall(function()
-		if writefile then writefile(SAVE_FILE, HttpService:JSONEncode(Saved)) end
+		local g = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("MuhavesUI")
+		if g then g:Destroy() end
 	end)
 end
 
+local okGet, src = pcall(game.HttpGet, game, UI_URL)
+if not okGet then return failUI(src) end
+local uiFn, compileErr = loadstring(src)
+if not uiFn then return failUI(compileErr) end
+local okUI, UI = pcall(uiFn, CONST)
+if not okUI or type(UI) ~= "table" then return failUI(UI) end
+_G.MuhavesGui = UI.Gui
+
 ---------------------------------------------------------------------
--- Format angka
-local SUFFIX = {"", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"}
-
-local function abbr(n)
-	local neg = n < 0
-	n = math.abs(n)
-	local i = 1
-	while n >= 1000 and i < #SUFFIX do
-		n /= 1000
-		i += 1
-	end
-	local shown = i == 1 and math.floor(n + 0.5) or tonumber(string.format("%.2f", n))
-	if shown >= 1000 and i < #SUFFIX then
-		n /= 1000
-		i += 1
-		shown = tonumber(string.format("%.2f", n))
-	end
-	local s = i == 1 and tostring(shown) or string.format("%.2f", shown)
-	return (neg and "-" or "") .. s .. SUFFIX[i]
-end
-
--- angka penuh dengan titik: 150000 -> 150.000
-local function full(n)
-	local s = string.format("%.0f", math.abs(n))
-	s = s:reverse():gsub("(%d%d%d)", "%1."):reverse()
-	s = s:gsub("^%.", "")
-	return (n < 0 and "-" or "") .. s
-end
-
--- Baca angka yang diketik: spasi/koma/underscore diabaikan, titik = pemisah ribuan kalau valid (1.000 = 1000),
--- selain itu titik desimal; akhiran K M B T Qa Qi Sx Sp Oc No Dc didukung (10k = 10000). nil kalau bukan angka.
-local SUFFIX_MULT = {
-	k = 1e3, m = 1e6, b = 1e9, t = 1e12, qa = 1e15, qi = 1e18,
-	sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33,
+-- SERVICES & HELPERS
+---------------------------------------------------------------------
+local services = {
+	players = game:GetService("Players"),
+	replicatedstorage = game:GetService("ReplicatedStorage"),
+	runservice = game:GetService("RunService"),
+	lighting = game:GetService("Lighting"),
 }
-local function parseNumber(s)
-	s = tostring(s):lower():gsub("[%s_,]", "")
-	local num, suf = s:match("^([%d%.]+)(%a*)$")
-	if not num then return nil end
-	local parts = {}
-	for p in (num .. "."):gmatch("([^%.]*)%.") do parts[#parts + 1] = p end
-	if #parts >= 2 then
-		local grouped = #parts[1] >= 1 and #parts[1] <= 3 and parts[1] ~= "0"
-		for i = 2, #parts do
-			if #parts[i] ~= 3 then grouped = false end
-		end
-		if grouped then
-			num = table.concat(parts)
-		elseif #parts > 2 then
-			return nil
+local lp = services.players.LocalPlayer
+local gui = UI.Gui
+local Callbacks = UI.Callbacks
+
+local NAMES = {
+	petsFolder = "petsFolder",
+	bodyMovement = "bodyMovementScript",
+	removeBodyMovement = false,
+	ads = "RobloxForwardPortals",
+	remote = {
+		equipPet = "equipPetEvent",
+		rebirth = "rebirthRemote",
+		fortune = "openFortuneWheelRemote",
+		showPets = "showPetsEvent",
+	},
+	tools = {egg = "Protein Egg", shake = "Tropical Shake"},
+	fortuneChances = {"shared", "catalogs", "fortuneWheelChances", "Fortune Wheel"},
+}
+
+local function resolvePath(root, path)
+	for _, name in ipairs(path) do root = root[name] end
+	return root
+end
+
+local Saved = UI.Saved
+local function persist(k, v)
+	if Saved[k] == v then return end
+	Saved[k] = v
+	UI.Save()
+end
+
+local function setToggle(name, state)
+	local setter = UI.Toggles[name]
+	if setter then
+		setter(state, true)
+	else
+		warn("[Muhaves] Toggle not found: " .. tostring(name))
+	end
+end
+
+local function slicer()
+	local t0 = os.clock()
+	return function()
+		if os.clock() - t0 > 0.004 then
+			task.wait()
+			t0 = os.clock()
 		end
 	end
-	local n = tonumber(num)
-	if not n then return nil end
-	if suf ~= "" then
-		local m = SUFFIX_MULT[suf]
-		if not m then return nil end
-		n *= m
-	end
-	return n
-end
-local MAX_INPUT = 1e18
-
-local function isNum(v) return v:IsA("IntValue") or v:IsA("NumberValue") end
--- cadangan: cari nilai Rebirths sendiri sampai farming menyerahkan objek aslinya (UI.RebirthSource)
-local function findRebirthObj()
-	local ls = LocalPlayer:FindFirstChild("leaderstats")
-	local direct = ls and ls:FindFirstChild("Rebirths")
-	if direct and isNum(direct) then return direct end
-	local roots = {}
-	if ls then roots[#roots + 1] = ls end
-	roots[#roots + 1] = LocalPlayer
-	for _, root in ipairs(roots) do
-		for _, d in ipairs(root:GetDescendants()) do
-			if isNum(d) and d.Name:lower():find("rebirth", 1, true) then return d end
-		end
-	end
-	return nil
 end
 
----------------------------------------------------------------------
--- Muat Luna. Jendela Luna dari sesi sebelumnya (kalau script dijalankan ulang) ditutup dulu.
-if _G.MuhavesLuna then
-	pcall(function() _G.MuhavesLuna:Destroy() end)
-	_G.MuhavesLuna = nil
-end
-
-local okLuna, Luna = pcall(function()
-	return loadstring(game:HttpGet(LUNA_URL, true))()
-end)
-if not okLuna or type(Luna) ~= "table" then
-	error("Luna gagal dimuat: " .. tostring(Luna), 0)
-end
-_G.MuhavesLuna = Luna
-
--- Penanda hidup/mati sesi untuk bagian farming (UI.Gui). Tidak terlihat (Enabled = false).
-do
-	local pg = LocalPlayer:WaitForChild("PlayerGui")
-	local old = pg:FindFirstChild("MuhavesUI")
-	if old then old:Destroy() end
-end
-local anchor = Instance.new("ScreenGui")
-anchor.Name = "MuhavesUI"
-anchor.ResetOnSpawn = false
-anchor.Enabled = false
-anchor.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
--- Hapus Luna dan penanda bersama-sama (sekali saja)
-local closing = false
-local origDestroy = Luna.Destroy
-local function closeAll()
-	if closing then return end
-	closing = true
-	pcall(function() anchor:Destroy() end)
-	pcall(origDestroy, Luna)
-end
-Luna.Destroy = function() closeAll() end
-anchor.Destroying:Connect(closeAll)
-
----------------------------------------------------------------------
--- Jendela + tab
-local Window = Luna:CreateWindow({
-	Name = "Muhaves Private Farming",
-	Subtitle = "V" .. VERSION,
-	LoadingEnabled = true,
-	LoadingTitle = "Muhaves",
-	LoadingSubtitle = "Private Farming",
-	ConfigSettings = {ConfigFolder = "MuhavesLuna"},
-	KeySystem = false,
-})
-
--- Kalau jendela Luna ditutup lewat tombolnya (tanpa lewat Luna:Destroy), ikut matikan penanda
-task.spawn(function()
-	local roots = {}
-	local okH, h = pcall(function() return gethui and gethui() or nil end)
-	if okH and h then roots[#roots + 1] = h end
-	roots[#roots + 1] = CoreGui
-	local rg = CoreGui:FindFirstChild("RobloxGui")
-	if rg then roots[#roots + 1] = rg end
-	task.wait(0.5)
-	local lunaGui
-	for _, root in ipairs(roots) do
-		for _, c in ipairs(root:GetChildren()) do
-			if c:IsA("ScreenGui") and c.Name ~= "Luna-Old" and c:FindFirstChild("SmartWindow") then
-				lunaGui = c
-				break
+local function walk(root, fn)
+	local step = slicer()
+	local stack, n = {root}, 1
+	while n > 0 do
+		local inst = stack[n]
+		stack[n] = nil
+		n -= 1
+		local ok, children = pcall(inst.GetChildren, inst)
+		if ok then
+			for _, child in ipairs(children) do
+				local okFn, stop = pcall(fn, child)
+				if okFn and stop then return end
+				n += 1
+				stack[n] = child
+				step()
 			end
 		end
-		if lunaGui then break end
+		step()
 	end
-	if lunaGui then
-		lunaGui.AncestryChanged:Connect(function()
-			if not lunaGui.Parent then closeAll() end
+end
+
+local inflight, MAX_INFLIGHT = 0, 4
+local function invokeWithTimeout(remote, timeout, ...)
+	if inflight >= MAX_INFLIGHT then return false, nil, "busy" end
+	local args = table.pack(...)
+	local done, ok, result = false, false, nil
+	inflight += 1
+	local released = false
+	local function release()
+		if not released then
+			released = true
+			inflight -= 1
+		end
+	end
+	task.spawn(function()
+		ok, result = pcall(function() return remote:InvokeServer(table.unpack(args, 1, args.n)) end)
+		done = true
+		release()
+	end)
+	task.delay(15, release)
+	local t0 = os.clock()
+	while not done and os.clock() - t0 < timeout do task.wait(0.05) end
+	if not done then return false, nil, "timeout" end
+	return ok, result, nil
+end
+
+local C_IDLE, C_ON, C_PAUSE = Color3.fromRGB(240, 240, 240), Color3.fromRGB(80, 255, 120), Color3.fromRGB(255, 180, 70)
+
+local SESSION_ID = (_G.MuhavesFarmingSession or 0) + 1
+_G.MuhavesFarmingSession = SESSION_ID
+local function alive()
+	return _G.MuhavesFarmingSession == SESSION_ID and gui.Parent ~= nil
+end
+
+local function loop(fn)
+	task.spawn(function()
+		while alive() do
+			local ok, err = pcall(fn)
+			if not ok then
+				warn("[Muhaves] " .. tostring(err))
+				task.wait(1)
+			end
+		end
+	end)
+end
+
+if _G.MuhavesFarmingConns then
+	for _, c in ipairs(_G.MuhavesFarmingConns) do
+		pcall(function() c:Disconnect() end)
+	end
+end
+_G.MuhavesFarmingConns = {}
+local function track(conn)
+	table.insert(_G.MuhavesFarmingConns, conn)
+	return conn
+end
+do
+	local mine = _G.MuhavesFarmingConns
+	gui.Destroying:Connect(function()
+		for _, c in ipairs(mine) do pcall(function() c:Disconnect() end) end
+		table.clear(mine)
+	end)
+end
+
+local flag = {antiAfk = true, eggs = false, shake = false, spin = false, boosts = false}
+
+-- Anti AFK
+local VirtualUser = game:GetService("VirtualUser")
+track(lp.Idled:Connect(function()
+	if not alive() or not flag.antiAfk then return end
+	pcall(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+end))
+Callbacks.AntiAFK = function(s) flag.antiAfk = s end
+
+-- Remove Ads
+task.spawn(function()
+	task.wait(3)
+	if not alive() then return end
+	for _, getRoot in ipairs({
+		function() return game:GetService("CoreGui") end,
+		function() return workspace end,
+	}) do
+		pcall(function()
+			local p = getRoot():FindFirstChild(NAMES.ads, true)
+			if p then p:Destroy() end
 		end)
 	end
 end)
-
-local TabFarm = Window:CreateTab({Name = "Fast Farming", Icon = "bolt", ImageSource = "Material", ShowTitle = true})
-local TabExtra = Window:CreateTab({Name = "Extras", Icon = "settings", ImageSource = "Material", ShowTitle = true})
-local TabNotice = Window:CreateTab({Name = "Notice", Icon = "campaign", ImageSource = "Material", ShowTitle = true})
-
----------------------------------------------------------------------
--- Label / teks yang di-update dari farming. Farming menulis ke objek palsu (.Text / .TextColor3);
--- perubahan dikumpulkan dan dikirim ke elemen Luna paling cepat tiap 0,5 detik (tidak membebani UI).
-local C_WHITE = Color3.fromRGB(240, 240, 240)
-local dirty = {}   -- nama grup -> true
-local els = {}     -- nama grup -> elemen Luna
-local renders = {} -- nama grup -> fungsi yang mengembalikan tabel pengaturan untuk :Set()
-
-local function fake(init, group)
-	local store = {Text = init, TextColor3 = C_WHITE}
-	return setmetatable({}, {
-		__index = function(_, k) return store[k] end,
-		__newindex = function(_, k, v)
-			if store[k] == v then return end
-			store[k] = v
-			if group then dirty[group] = true end
-		end,
-	})
-end
-local function fakeRow(n, init, group)
-	local t = {}
-	for i = 1, n do t[i] = fake(init, group) end
-	return t
-end
-
--- Warna status -> gaya label Luna (1 biasa, 2 hijau, 3 merah)
-local function styleOf(c)
-	if c.G > 0.9 and c.R < 0.5 then return 2 end
-	if c.R > 0.9 and c.G < 0.5 then return 3 end
-	return 1
-end
-
-local F = {
-	rbStatus = fake("Status: Inactive", "rbStatus"),
-	rbRuntime = fake("0d 0h 0m 0s", "rb"),
-	rbRebirths = fake("0", "rb"), rbGained = fake("0", "rb"),
-	rbHour = fake("--", "rb"), rbDay = fake("--", "rb"), rbWeek = fake("--", "rb"),
-
-	fsStatus = fake("Status: Inactive", "fsStatus"),
-	fsRuntime = fake("0d 0h 0m 0s", "fs"),
-	fsStr = fake("0", "fs"), fsStrG = fake("+0", "fs"),
-	fsDura = fake("0", "fs"), fsDurG = fake("+0", "fs"),
-	fsSP = fakeRow(5, "--", "pace"), fsDP = fakeRow(5, "--", "pace"),
-	fsSA = fakeRow(5, "--", "pace"), fsDA = fakeRow(5, "--", "pace"),
-
-	ntStatus = fake("Working", "notice"), ntCheck = fake("✅", "notice"),
-	exStatus = fake("Ready", nil),
-}
-
-local function statusRender(f)
-	return function()
-		return {Text = f.Text, Style = styleOf(f.TextColor3)}
-	end
-end
-renders.rbStatus = statusRender(F.rbStatus)
-renders.fsStatus = statusRender(F.fsStatus)
-
-renders.rb = function()
-	return {Text = table.concat({
-		"Rebirths: " .. F.rbRebirths.Text,
-		"Gained: " .. F.rbGained.Text,
-		"Pace / Hour: " .. F.rbHour.Text,
-		"Pace / Day: " .. F.rbDay.Text,
-		"Pace / Week: " .. F.rbWeek.Text,
-		"Runtime: " .. F.rbRuntime.Text,
-	}, "\n")}
-end
-
-renders.fs = function()
-	return {Text = table.concat({
-		"Strength: " .. F.fsStr.Text .. "  (" .. F.fsStrG.Text .. ")",
-		"Durability: " .. F.fsDura.Text .. "  (" .. F.fsDurG.Text .. ")",
-		"Runtime: " .. F.fsRuntime.Text,
-	}, "\n")}
-end
-
-local PACE_UNITS = {"/s", "/m", "/h", "/d", "/w"}
-local function paceLine(name, cells)
-	local parts = {}
-	for i, u in ipairs(PACE_UNITS) do parts[i] = u .. " " .. cells[i].Text end
-	return name .. ":  " .. table.concat(parts, "   ")
-end
-renders.pace = function()
-	return {Text = table.concat({
-		paceLine("Str Pace", F.fsSP),
-		paceLine("Dura Pace", F.fsDP),
-		paceLine("Str Average", F.fsSA),
-		paceLine("Dura Average", F.fsDA),
-	}, "\n")}
-end
-
-renders.notice = function()
-	return {Text = "Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, Style = styleOf(F.ntStatus.TextColor3)}
-end
-
----------------------------------------------------------------------
--- Toggle: kunci = judul (sama persis dengan yang dipakai setToggle() di farming)
-local Toggles = {}
-local shown = {} -- status terakhir yang diketahui; callback yang nilainya sama (mis. dari :Set) diabaikan
-
-local function addToggle(tab, name, desc, initial, cbName)
-	initial = initial and true or false
-	shown[name] = initial
-	local el
-	el = tab:CreateToggle({
-		Name = name,
-		Description = desc,
-		CurrentValue = initial,
-		Callback = function(v)
-			v = v and true or false
-			if shown[name] == v then return end
-			shown[name] = v
-			Callbacks[cbName](v)
-		end,
-	})
-	Toggles[name] = function(state, silent)
-		state = state and true or false
-		shown[name] = state
-		if el then pcall(function() el:Set({CurrentValue = state}) end) end
-		if not silent then Callbacks[cbName](state) end
-	end
-end
-
--- Kotak angka: Enter untuk menyimpan. Teks diganti dengan nilai yang benar-benar dipakai.
-local function addNumberInput(tab, name, desc, initial, cbName, minVal, default, maxVal)
-	local lastText = string.format("%.0f", initial)
-	local lastNum = initial
-	local el
-	el = tab:CreateInput({
-		Name = name,
-		Description = desc,
-		PlaceholderText = lastText,
-		CurrentValue = lastText,
-		Numeric = false,
-		Enter = true,
-		Callback = function(text)
-			if text == lastText then return end
-			local n = parseNumber(text)
-			if not n or n < (minVal or 0) then n = default or lastNum end
-			n = math.min(math.floor(n), maxVal or MAX_INPUT)
-			lastNum = n
-			lastText = string.format("%.0f", n)
-			if lastText ~= text and el then
-				pcall(function() el:Set({CurrentValue = lastText}) end)
+for _, getRoot in ipairs({
+	function() return game:GetService("CoreGui") end,
+	function() return workspace end,
+}) do
+	pcall(function()
+		track(getRoot().DescendantAdded:Connect(function(d)
+			if alive() and d.Name == NAMES.ads then
+				task.defer(pcall, d.Destroy, d)
 			end
-			Callbacks[cbName](n)
-		end,
-	})
-end
-
----------------------------------------------------------------------
--- TAB 1: Fast Farming
-local savedTarget = math.floor(tonumber(Saved.RebirthTarget) or 0)
-local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAULT), 1, REP_CAP)
-
-TabFarm:CreateSection("Fast Rebirth")
-els.rbStatus = TabFarm:CreateLabel({Text = F.rbStatus.Text, Style = 1})
-addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
-addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
-addToggle(TabFarm, "Equip Rebirth Pets", "Automatically equips the best rebirth pets.", Saved.EquipRebirthPets == true, "EquipRebirthPets")
-addToggle(TabFarm, "Equip Reps Pets", "Automatically equips the best reps pets.", Saved.PetMode == "reps", "EquipRepsPets")
-addToggle(TabFarm, "Equip Strength Pets", "Automatically equips the best strength pets.", Saved.PetMode == "strength", "EquipStrengthPets")
-els.rb = TabFarm:CreateParagraph({Title = "Rebirth Stats", Text = renders.rb().Text})
-
-TabFarm:CreateSection("Fast Strength")
-els.fsStatus = TabFarm:CreateLabel({Text = F.fsStatus.Text, Style = 1})
-addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
-addToggle(TabFarm, "Controlled Speed", "Adjusts the speed based on server response.", true, "ControlledSpeed")
-addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", savedMaxReps, "MaxReps", 1, REP_DEFAULT, REP_CAP)
-els.fs = TabFarm:CreateParagraph({Title = "Strength Stats", Text = renders.fs().Text})
-els.pace = TabFarm:CreateParagraph({Title = "Pace", Text = renders.pace().Text})
-
----------------------------------------------------------------------
--- TAB 2: Extras
-addToggle(TabExtra, "Eat Eggs (Auto)", "Automatically eats protein eggs.", false, "EatEggs")
-addToggle(TabExtra, "Eat Shake (Auto)", "Automatically eats tropical shakes.", false, "EatShake")
-addToggle(TabExtra, "Spin Fortune Wheel", "Spins the fortune wheel.", false, "SpinWheel")
-addToggle(TabExtra, "Eat All Boosts", "Eats all boosts (may lag).", false, "EatAllBoosts")
-addToggle(TabExtra, "Anti AFK", "Prevents idle kicks.", true, "AntiAFK")
-addToggle(TabExtra, "Low Resource Mode", "Hides popups + 3D off + 20 FPS + Anti Lag + black screen.", false, "LowResource")
-
----------------------------------------------------------------------
--- TAB 3: Notice
-els.notice = TabNotice:CreateLabel({Text = renders.notice().Text, Style = 1})
-TabNotice:CreateParagraph({
-	Title = "Muhaves Private Farming  v" .. VERSION,
-	Text = "Made by MuhavesDevs\nGame: Muscle Legends\n\nKey Features: Fast Rebirth, Fast Strength, Auto Egg / Shake, Spin Fortune Wheel, Auto Boosts, Low Resource Mode.\n\n\"Progress is not luck, it's a system.\" - Muhaves",
-})
-
----------------------------------------------------------------------
--- Kirim perubahan ke Luna (maks. 1x per 0,5 detik per grup)
-task.spawn(function()
-	while anchor.Parent do
-		task.wait(0.5)
-		for name in pairs(dirty) do
-			dirty[name] = nil
-			local r, e = renders[name], els[name]
-			if r and e then
-				pcall(function() e:Set(r()) end)
-			end
-		end
-	end
-end)
-
----------------------------------------------------------------------
--- Tampilan Rebirth langsung: Rebirths (angka penuh), Gained (sejak script mulai), pace per jam / hari / minggu.
--- Hanya MEMBACA nilai. Pace hanya menghitung waktu saat Auto Rebirth benar-benar berjalan (rbClock.active).
-local rbClock = {active = function() return false end}
-local rbSource = {obj = nil}
-do
-	local rbObj, startVal, tries = nil, nil, 0
-	local activeTime, activeGain, lastN, lastT = 0, 0, nil, os.clock()
-	task.spawn(function()
-		while anchor.Parent do
-			if rbSource.obj and rbSource.obj.Parent then
-				rbObj = rbSource.obj
-			elseif not (rbObj and rbObj.Parent) then
-				rbObj = nil
-				if tries % 6 == 0 then pcall(function() rbObj = findRebirthObj() end) end
-				tries += 1
-			end
-			local n
-			if rbObj then
-				n = tonumber(rbObj.Value)
-			else
-				local a = LocalPlayer:GetAttribute("Rebirths")
-				if type(a) == "number" then n = a end
-			end
-
-			if n then
-				if not startVal then startVal = n end
-				if n < startVal then startVal = n end
-				F.rbRebirths.Text = full(n)
-				F.rbGained.Text = abbr(n - startVal)
-				local nowT = os.clock()
-				if rbClock.active() then
-					activeTime += nowT - lastT
-					if lastN and n > lastN then activeGain += n - lastN end
-				end
-				lastT, lastN = nowT, n
-				local elapsed = activeTime
-				F.rbRuntime.Text = string.format("%dd %dh %dm %ds",
-					math.floor(elapsed / 86400), math.floor((elapsed % 86400) / 3600),
-					math.floor((elapsed % 3600) / 60), math.floor(elapsed % 60))
-				if elapsed >= 10 then
-					local perHour = activeGain / elapsed * 3600
-					F.rbHour.Text = abbr(perHour)
-					F.rbDay.Text = abbr(perHour * 24)
-					F.rbWeek.Text = abbr(perHour * 168)
-				else
-					F.rbHour.Text, F.rbDay.Text, F.rbWeek.Text = "--", "--", "--"
-				end
-			else
-				F.rbRebirths.Text, F.rbGained.Text = "N/A", "--"
-				F.rbHour.Text, F.rbDay.Text, F.rbWeek.Text = "--", "--", "--"
-			end
-			task.wait(0.5)
-		end
+		end))
 	end)
 end
 
----------------------------------------------------------------------
-return {
-	Gui = anchor,
-	Rebirth = {Status = F.rbStatus, Runtime = F.rbRuntime, Rebirths = F.rbRebirths, Gained = F.rbGained,
-		PaceHour = F.rbHour, PaceDay = F.rbDay, PaceWeek = F.rbWeek},
-	Strength = {Status = F.fsStatus, Strength = F.fsStr, StrengthGain = F.fsStrG, Durability = F.fsDura, DurabilityGain = F.fsDurG,
-		StrPace = F.fsSP, DuraPace = F.fsDP, StrAverage = F.fsSA, DuraAverage = F.fsDA, Runtime = F.fsRuntime},
-	Extras = {Status = F.exStatus},
-	Notice = {Status = F.ntStatus, Check = F.ntCheck},
-	Callbacks = Callbacks,
-	Pending = Pending,
-	Toggles = Toggles,
-	Saved = Saved, Save = saveSettings,
-	Abbr = abbr,
-	RbClock = rbClock,
-	RebirthSource = rbSource,
-}
-end)()
+-- bodyMovementScript
+local function removeBMS(char)
+	if not NAMES.removeBodyMovement then return end
+	local s = char:WaitForChild(NAMES.bodyMovement, 5)
+	if s then pcall(s.Destroy, s) end
+end
+if lp.Character then task.spawn(removeBMS, lp.Character) end
+track(lp.CharacterAdded:Connect(function(c) task.spawn(removeBMS, c) end))
+
+local showPetsEvent, fortuneRemote
+
+----------------------------------------------------------------
