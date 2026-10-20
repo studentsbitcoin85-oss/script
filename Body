@@ -324,12 +324,12 @@ end
 
 local F = {
 	rbStatus = fake("Status: Inactive", "rbStatus"),
-	rbRuntime = fake("0d 0h 0m 0s", "rb"),
+	rbRuntime = fake("0d 0h 0m 0s", "rbRt"),
 	rbRebirths = fake("0", "rb"), rbGained = fake("0", "rb"),
 	rbHour = fake("--", "rb"), rbDay = fake("--", "rb"), rbWeek = fake("--", "rb"),
 
 	fsStatus = fake("Status: Inactive", "fsStatus"),
-	fsRuntime = fake("0d 0h 0m 0s", "fs"),
+	fsRuntime = fake("0d 0h 0m 0s", "fsRt"),
 	fsStr = fake("0", "fs"), fsStrG = fake("+0", "fs"),
 	fsDura = fake("0", "fs"), fsDurG = fake("+0", "fs"),
 	fsSP = fakeRow(5, "--", "pace"), fsDP = fakeRow(5, "--", "pace"),
@@ -348,11 +348,13 @@ renders.notice = function()
 	return {L("Status: " .. F.ntStatus.Text .. " " .. F.ntCheck.Text, styleOf(F.ntStatus.TextColor3, F.ntStatus.Text))}
 end
 
+renders.rbRt = function() return {L("Runtime: " .. F.rbRuntime.Text)} end
+renders.fsRt = function() return {L("Runtime: " .. F.fsRuntime.Text)} end
+
 renders.rb = function()
 	return {
 		L("Rebirths: " .. F.rbRebirths.Text .. "  (+" .. F.rbGained.Text .. ")"),
 		L("Pace: " .. F.rbHour.Text .. "/h · " .. F.rbDay.Text .. "/d · " .. F.rbWeek.Text .. "/w"),
-		L("Runtime: " .. F.rbRuntime.Text),
 	}
 end
 
@@ -360,7 +362,6 @@ renders.fs = function()
 	return {
 		L("Strength: " .. F.fsStr.Text .. "  (" .. F.fsStrG.Text .. ")"),
 		L("Durability: " .. F.fsDura.Text .. "  (" .. F.fsDurG.Text .. ")"),
-		L("Runtime: " .. F.fsRuntime.Text),
 	}
 end
 
@@ -471,6 +472,7 @@ local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAUL
 -- 1) Fast Rebirth
 TabFarm:CreateSection("Fast Rebirth")
 makeLabels(TabFarm, "rbStatus")
+makeLabels(TabFarm, "rbRt")
 addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
 addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
 makeLabels(TabFarm, "rb")
@@ -480,6 +482,7 @@ divider(TabFarm)
 -- 2) Fast Strength
 TabFarm:CreateSection("Fast Strength")
 makeLabels(TabFarm, "fsStatus")
+makeLabels(TabFarm, "fsRt")
 addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
 addToggle(TabFarm, "Controlled Speed", "Adjusts the speed based on server response.", true, "ControlledSpeed")
 addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s.", savedMaxReps, "MaxReps", 1, REP_DEFAULT, REP_CAP)
