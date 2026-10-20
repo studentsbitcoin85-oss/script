@@ -1,15 +1,15 @@
 --[[
-    Muhaves Private Farming - UI versi LUNA (pengganti file "Body").
+    Muhaves Private Farming - UI versi LUNA (pengganti file "Body"), layout dirapikan.
     Dipanggil dari script farming: loadstring(game:HttpGet(URL))(CONST)
-    Mengembalikan tabel UI yang SAMA dengan UI lama (UI.Gui, UI.Rebirth, UI.Strength, UI.Notice,
+    Mengembalikan tabel UI yang SAMA dengan versi sebelumnya (UI.Gui, UI.Rebirth, UI.Strength, UI.Notice,
     UI.Callbacks, UI.Toggles, UI.Pending, UI.Saved, UI.Save, UI.Abbr, UI.RbClock, UI.RebirthSource),
-    jadi script farming tidak perlu diubah.
+    jadi script farming tidak perlu diubah. Judul toggle TIDAK diubah (dipakai setToggle() di farming).
 
-    Catatan:
-    * UI.Gui = ScreenGui kecil tak terlihat bernama "MuhavesUI" (penanda hidup/mati sesi untuk farming).
-      Kalau jendela Luna ditutup / Luna:Destroy() dipanggil, penanda ini ikut dihapus -> semua loop farming berhenti
-      dan Low Resource Mode dikembalikan (sama seperti tombol X di UI lama).
-    * Teks status / stats ditampilkan lewat Label / Paragraph Luna dan di-update paling cepat tiap 0,5 detik.
+    Perubahan tampilan saja:
+    * Fast Farming: Rebirth -> Strength -> Pets dipisah per section, ada divider.
+    * Extras: dibagi Auto Eat / Automation / Performance.
+    * Teks statistik dibuat rata & lebih mudah dibaca.
+    * Notice: status + info + cara pakai singkat.
 ]]
 
 local CONST = ...
@@ -23,9 +23,8 @@ return (function()
 
 local LUNA_URL = "https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua"
 
--- Home tab (muncul saat profil di pojok kiri atas sidebar ditekan): Player Profile, Client & Server Status, Discord.
 local DISCORD_INVITE = ""  -- isi KODE invite saja, tanpa "discord.gg/" (kosong = bagian Discord tidak diisi)
-local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"} -- executor yang tampil "Supported" di Compatibility
+local SUPPORTED_EXECUTORS = {"Delta", "Arceus X", "Codex", "Solara"}
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -88,8 +87,6 @@ local function full(n)
 	return (n < 0 and "-" or "") .. s
 end
 
--- Baca angka yang diketik: spasi/koma/underscore diabaikan, titik = pemisah ribuan kalau valid (1.000 = 1000),
--- selain itu titik desimal; akhiran K M B T Qa Qi Sx Sp Oc No Dc didukung (10k = 10000). nil kalau bukan angka.
 local SUFFIX_MULT = {
 	k = 1e3, m = 1e6, b = 1e9, t = 1e12, qa = 1e15, qi = 1e18,
 	sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33,
@@ -123,7 +120,6 @@ end
 local MAX_INPUT = 1e18
 
 local function isNum(v) return v:IsA("IntValue") or v:IsA("NumberValue") end
--- cadangan: cari nilai Rebirths sendiri sampai farming menyerahkan objek aslinya (UI.RebirthSource)
 local function findRebirthObj()
 	local ls = LocalPlayer:FindFirstChild("leaderstats")
 	local direct = ls and ls:FindFirstChild("Rebirths")
@@ -140,7 +136,7 @@ local function findRebirthObj()
 end
 
 ---------------------------------------------------------------------
--- Muat Luna. Jendela Luna dari sesi sebelumnya (kalau script dijalankan ulang) ditutup dulu.
+-- Muat Luna. Jendela Luna dari sesi sebelumnya ditutup dulu.
 if _G.MuhavesLuna then
 	pcall(function() _G.MuhavesLuna:Destroy() end)
 	_G.MuhavesLuna = nil
@@ -154,7 +150,7 @@ if not okLuna or type(Luna) ~= "table" then
 end
 _G.MuhavesLuna = Luna
 
--- Penanda hidup/mati sesi untuk bagian farming (UI.Gui). Tidak terlihat (Enabled = false).
+-- Penanda hidup/mati sesi untuk bagian farming (UI.Gui). Tidak terlihat.
 do
 	local pg = LocalPlayer:WaitForChild("PlayerGui")
 	local old = pg:FindFirstChild("MuhavesUI")
@@ -166,7 +162,6 @@ anchor.ResetOnSpawn = false
 anchor.Enabled = false
 anchor.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Hapus Luna dan penanda bersama-sama (sekali saja)
 local closing = false
 local origDestroy = Luna.Destroy
 local function closeAll()
@@ -190,7 +185,6 @@ local Window = Luna:CreateWindow({
 	KeySystem = false,
 })
 
--- Home tab dibuat PERTAMA supaya profil di sidebar bisa ditekan untuk membukanya
 do
 	local home = {SupportedExecutors = SUPPORTED_EXECUTORS, Icon = 1}
 	if DISCORD_INVITE ~= "" then home.DiscordInvite = DISCORD_INVITE end
@@ -198,7 +192,6 @@ do
 	if not okHome then warn("[Muhaves] Home tab gagal dibuat: " .. tostring(errHome)) end
 end
 
--- Kalau jendela Luna ditutup lewat tombolnya (tanpa lewat Luna:Destroy), ikut matikan penanda
 task.spawn(function()
 	local roots = {}
 	local okH, h = pcall(function() return gethui and gethui() or nil end)
@@ -225,16 +218,20 @@ task.spawn(function()
 end)
 
 local TabFarm = Window:CreateTab({Name = "Fast Farming", Icon = "bolt", ImageSource = "Material", ShowTitle = true})
-local TabExtra = Window:CreateTab({Name = "Extras", Icon = "settings", ImageSource = "Material", ShowTitle = true})
-local TabNotice = Window:CreateTab({Name = "Notice", Icon = "campaign", ImageSource = "Material", ShowTitle = true})
+local TabExtra = Window:CreateTab({Name = "Extras", Icon = "tune", ImageSource = "Material", ShowTitle = true})
+local TabNotice = Window:CreateTab({Name = "Notice", Icon = "info", ImageSource = "Material", ShowTitle = true})
+
+-- Pemisah antar blok (kalau versi Luna tidak punya CreateDivider, dilewati)
+local function divider(tab)
+	pcall(function() tab:CreateDivider() end)
+end
 
 ---------------------------------------------------------------------
--- Label / teks yang di-update dari farming. Farming menulis ke objek palsu (.Text / .TextColor3);
--- perubahan dikumpulkan dan dikirim ke elemen Luna paling cepat tiap 0,5 detik (tidak membebani UI).
+-- Label / teks yang di-update dari farming (objek palsu .Text / .TextColor3), dikirim ke Luna tiap 0,5 detik.
 local C_WHITE = Color3.fromRGB(240, 240, 240)
-local dirty = {}   -- nama grup -> true
-local els = {}     -- nama grup -> elemen Luna
-local renders = {} -- nama grup -> fungsi yang mengembalikan tabel pengaturan untuk :Set()
+local dirty = {}
+local els = {}
+local renders = {}
 
 local function fake(init, group)
 	local store = {Text = init, TextColor3 = C_WHITE}
@@ -287,35 +284,39 @@ renders.fsStatus = statusRender(F.fsStatus)
 
 renders.rb = function()
 	return {Text = table.concat({
-		"Rebirths: " .. F.rbRebirths.Text,
-		"Gained: " .. F.rbGained.Text,
-		"Pace / Hour: " .. F.rbHour.Text,
-		"Pace / Day: " .. F.rbDay.Text,
-		"Pace / Week: " .. F.rbWeek.Text,
-		"Runtime: " .. F.rbRuntime.Text,
+		"Rebirths      " .. F.rbRebirths.Text,
+		"Gained         +" .. F.rbGained.Text,
+		"",
+		"Pace / Hour   " .. F.rbHour.Text,
+		"Pace / Day    " .. F.rbDay.Text,
+		"Pace / Week  " .. F.rbWeek.Text,
+		"",
+		"Runtime        " .. F.rbRuntime.Text,
 	}, "\n")}
 end
 
 renders.fs = function()
 	return {Text = table.concat({
-		"Strength: " .. F.fsStr.Text .. "  (" .. F.fsStrG.Text .. ")",
-		"Durability: " .. F.fsDura.Text .. "  (" .. F.fsDurG.Text .. ")",
-		"Runtime: " .. F.fsRuntime.Text,
+		"Strength       " .. F.fsStr.Text .. "   (" .. F.fsStrG.Text .. ")",
+		"Durability     " .. F.fsDura.Text .. "   (" .. F.fsDurG.Text .. ")",
+		"",
+		"Runtime        " .. F.fsRuntime.Text,
 	}, "\n")}
 end
 
 local PACE_UNITS = {"/s", "/m", "/h", "/d", "/w"}
-local function paceLine(name, cells)
+local function paceBlock(title, cells)
 	local parts = {}
-	for i, u in ipairs(PACE_UNITS) do parts[i] = u .. " " .. cells[i].Text end
-	return name .. ":  " .. table.concat(parts, "   ")
+	for i, u in ipairs(PACE_UNITS) do parts[i] = cells[i].Text .. u end
+	return title .. "\n    " .. table.concat(parts, "  •  ")
 end
 renders.pace = function()
 	return {Text = table.concat({
-		paceLine("Str Pace", F.fsSP),
-		paceLine("Dura Pace", F.fsDP),
-		paceLine("Str Average", F.fsSA),
-		paceLine("Dura Average", F.fsDA),
+		paceBlock("Strength Pace", F.fsSP),
+		paceBlock("Durability Pace", F.fsDP),
+		"",
+		paceBlock("Strength Average", F.fsSA),
+		paceBlock("Durability Average", F.fsDA),
 	}, "\n")}
 end
 
@@ -326,7 +327,7 @@ end
 ---------------------------------------------------------------------
 -- Toggle: kunci = judul (sama persis dengan yang dipakai setToggle() di farming)
 local Toggles = {}
-local shown = {} -- status terakhir yang diketahui; callback yang nilainya sama (mis. dari :Set) diabaikan
+local shown = {}
 
 local function addToggle(tab, name, desc, initial, cbName)
 	initial = initial and true or false
@@ -351,7 +352,6 @@ local function addToggle(tab, name, desc, initial, cbName)
 	end
 end
 
--- Kotak angka: Enter untuk menyimpan. Teks diganti dengan nilai yang benar-benar dipakai.
 local function addNumberInput(tab, name, desc, initial, cbName, minVal, default, maxVal)
 	local lastText = string.format("%.0f", initial)
 	local lastNum = initial
@@ -379,19 +379,20 @@ local function addNumberInput(tab, name, desc, initial, cbName, minVal, default,
 end
 
 ---------------------------------------------------------------------
--- TAB 1: Fast Farming
+-- TAB 1: Fast Farming  (Rebirth -> Strength -> Pets)
 local savedTarget = math.floor(tonumber(Saved.RebirthTarget) or 0)
 local savedMaxReps = math.clamp(math.floor(tonumber(Saved.MaxReps) or REP_DEFAULT), 1, REP_CAP)
 
+-- 1) Fast Rebirth
 TabFarm:CreateSection("Fast Rebirth")
 els.rbStatus = TabFarm:CreateLabel({Text = F.rbStatus.Text, Style = 1})
-addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
 addToggle(TabFarm, "Auto Rebirth", "Rebirths automatically when the requirements are met.", false, "AutoRebirth")
-addToggle(TabFarm, "Equip Rebirth Pets", "Automatically equips the best rebirth pets.", Saved.EquipRebirthPets == true, "EquipRebirthPets")
-addToggle(TabFarm, "Equip Reps Pets", "Automatically equips the best reps pets.", Saved.PetMode == "reps", "EquipRepsPets")
-addToggle(TabFarm, "Equip Strength Pets", "Automatically equips the best strength pets.", Saved.PetMode == "strength", "EquipStrengthPets")
+addNumberInput(TabFarm, "Rebirth Target", "Stops Auto Rebirth at this count (0 = no limit).", savedTarget, "RebirthTarget", 0, 0, nil)
 els.rb = TabFarm:CreateParagraph({Title = "Rebirth Stats", Text = renders.rb().Text})
 
+divider(TabFarm)
+
+-- 2) Fast Strength
 TabFarm:CreateSection("Fast Strength")
 els.fsStatus = TabFarm:CreateLabel({Text = F.fsStatus.Text, Style = 1})
 addToggle(TabFarm, "Auto Farm Strength", "Smart automatic strength farming.", false, "AutoFarmStrength")
@@ -400,21 +401,49 @@ addNumberInput(TabFarm, "Max Reps / Second", "Maximum " .. REP_CAP .. " reps/s."
 els.fs = TabFarm:CreateParagraph({Title = "Strength Stats", Text = renders.fs().Text})
 els.pace = TabFarm:CreateParagraph({Title = "Pace", Text = renders.pace().Text})
 
+divider(TabFarm)
+
+-- 3) Pets
+TabFarm:CreateSection("Pets")
+addToggle(TabFarm, "Equip Rebirth Pets", "Automatically equips the best rebirth pets.", Saved.EquipRebirthPets == true, "EquipRebirthPets")
+addToggle(TabFarm, "Equip Reps Pets", "Automatically equips the best reps pets.", Saved.PetMode == "reps", "EquipRepsPets")
+addToggle(TabFarm, "Equip Strength Pets", "Automatically equips the best strength pets.", Saved.PetMode == "strength", "EquipStrengthPets")
+
 ---------------------------------------------------------------------
 -- TAB 2: Extras
+TabExtra:CreateSection("Auto Eat")
 addToggle(TabExtra, "Eat Eggs (Auto)", "Automatically eats protein eggs.", false, "EatEggs")
 addToggle(TabExtra, "Eat Shake (Auto)", "Automatically eats tropical shakes.", false, "EatShake")
-addToggle(TabExtra, "Spin Fortune Wheel", "Spins the fortune wheel.", false, "SpinWheel")
 addToggle(TabExtra, "Eat All Boosts", "Eats all boosts (may lag).", false, "EatAllBoosts")
+
+divider(TabExtra)
+
+TabExtra:CreateSection("Automation")
+addToggle(TabExtra, "Spin Fortune Wheel", "Spins the fortune wheel.", false, "SpinWheel")
 addToggle(TabExtra, "Anti AFK", "Prevents idle kicks.", true, "AntiAFK")
+
+divider(TabExtra)
+
+TabExtra:CreateSection("Performance")
 addToggle(TabExtra, "Low Resource Mode", "Hides popups + 3D off + 20 FPS + Anti Lag + black screen.", false, "LowResource")
 
 ---------------------------------------------------------------------
 -- TAB 3: Notice
+TabNotice:CreateSection("Status")
 els.notice = TabNotice:CreateLabel({Text = renders.notice().Text, Style = 1})
+
+divider(TabNotice)
+
+TabNotice:CreateSection("About")
 TabNotice:CreateParagraph({
 	Title = "Muhaves Private Farming  v" .. VERSION,
 	Text = "Made by MuhavesDevs\nGame: Muscle Legends\n\nKey Features: Fast Rebirth, Fast Strength, Auto Egg / Shake, Spin Fortune Wheel, Auto Boosts, Low Resource Mode.\n\n\"Progress is not luck, it's a system.\" - Muhaves",
+})
+
+TabNotice:CreateSection("Tips")
+TabNotice:CreateParagraph({
+	Title = "Quick Guide",
+	Text = "• Auto Rebirth and Auto Farm Strength cannot run together.\n• Pick only one of Reps Pets / Strength Pets.\n• Keep Controlled Speed ON for a safer rep rate.\n• Low Resource Mode is best for AFK farming.",
 })
 
 ---------------------------------------------------------------------
@@ -433,8 +462,7 @@ task.spawn(function()
 end)
 
 ---------------------------------------------------------------------
--- Tampilan Rebirth langsung: Rebirths (angka penuh), Gained (sejak script mulai), pace per jam / hari / minggu.
--- Hanya MEMBACA nilai. Pace hanya menghitung waktu saat Auto Rebirth benar-benar berjalan (rbClock.active).
+-- Tampilan Rebirth langsung (hanya MEMBACA nilai). Pace hanya dihitung saat Auto Rebirth berjalan.
 local rbClock = {active = function() return false end}
 local rbSource = {obj = nil}
 do
