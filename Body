@@ -185,17 +185,32 @@ local Window = Luna:CreateWindow({
 	KeySystem = false,
 })
 
-do
-	local home = {SupportedExecutors = SUPPORTED_EXECUTORS, Icon = 1}
-	if DISCORD_INVITE ~= "" then home.DiscordInvite = DISCORD_INVITE end
-	local okHome, errHome = pcall(function() Window:CreateHomeTab(home) end)
-	if not okHome then warn("[Muhaves] Home tab gagal dibuat: " .. tostring(errHome)) end
-end
+-- Home tab dibuat sendiri (layout klasik: Player Profile / Client & Server Status / Discord), lihat bawah.
 
 -- Font tebal + kotak input ringkas (rata tengah, lebar tetap). Dijalankan ke semua elemen Luna.
 local FONT_BOLD = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
 local INPUT_W = 110
+local AVATAR_MARK = "\u{200B}"
+local function injectAvatar(o)
+	local card = o.Parent
+	if not card or card:FindFirstChild("MuhavesAvatar") then return end
+	local img = Instance.new("ImageLabel")
+	img.Name = "MuhavesAvatar"
+	img.BackgroundTransparency = 1
+	img.AnchorPoint = Vector2.new(0.5, 0.5)
+	img.Position = UDim2.new(0.5, 0, 0.5, 0)
+	img.Size = UDim2.fromOffset(84, 84)
+	img.ZIndex = 10
+	img.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 10)
+	c.Parent = img
+	img.Parent = card
+end
 local function restyle(o)
+	if o:IsA("TextLabel") and o.Text == AVATAR_MARK then
+		task.defer(function() pcall(injectAvatar, o) end)
+	end
 	if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
 		pcall(function() o.FontFace = FONT_BOLD end)
 	end
@@ -286,6 +301,7 @@ task.spawn(function()
 	end
 end)
 
+local TabHome = Window:CreateTab({Name = "Home", Icon = "home", ImageSource = "Material", ShowTitle = true})
 local TabFarm = Window:CreateTab({Name = "Fast Farming", Icon = "bolt", ImageSource = "Material", ShowTitle = true})
 local TabExtra = Window:CreateTab({Name = "Extras", Icon = "tune", ImageSource = "Material", ShowTitle = true})
 local TabNotice = Window:CreateTab({Name = "Notice", Icon = "info", ImageSource = "Material", ShowTitle = true})
@@ -420,6 +436,84 @@ local function setLabel(el, s)
 		warn("[Muhaves] Label:Set gagal di versi Luna ini, teks status tidak bisa di-update.")
 	end
 end
+
+---------------------------------------------------------------------
+-- TAB HOME (layout klasik)
+F.hmPing = fake("--", "home")
+F.hmTime = fake("00:00:00", "home")
+F.hmPlayers = fake("--", "home")
+F.hmRegion = fake("--", "home")
+F.hmCompat = fake("Untested", "home")
+local execName = "Unknown"
+pcall(function()
+	local n = (identifyexecutor and identifyexecutor()) or (getexecutorname and getexecutorname()) or "Unknown"
+	execName = tostring(n)
+end)
+do
+	local low = execName:lower()
+	for _, name in ipairs(SUPPORTED_EXECUTORS) do
+		if low:find(name:lower(), 1, true) then F.hmCompat.Text = "Supported" break end
+	end
+end
+
+renders.home = function()
+	return {
+		L("Executor: " .. execName),
+		L("Compatibility: " .. F.hmCompat.Text, F.hmCompat.Text == "Supported" and 2 or 1),
+		L("Latency: " .. F.hmPing.Text),
+		L("Server Time: " .. F.hmTime.Text),
+		L("Players: " .. F.hmPlayers.Text),
+		L("Region: " .. F.hmRegion.Text),
+	}
+end
+
+TabHome:CreateSection("Player Profile")
+TabHome:CreateParagraph({Title = AVATAR_MARK, Text = "\n\n\n\n\n"})
+TabHome:CreateLabel({Text = "Display Name: " .. LocalPlayer.DisplayName, Style = 1})
+TabHome:CreateLabel({Text = "Username: @" .. LocalPlayer.Name, Style = 1})
+TabHome:CreateLabel({Text = "Account ID: " .. LocalPlayer.UserId, Style = 1})
+
+divider(TabHome)
+
+TabHome:CreateSection("Client & Server Status")
+makeLabels(TabHome, "home")
+
+if DISCORD_INVITE ~= "" then
+	divider(TabHome)
+	TabHome:CreateSection("Discord Community")
+	TabHome:CreateButton({
+		Name = "Join Discord",
+		Description = "Copies the invite link: discord.gg/" .. DISCORD_INVITE,
+		Callback = function()
+			pcall(function() setclipboard("https://discord.gg/" .. DISCORD_INVITE) end)
+		end,
+	})
+end
+
+task.spawn(function()
+	pcall(function()
+		local code = game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(LocalPlayer)
+		if code and code ~= "" then F.hmRegion.Text = tostring(code) end
+	end)
+	-- cadangan kalau pemanggilan di atas gagal: bagian region dari locale akun (mis. "id-id" -> ID)
+	if F.hmRegion.Text == "--" then
+		pcall(function()
+			local reg = tostring(LocalPlayer.LocaleId):match("[-_](%a+)$")
+			if reg then F.hmRegion.Text = reg:upper() end
+		end)
+	end
+end)
+task.spawn(function()
+	while anchor.Parent do
+		pcall(function()
+			F.hmPing.Text = string.format("%d ms", math.floor(LocalPlayer:GetNetworkPing() * 2000 + 0.5))
+			local t = math.floor(workspace.DistributedGameTime)
+			F.hmTime.Text = string.format("%02d:%02d:%02d", math.floor(t / 3600), math.floor((t % 3600) / 60), t % 60)
+			F.hmPlayers.Text = #Players:GetPlayers() .. " / " .. Players.MaxPlayers
+		end)
+		task.wait(1)
+	end
+end)
 
 ---------------------------------------------------------------------
 -- Toggle: kunci = judul (sama persis dengan yang dipakai setToggle() di farming)
