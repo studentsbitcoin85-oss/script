@@ -192,6 +192,35 @@ do
 	if not okHome then warn("[Muhaves] Home tab gagal dibuat: " .. tostring(errHome)) end
 end
 
+-- Font tebal + kotak input ringkas (rata tengah, lebar tetap). Dijalankan ke semua elemen Luna.
+local FONT_BOLD = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+local INPUT_W = 110
+local function restyle(o)
+	if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
+		pcall(function() o.FontFace = FONT_BOLD end)
+	end
+	if o:IsA("TextBox") and not o.Name:lower():find("search", 1, true) then
+		local fr = o.Parent
+		if fr and fr:IsA("GuiObject") then
+			local function fit()
+				if fr.Size.X.Scale ~= 0 or fr.Size.X.Offset ~= INPUT_W then
+					fr.Size = UDim2.new(0, INPUT_W, fr.Size.Y.Scale, fr.Size.Y.Offset)
+				end
+			end
+			fit()
+			fr.ClipsDescendants = true
+			o.TextXAlignment = Enum.TextXAlignment.Center
+			o.ClearTextOnFocus = false
+			if not fr:FindFirstChildOfClass("UICorner") then
+				local c = Instance.new("UICorner")
+				c.CornerRadius = UDim.new(0, 8)
+				c.Parent = fr
+			end
+			fr:GetPropertyChangedSignal("Size"):Connect(fit)
+		end
+	end
+end
+
 -- UI Size: UIScale di jendela Luna (slider di tab Extras). Disimpan di Saved.UiScale.
 local uiScale = math.clamp(tonumber(Saved.UiScale) or 100, 60, 130)
 local scaleObj
@@ -239,6 +268,8 @@ task.spawn(function()
 			us.Parent = win
 			scaleObj = us
 		end
+		for _, d in ipairs(lunaGui:GetDescendants()) do pcall(restyle, d) end
+		lunaGui.DescendantAdded:Connect(function(d) pcall(restyle, d) end)
 		lunaGui.AncestryChanged:Connect(function()
 			if not lunaGui.Parent then closeAll() end
 		end)
