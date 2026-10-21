@@ -2,22 +2,19 @@
     MuhavesXMain - UI (Fluent, hitam putih)
     Di-load oleh script farming lewat:
         local okUI, UI = pcall(loadstring(game:HttpGet(UI_URL)), CONST)
-    Mengembalikan tabel UI yang dipakai script farming:
-        UI.Gui, UI.Callbacks, UI.Toggles, UI.Pending, UI.Saved, UI.Save,
-        UI.Abbr, UI.RbClock, UI.RebirthSource,
-        UI.Rebirth.Status,
-        UI.Strength.{Status, Runtime, Strength, StrengthGain, Durability, DurabilityGain,
-                     StrAverage[1-5], DuraAverage[1-5], StrPace[1-5], DuraPace[1-5]},
-        UI.Notice.{Status, Check}
+    Tab: Home / Fast Strength / Fast Rebirth / Boss / Extras / Notice
 ]]
 
 local CONST = ... or {}
-CONST.VERSION = CONST.VERSION or "2"
+CONST.VERSION = CONST.VERSION or "3"
 CONST.REP_CAP = CONST.REP_CAP or 500
 CONST.REP_DEFAULT = CONST.REP_DEFAULT or 462
 
+local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local lp = Players.LocalPlayer
 
 local ICON_ID = "rbxassetid://122269945949784"
 local SAVE_FOLDER, SAVE_PATH = "MuhavesXMain", "MuhavesXMain/Farming.json"
@@ -35,10 +32,10 @@ local UI = {
 	RebirthSource = {obj = nil},
 	Rebirth = {},
 	Strength = {},
+	Boss = {},
 	Notice = {},
 }
 
--- Saved settings
 pcall(function()
 	if isfile and readfile and isfile(SAVE_PATH) then
 		local data = HttpService:JSONDecode(readfile(SAVE_PATH))
@@ -61,7 +58,6 @@ function UI.Save()
 	end)
 end
 
--- Number abbreviation
 local SUFFIX = {"", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"}
 local function trim(s)
 	if s:find("%.") then s = s:gsub("0+$", ""):gsub("%.$", "") end
@@ -85,8 +81,8 @@ end
 local Window = Fluent:CreateWindow({
 	Title = "MuhavesXMain",
 	SubTitle = "Private Farming v" .. tostring(CONST.VERSION),
-	TabWidth = 120,
-	Size = UDim2.fromOffset(540, 380),
+	TabWidth = 110,
+	Size = UDim2.fromOffset(580, 400),
 	Acrylic = false,
 	Theme = "Dark",
 	MinimizeKey = Enum.KeyCode.RightControl,
@@ -97,8 +93,9 @@ assert(gui, "Fluent GUI not found")
 gui.Name = "MuhavesUI"
 UI.Gui = gui
 
-local TabRebirth = Window:AddTab({Title = "Fast Rebirth", Icon = ""})
+local TabHome = Window:AddTab({Title = "Home", Icon = ""})
 local TabStrength = Window:AddTab({Title = "Fast Strength", Icon = ""})
+local TabRebirth = Window:AddTab({Title = "Fast Rebirth", Icon = ""})
 local TabBoss = Window:AddTab({Title = "Boss", Icon = ""})
 local TabExtra = Window:AddTab({Title = "Extras", Icon = ""})
 local TabNotice = Window:AddTab({Title = "Notice", Icon = ""})
@@ -153,7 +150,13 @@ local function addInput(tab, title, description, default, callbackName)
 	return input
 end
 
--- Label updates are batched (max ~3x per second) so the UI stays light.
+-- Plain ASCII only (emoji / odd symbols break the font)
+local function clean(text)
+	text = tostring(text):gsub("[^\1-\127]", "")
+	return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Every dynamic line is a single-line paragraph (title only), so nothing can overlap.
 local dirty = {}
 local function markDirty(entry) dirty[entry] = true end
 task.spawn(function()
@@ -166,26 +169,24 @@ task.spawn(function()
 	end
 end)
 
-local function paragraph(tab, title, desc)
-	local element = tab:AddParagraph({Title = title, Content = desc or ""})
-	local entry = {title = title, desc = desc or "", shownTitle = title, shownDesc = desc or ""}
+local IDLE = Color3.fromRGB(240, 240, 240)
+
+local function line(tab, title)
+	local element = tab:AddParagraph({Title = title, Content = ""})
+	local entry = {title = title, shown = title}
 	local titleLabel
 	entry.apply = function()
-		if entry.title ~= entry.shownTitle then
-			entry.shownTitle = entry.title
+		if entry.compose then entry.title = entry.compose() end
+		if entry.title ~= entry.shown then
+			entry.shown = entry.title
 			titleLabel = nil
 			pcall(function() element:SetTitle(entry.title) end)
-		end
-		if entry.compose then entry.desc = entry.compose() end
-		if entry.desc ~= entry.shownDesc then
-			entry.shownDesc = entry.desc
-			pcall(function() element:SetDesc(entry.desc) end)
 		end
 		if entry.color then
 			if not titleLabel or not titleLabel.Parent then
 				pcall(function()
 					for _, d in ipairs(element.Frame:GetDescendants()) do
-						if d:IsA("TextLabel") and d.Text == entry.shownTitle then
+						if d:IsA("TextLabel") and d.Text == entry.shown then
 							titleLabel = d
 							break
 						end
@@ -198,8 +199,8 @@ local function paragraph(tab, title, desc)
 	return entry
 end
 
--- Object with .Text / .TextColor3 that the farming script can write to.
-local function labelProxy(entry, onText)
+-- Object with .Text / .TextColor3 that the farming script writes to.
+local function labelProxy(entry, prefix)
 	return setmetatable({}, {
 		__index = function(_, key)
 			if key == "Text" then return entry.title end
@@ -207,8 +208,7 @@ local function labelProxy(entry, onText)
 		end,
 		__newindex = function(_, key, value)
 			if key == "Text" then
-				entry.title = tostring(value)
-				if onText then onText(entry.title) end
+				entry.title = (prefix or "") .. clean(value)
 			elseif key == "TextColor3" then
 				entry.color = value
 			end
@@ -217,13 +217,12 @@ local function labelProxy(entry, onText)
 	})
 end
 
--- Several values shown in one paragraph.
 local function valueCell(entry, store, key)
 	return setmetatable({}, {
 		__index = function(_, k) if k == "Text" then return store[key] end end,
 		__newindex = function(_, k, v)
 			if k == "Text" then
-				store[key] = tostring(v)
+				store[key] = clean(v)
 				markDirty(entry)
 			end
 		end,
@@ -239,8 +238,8 @@ local function cells5(entry, store)
 	return list
 end
 
-local function line5(v)
-	return string.format("%s/s  |  %s/min  |  %s/h  |  %s/d  |  %s/w", v[1], v[2], v[3], v[4], v[5])
+local function rates(v)
+	return string.format("%s/s  %s/m  %s/h  %s/d  %s/w", v[1], v[2], v[3], v[4], v[5])
 end
 
 local function timeText(e)
@@ -248,37 +247,135 @@ local function timeText(e)
 		math.floor((e % 3600) / 60), math.floor(e % 60))
 end
 
-local IDLE = Color3.fromRGB(240, 240, 240)
+---------------------------------------------------------------------
+-- HOME
+TabHome:AddSection("Welcome")
+do
+	local hour = tonumber(os.date("%H")) or 12
+	local greeting = hour < 11 and "Good Morning" or hour < 15 and "Good Afternoon" or hour < 19 and "Good Evening" or "Good Night"
+	TabHome:AddParagraph({
+		Title = greeting .. ", " .. clean(lp.DisplayName),
+		Content = "MuhavesXMain Private Farming v" .. tostring(CONST.VERSION),
+	})
+
+	TabHome:AddSection("Session")
+	local startedAt = os.clock()
+	local session = line(TabHome, "Session: 0d 0h 0m 0s")
+	local fps = line(TabHome, "FPS: 0")
+	local ping = line(TabHome, "Ping: 0 ms")
+	session.compose = function() return "Session: " .. timeText(os.clock() - startedAt) end
+
+	local frames, last = 0, os.clock()
+	local fpsConn = RunService.RenderStepped:Connect(function() frames += 1 end)
+	gui.Destroying:Connect(function() fpsConn:Disconnect() end)
+
+	TabHome:AddSection("Your Stats")
+	local strE = line(TabHome, "Strength: -")
+	local duraE = line(TabHome, "Durability: -")
+	local rebE = line(TabHome, "Rebirths: -")
+	local killE = line(TabHome, "Kills: -")
+
+	local function stat(name)
+		local ls = lp:FindFirstChild("leaderstats")
+		local obj = (ls and ls:FindFirstChild(name)) or lp:FindFirstChild(name)
+		return obj and obj.Value
+	end
+	local function show(entry, name)
+		local v = stat(name)
+		entry.compose = nil
+		entry.title = name .. ": " .. (v and UI.Abbr(v) or "-")
+		markDirty(entry)
+	end
+
+	task.spawn(function()
+		while gui.Parent do
+			task.wait(1)
+			local now = os.clock()
+			fps.title = "FPS: " .. math.floor(frames / math.max(now - last, 0.001) + 0.5)
+			frames, last = 0, now
+			pcall(function()
+				local item = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]
+				ping.title = "Ping: " .. math.floor(item:GetValue() + 0.5) .. " ms"
+			end)
+			markDirty(session) markDirty(fps) markDirty(ping)
+			show(strE, "Strength")
+			show(duraE, "Durability")
+			show(rebE, "Rebirths")
+			show(killE, "Kills")
+		end
+	end)
+end
 
 ---------------------------------------------------------------------
--- FAST FARMING: Auto Rebirth
-TabRebirth:AddSection("Auto Rebirth")
-
+-- FAST STRENGTH
+TabStrength:AddSection("Auto Farm Strength")
 do
-	local status = paragraph(TabRebirth, "Status: Inactive", "")
-	UI.Rebirth.Status = labelProxy(status)
+	local status = line(TabStrength, "Status: Inactive")
 	status.color = IDLE
+	UI.Strength.Status = labelProxy(status)
+	UI.Strength.Runtime = labelProxy(line(TabStrength, "Runtime: 0d 0h 0m 0s"), "Runtime: ")
+
+	local strVals = {str = "0", gain = "+0"}
+	local strE = line(TabStrength, "")
+	strE.compose = function() return "Strength: " .. strVals.str .. " (" .. strVals.gain .. ")" end
+	UI.Strength.Strength = valueCell(strE, strVals, "str")
+	UI.Strength.StrengthGain = valueCell(strE, strVals, "gain")
+
+	local duraVals = {dura = "0", gain = "+0"}
+	local duraE = line(TabStrength, "")
+	duraE.compose = function() return "Durability: " .. duraVals.dura .. " (" .. duraVals.gain .. ")" end
+	UI.Strength.Durability = valueCell(duraE, duraVals, "dura")
+	UI.Strength.DurabilityGain = valueCell(duraE, duraVals, "gain")
+	markDirty(strE) markDirty(duraE)
+
+	local function rateLine(prefix, key)
+		local vals = {}
+		local entry = line(TabStrength, "")
+		entry.compose = function() return prefix .. rates(vals) end
+		UI.Strength[key] = cells5(entry, vals)
+		markDirty(entry)
+	end
+	TabStrength:AddSection("Pace (last 10s)")
+	rateLine("Str: ", "StrPace")
+	rateLine("Dura: ", "DuraPace")
+	TabStrength:AddSection("Average (whole run)")
+	rateLine("Str: ", "StrAverage")
+	rateLine("Dura: ", "DuraAverage")
+
+	TabStrength:AddSection("Controls")
+	addInput(TabStrength, "Max Reps / Second", "Maximum " .. CONST.REP_CAP .. " (0 = default " .. CONST.REP_DEFAULT .. ")",
+		tonumber(Saved.MaxReps) or CONST.REP_DEFAULT, "MaxReps")
+	addToggle(TabStrength, "Controlled Speed", "Adapts the rep speed to what the server accepts", true, "ControlledSpeed")
+	addToggle(TabStrength, "Auto Farm Strength", "Farm strength and durability automatically", false, "AutoFarmStrength")
+end
+
+---------------------------------------------------------------------
+-- FAST REBIRTH
+TabRebirth:AddSection("Auto Rebirth")
+do
+	local status = line(TabRebirth, "Status: Inactive")
+	status.color = IDLE
+	UI.Rebirth.Status = labelProxy(status)
 
 	local totals = {gain = 0, rebirths = 0, runtime = 0}
-	local stats = paragraph(TabRebirth, "Rebirth Stats", "")
-	stats.compose = function()
-		return string.format("Rebirths: %s (+%s)\nRuntime: %s", UI.Abbr(totals.rebirths), UI.Abbr(totals.gain), timeText(totals.runtime))
-	end
-	stats.desc = stats.compose()
-	stats.shownDesc = stats.desc
-
+	local rebE = line(TabRebirth, "")
+	rebE.compose = function() return "Rebirths: " .. UI.Abbr(totals.rebirths) .. " (+" .. UI.Abbr(totals.gain) .. ")" end
+	local timeE = line(TabRebirth, "")
+	timeE.compose = function() return "Runtime: " .. timeText(totals.runtime) end
 	local paceVals = {}
-	local pace = paragraph(TabRebirth, "Rebirth Pace", "")
-	pace.compose = function() return line5(paceVals) end
-	cells5(pace, paceVals)
-	pace.desc = pace.compose()
-	pace.shownDesc = pace.desc
+	local paceE = line(TabRebirth, "")
+	paceE.compose = function() return "Pace: " .. rates(paceVals) end
+	cells5(paceE, paceVals)
+	markDirty(rebE) markDirty(timeE) markDirty(paceE)
 
 	addInput(TabRebirth, "Rebirth Target", "Stop Auto Rebirth at this amount (0 = no limit)", tonumber(Saved.RebirthTarget) or 0, "RebirthTarget")
 	addToggle(TabRebirth, "Auto Rebirth", "Farm strength and rebirth automatically", false, "AutoRebirth")
-	addToggle(TabRebirth, "Equip Rebirth Pets", "Equip the best rebirth pets while rebirthing", Saved.EquipRebirthPets == true, "EquipRebirthPets")
 
-	-- Rebirth tracking (clock follows UI.RbClock.active)
+	TabRebirth:AddSection("Pets")
+	addToggle(TabRebirth, "Equip Rebirth Pets", "Equip the best rebirth pets while rebirthing", Saved.EquipRebirthPets == true, "EquipRebirthPets")
+	addToggle(TabRebirth, "Equip Reps Pets", "Equip pets with the best rep speed", Saved.PetMode == "reps", "EquipRepsPets")
+	addToggle(TabRebirth, "Equip Strength Pets", "Equip pets with the best strength", Saved.PetMode == "strength", "EquipStrengthPets")
+
 	local last, lastT = nil, os.clock()
 	local MULT = {1, 60, 3600, 86400, 604800}
 	task.spawn(function()
@@ -300,72 +397,24 @@ do
 					local rate = totals.gain / totals.runtime
 					for i, m in ipairs(MULT) do paceVals[i] = UI.Abbr(rate * m) end
 				end
-				markDirty(stats)
-				markDirty(pace)
+				markDirty(rebE) markDirty(timeE) markDirty(paceE)
 			end
 		end
 	end)
 end
 
 ---------------------------------------------------------------------
--- FAST FARMING: Auto Farm Strength
-TabStrength:AddSection("Auto Farm Strength")
-
-do
-	local status = paragraph(TabStrength, "Status: Inactive", "")
-	UI.Strength.Status = labelProxy(status)
-	status.color = IDLE
-
-	local runtime = paragraph(TabStrength, "0d 0h 0m 0s", "")
-	UI.Strength.Runtime = labelProxy(runtime)
-
-	local totalVals = {str = "0", strGain = "+0", dura = "0", duraGain = "+0"}
-	local totals = paragraph(TabStrength, "Stats", "")
-	totals.compose = function()
-		return string.format("Strength: %s (%s)\nDurability: %s (%s)", totalVals.str, totalVals.strGain, totalVals.dura, totalVals.duraGain)
-	end
-	totals.desc = totals.compose()
-	totals.shownDesc = totals.desc
-	UI.Strength.Strength = valueCell(totals, totalVals, "str")
-	UI.Strength.StrengthGain = valueCell(totals, totalVals, "strGain")
-	UI.Strength.Durability = valueCell(totals, totalVals, "dura")
-	UI.Strength.DurabilityGain = valueCell(totals, totalVals, "duraGain")
-
-	local function rateGroup(title, strKey, duraKey)
-		local strVals, duraVals = {}, {}
-		local entry = paragraph(TabStrength, title, "")
-		entry.compose = function()
-			return "Strength:  " .. line5(strVals) .. "\nDurability:  " .. line5(duraVals)
-		end
-		UI.Strength[strKey] = cells5(entry, strVals)
-		UI.Strength[duraKey] = cells5(entry, duraVals)
-		entry.desc = entry.compose()
-		entry.shownDesc = entry.desc
-	end
-	rateGroup("Pace (last 10s)", "StrPace", "DuraPace")
-	rateGroup("Average (whole run)", "StrAverage", "DuraAverage")
-
-	addInput(TabStrength, "Max Reps / Second", "Maximum " .. CONST.REP_CAP .. " (0 = default " .. CONST.REP_DEFAULT .. ")",
-		tonumber(Saved.MaxReps) or CONST.REP_DEFAULT, "MaxReps")
-	addToggle(TabStrength, "Controlled Speed", "Adapts the rep speed to what the server accepts", true, "ControlledSpeed")
-	addToggle(TabStrength, "Auto Farm Strength", "Farm strength and durability automatically", false, "AutoFarmStrength")
-	addToggle(TabStrength, "Equip Reps Pets", "Equip pets with the best rep speed", Saved.PetMode == "reps", "EquipRepsPets")
-	addToggle(TabStrength, "Equip Strength Pets", "Equip pets with the best strength", Saved.PetMode == "strength", "EquipStrengthPets")
-end
-
----------------------------------------------------------------------
 -- BOSS
 TabBoss:AddSection("Auto Boss")
 do
-	UI.Boss = {}
-	local status = paragraph(TabBoss, "Status: Waiting for Boss", "")
+	local status = line(TabBoss, "Status: Waiting for Boss")
 	status.color = IDLE
 	UI.Boss.Status = labelProxy(status)
-	UI.Boss.Boss = labelProxy(paragraph(TabBoss, "Boss: None", ""))
-	UI.Boss.Health = labelProxy(paragraph(TabBoss, "Health: 0 / 0", ""))
-	UI.Boss.Next = labelProxy(paragraph(TabBoss, "Next Boss: N/A", ""))
+	UI.Boss.Boss = labelProxy(line(TabBoss, "Boss: None"))
+	UI.Boss.Health = labelProxy(line(TabBoss, "Health: 0 / 0"))
+	UI.Boss.Next = labelProxy(line(TabBoss, "Next Boss: N/A"))
 
-	local muted = true
+	local muteUntil = os.clock() + 1
 	local dropdown = TabBoss:AddDropdown("D_BossTargets", {
 		Title = "Target Bosses",
 		Description = "Choose which bosses to fight",
@@ -374,19 +423,17 @@ do
 		Default = {},
 	})
 	dropdown:OnChanged(function(map)
-		if muted or type(map) ~= "table" then return end
+		if os.clock() < muteUntil or type(map) ~= "table" then return end
 		local copy = {}
 		for name, on in pairs(map) do if on then copy[name] = true end end
 		fire("BossTargets", copy)
 	end)
-	muted = false
 	UI.Boss.SetChoices = function(list, selected)
-		muted = true
+		muteUntil = os.clock() + 1
 		pcall(function()
 			dropdown:SetValues(list)
 			dropdown:SetValue(selected)
 		end)
-		muted = false
 	end
 
 	addInput(TabBoss, "Seconds Training before Boss", "Training time after a rebirth before fighting", tonumber(Saved.BossPrep) or 4, "BossPrepSeconds")
@@ -413,32 +460,23 @@ addToggle(TabExtra, "Spin Fortune Wheel", "Spins the fortune wheel automatically
 -- NOTICE
 TabNotice:AddSection("Script")
 do
-	local entry = paragraph(TabNotice, "Checking...", "")
-	local state = {status = "Checking...", check = "⏳"}
-	local function refresh() entry.title = state.status .. "  " .. state.check markDirty(entry) end
-	entry.title = "Checking...  ⏳"
-	entry.shownTitle = entry.title
+	local entry = line(TabNotice, "Script: Checking")
+	local statusText = "Checking"
 	UI.Notice.Status = setmetatable({}, {
-		__index = function(_, k) if k == "Text" then return state.status end if k == "TextColor3" then return entry.color end end,
+		__index = function(_, k) if k == "Text" then return statusText end if k == "TextColor3" then return entry.color end end,
 		__newindex = function(_, k, v)
 			if k == "Text" then
-				state.status = tostring(v)
-				if state.status == "Working" then state.check = "✅" elseif state.status == "Error" then state.check = "❌" end
-				refresh()
+				statusText = clean(v)
+				entry.title = "Script: " .. statusText
 			elseif k == "TextColor3" then
 				entry.color = v
-				markDirty(entry)
 			end
+			markDirty(entry)
 		end,
 	})
 	UI.Notice.Check = setmetatable({}, {
-		__index = function(_, k) if k == "Text" then return state.check end end,
-		__newindex = function(_, k, v)
-			if k == "Text" then
-				state.check = tostring(v)
-				refresh()
-			end
-		end,
+		__index = function() return "" end,
+		__newindex = function() end,
 	})
 end
 
@@ -521,7 +559,7 @@ gui.Destroying:Connect(function()
 end)
 
 ---------------------------------------------------------------------
--- Black & white theme + font
+-- Black & white theme (fonts are left to Fluent so nothing overlaps)
 do
 	local WHITE = Color3.fromRGB(235, 235, 235)
 	local function mono(color)
@@ -550,9 +588,6 @@ do
 		if obj:IsA("GuiObject") then recolor(obj, "BackgroundColor3", true) end
 		if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
 			recolor(obj, "TextColor3", true)
-			pcall(function()
-				obj.Font = obj.TextSize >= 17 and Enum.Font.GothamBold or Enum.Font.GothamMedium
-			end)
 		elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
 			recolor(obj, "ImageColor3", true)
 		elseif obj:IsA("UIStroke") then
