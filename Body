@@ -2,9 +2,9 @@
     Muhaves Private Farming - UI (file terpisah, di-load lewat loadstring)
     Dipanggil dari script utama: loadstring(game:HttpGet(URL))(CONST)
     CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 462}
-    Mengembalikan tabel UI (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Notice, UI.Callbacks, ...).
+    Mengembalikan tabel UI (UI.Gui, UI.Rebirth, UI.Strength, UI.Boss, UI.Extras, UI.Notice, UI.Callbacks, ...).
 
-    Tabs (urutan sidebar): Home / Fast Farming / Extras / Notice.
+    Tabs (urutan sidebar): Home / Fast Farming / Boss / Extras / Notice.
     Home = Player Profile + Client & Server Status.
 ]]
 
@@ -30,6 +30,8 @@ local ASSETS = {
 	NoticeBG     = "106276772809647",
 	FarmBG       = "131699469923325",
 	ExtrasBG     = "79313300337438",
+	HomeBG       = "95575412831523",
+	BossBG       = "120741109829532",
 }
 
 local Players = game:GetService("Players")
@@ -73,7 +75,7 @@ local Callbacks = {}
 for _, name in ipairs({
 	"AutoRebirth", "EquipRebirthPets", "RebirthTarget", "AutoFarmStrength", "ControlledSpeed", "MaxReps",
 	"EatEggs", "EatShake", "SpinWheel", "EatAllBoosts", "AntiAFK",
-	"LowResource", "EquipRepsPets", "EquipStrengthPets",
+	"LowResource", "EquipRepsPets", "EquipStrengthPets", "AutoBoss", "BossResume", "BossDodge",
 }) do
 	Callbacks[name] = function(v) Pending[name] = {t = os.clock(), v = v} end
 end
@@ -760,16 +762,16 @@ end
 
 ---------------------------------------------------------------------
 -- Sidebar + navigation
--- Urutan sidebar: Home paling atas. Urutan halaman (pages / sizes) disamakan dengan urutan ini
--- tepat sebelum selectNav pertama dipanggil (lihat bagian bawah file).
+-- Urutan sidebar: Home, Fast Farming, Boss, Extras, Notice. Urutan halaman (pages / sizes) disamakan dengan
+-- urutan ini tepat sebelum selectNav pertama dipanggil (lihat bagian bawah file).
 local pages, sizes = {}, {}
-local SIDEMIN = 360 -- 4 nav buttons now, so the sidebar needs more room for the character image below them
+local SIDEMIN = 400 -- 5 nav buttons now, so the sidebar needs more room for the character image below them
 local CHAR_MAX_H = 600
 local PAGE_MAX_H = 470
 local DEFAULT_NAV = 1 -- jendela dibuka di Home (urutan 1 di sidebar)
 
 local sidebar = box(body, PAD, PAD, SW, 400, BLACK, 16)
-local nav = {{"🏠", "Home"}, {"⚡", "Fast Farming"}, {"⚙", "Extras"}, {"📢", "Notice"}}
+local nav = {{"🏠", "Home"}, {"⚡", "Fast Farming"}, {"👹", "Boss"}, {"⚙", "Extras"}, {"📢", "Notice"}}
 local navBtns, navLbls = {}, {}
 local charImg
 local currentNav = 0
@@ -810,7 +812,7 @@ local function applyNav(idx, instant)
 	pages[idx].CanvasSize = UDim2.fromOffset(0, sz.h)
 	pages[idx].CanvasPosition = Vector2.new(0, 0)
 	local sideH = H - HH - 2 * PAD
-	local charH = math.min(CHAR_MAX_H, sideH - 224 - 8)
+	local charH = math.min(CHAR_MAX_H, sideH - 276 - 8)
 	if charImg and charImg:IsA("ImageLabel") then
 		charImg.ScaleType = Enum.ScaleType.Crop
 	end
@@ -864,7 +866,7 @@ for i, n in ipairs(nav) do
 	navBtns[i] = b
 	b.MouseButton1Click:Connect(function() selectNav(i) end)
 end
-charImg = image(sidebar, ASSETS.Character, 8, 224, SW - 16, 300, "", 14)
+charImg = image(sidebar, ASSETS.Character, 8, 276, SW - 16, 300, "", 14)
 
 local function newPage()
 	local f = new("ScrollingFrame", {
@@ -1168,7 +1170,7 @@ local lblW = math.max(tw("Made by", 14, BLD), tw("Game", 14, BLD), tw("Status", 
 local workW = math.max(tw("Working", 18, BLD), tw("Loading", 18, BLD))
 local valW = math.max(tw("MuhavesDevs", 18, BLD), tw("Muscle Legends", 18, BLD), workW + 34)
 local w2 = 14 + lblW + 20 + valW + 14
-local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boosts", "Low Resource Mode"}
+local feats = {"Fast Rebirth", "Fast Strength", "Auto Egg / Shake", "Spin Fortune Wheel", "Auto Boss", "Low Resource Mode"}
 local colW = 0
 for _, f in ipairs(feats) do colW = math.max(colW, tw(f, 15, BLD)) end
 colW = colW + 32
@@ -1248,7 +1250,7 @@ local cardH4 = CONTENT_Y + PANEL_H + GAP + PANEL_H + PAD + (hasDiscord and (GAP 
 local colW = math.floor((inner - 16 - 8) / 2)
 
 local hmCard = box(p4, 0, 0, cardW4, cardH4, SEC, 16)
-cardBG(hmCard, ASSETS.NoticeBG, 0.45)
+cardBG(hmCard, ASSETS.HomeBG, 0.45)
 cardHeader(hmCard, "🏠", "Home", "Your account and connection details.", nil, nil, true)
 
 local function panel(y, title, h)
@@ -1395,6 +1397,64 @@ sizes[4] = {w = cardW4, h = cardH4}
 end
 
 ---------------------------------------------------------------------
+-- PAGE 5: Boss. Kiri: toggle (Auto Farm Boss / Resume Farming / Always Dodge Stomps). Kanan: Boss Info.
+-- Label-nya disimpan di S.boss dan dikembalikan sebagai UI.Boss (ditulis oleh script utama).
+do
+local p5 = newPage()
+local B = {}
+local bossRows = {
+	{"Auto Farm Boss", "Fights the boss and collects the chest."},
+	{"Resume Farming", "Turns Strength / Rebirth back on after."},
+	{"Always Dodge Stomps", "Off = dodges only when HP is low."},
+}
+local optsW = 0
+for _, r in ipairs(bossRows) do optsW = math.max(optsW, rowW(r[1], r[2])) end
+local cardW5 = S.cardW1
+local BH = RH * 3
+local cardH5 = CONTENT_Y + BH + PAD
+
+local bsCard = box(p5, 0, 0, cardW5, cardH5, SEC, 16)
+cardBG(bsCard, ASSETS.BossBG ~= "" and ASSETS.BossBG or ASSETS.NoticeBG, 0.45)
+B.status = cardHeader(bsCard, "👹", "Boss Farming", "Fights the boss and grabs the chest.", "Status: Inactive")
+
+local opts = box(bsCard, PAD, CONTENT_Y, optsW, BH, CARD, 12)
+opts.BackgroundTransparency = 0.4
+optRow(opts, optsW, 0, bossRows[1][1], bossRows[1][2], false, function(s) Callbacks.AutoBoss(s) end)
+hline(opts, 14, RH, optsW - 28)
+optRow(opts, optsW, RH, bossRows[2][1], bossRows[2][2], Saved.BossResume ~= false, function(s) Callbacks.BossResume(s) end)
+hline(opts, 14, RH * 2, optsW - 28)
+optRow(opts, optsW, RH * 2, bossRows[3][1], bossRows[3][2], Saved.BossDodge == true, function(s) Callbacks.BossDodge(s) end)
+
+local ix = PAD + optsW + GAP
+local iw = cardW5 - ix - PAD
+local info = box(bsCard, ix, CONTENT_Y, iw, BH, Color3.fromRGB(18, 18, 20), 12)
+info.BackgroundTransparency = 0.05
+text(info, "Boss Info", 17, 14, 26, iw - 28, Color3.new(1, 1, 1), F.GothamBold)
+hline(info, 14, 50, iw - 28)
+
+local function bossRow(cy, icon, name, value)
+	local rw = iw - 16
+	local row = new("Frame", {
+		Position = UDim2.fromOffset(8, cy - 16), Size = UDim2.fromOffset(rw, 32),
+		BackgroundColor3 = Color3.fromRGB(30, 30, 33), BorderSizePixel = 0,
+	}, info)
+	round(row, 7)
+	stroke(row, Color3.fromRGB(110, 110, 116), 1)
+	text(row, icon, 14, 8, 16, 22, TX, F.Gotham, CENTER)
+	local vw = math.floor(rw * 0.6)
+	local nw = math.max(20, rw - vw - 44)
+	autoFit(text(row, name, 13, 36, 16, nw, TX, F.GothamMedium), 13, 8, nw)
+	return autoFit(text(row, value, 14, rw - vw - 8, 16, vw, TX, F.GothamBold, RIGHT), 14, 8, vw)
+end
+B.name = bossRow(76, "👹", "Boss", "None")
+B.hp = bossRow(116, "❤", "Health", "0 / 0")
+B.next = bossRow(156, "⏳", "Next Boss", "N/A")
+
+S.boss = B
+sizes[5] = {w = cardW5, h = cardH5}
+end
+
+---------------------------------------------------------------------
 -- Live rebirth display (only reads values)
 local rbClock = {active = function() return false end}
 local rbSource = {obj = nil}
@@ -1452,10 +1512,14 @@ do
 end
 
 ---------------------------------------------------------------------
--- Halaman dibuat dengan urutan: 1 Fast Farming, 2 Extras, 3 Notice, 4 Home.
--- Sidebar memakai urutan: Home, Fast Farming, Extras, Notice, jadi Home (halaman ke-4) dipindah ke depan.
+-- Halaman dibuat dengan urutan: 1 Fast Farming, 2 Extras, 3 Notice, 4 Home, 5 Boss.
+-- Sidebar memakai urutan: Home, Fast Farming, Boss, Extras, Notice.
+-- Langkah 1: Home (halaman ke-4) dipindah ke depan -> Home, Fast Farming, Extras, Notice, Boss.
 table.insert(pages, 1, table.remove(pages, 4))
 table.insert(sizes, 1, table.remove(sizes, 4))
+-- Langkah 2: Boss (halaman ke-5) dipindah ke urutan 3 -> Home, Fast Farming, Boss, Extras, Notice.
+table.insert(pages, 3, table.remove(pages, 5))
+table.insert(sizes, 3, table.remove(sizes, 5))
 
 selectNav(DEFAULT_NAV, true)
 
@@ -1506,6 +1570,7 @@ return {
 		PaceHour = S.rbHour, PaceDay = S.rbDay, PaceWeek = S.rbWeek},
 	Strength = {Status = S.fsStatus, Strength = S.fsStr, StrengthGain = S.fsStrG, Durability = S.fsDura, DurabilityGain = S.fsDurG,
 		StrPace = S.fsSP, DuraPace = S.fsDP, StrAverage = S.fsSA, DuraAverage = S.fsDA, Runtime = S.fsRuntime},
+	Boss = {Status = S.boss.status, Name = S.boss.name, Health = S.boss.hp, Next = S.boss.next},
 	Extras = {Status = otStatus},
 	Notice = {Status = S.ntStatus, Check = S.ntCheck},
 	Callbacks = Callbacks,
