@@ -66,6 +66,12 @@ function library:EnableAntiAFK()
 	end)
 end
 
+local created = 0
+local function pace()
+	created += 1
+	if created % 5 == 0 then task.wait() end
+end
+
 local nextId = 0
 local function newId(prefix)
 	nextId += 1
@@ -90,27 +96,42 @@ function library:AddWindow(title)
 		local tab = {Fluent = fluentTab}
 
 		function tab:AddLabel(text)
+			pace()
 			local current = tostring(text)
+			local shown, last, scheduled = current, 0, false
 			local paragraph = fluentTab:AddParagraph({Title = current, Content = ""})
+			local function flush()
+				scheduled = false
+				if shown ~= current then
+					shown = current
+					last = os.clock()
+					pcall(function() paragraph:SetTitle(current) end)
+				end
+			end
 			return setmetatable({}, {
 				__index = function(_, key) if key == "Text" then return current end end,
 				__newindex = function(_, key, value)
-					if key == "Text" then
-						value = tostring(value)
-						if value ~= current then
-							current = value
-							pcall(function() paragraph:SetTitle(value) end)
-						end
+					if key ~= "Text" then return end
+					value = tostring(value)
+					if value == current then return end
+					current = value
+					if os.clock() - last >= 0.5 then
+						flush()
+					elseif not scheduled then
+						scheduled = true
+						task.delay(0.5, flush)
 					end
 				end
 			})
 		end
 
 		function tab:AddHeading(text)
+			pace()
 			return fluentTab:AddSection(tostring(text))
 		end
 
 		function tab:AddButton(text, callback)
+			pace()
 			return fluentTab:AddButton({
 				Title = text,
 				Callback = function() if callback then callback() end end
@@ -124,6 +145,7 @@ function library:AddWindow(title)
 		end
 
 		function tab:AddSwitch(text, callback)
+			pace()
 			local ready = false
 			local toggle = fluentTab:AddToggle(newId("Toggle"), {
 				Title = text,
@@ -138,6 +160,7 @@ function library:AddWindow(title)
 		end
 
 		function tab:AddTextBox(text, callback)
+			pace()
 			local id = newId("Input")
 			SaveManager.Ignore[id] = true
 			local changed = Instance.new("BindableEvent")
@@ -166,15 +189,22 @@ function library:AddWindow(title)
 		end
 
 		function tab:AddDropdown(text, callback)
+			pace()
 			local id = newId("Dropdown")
 			SaveManager.Ignore[id] = true
 			local values, busy = {}, false
 			local dropdown = fluentTab:AddDropdown(id, {Title = text, Values = {}, Multi = true, Default = {}})
 
+			local pushQueued = false
 			local function push()
-				busy = true
-				pcall(function() dropdown:SetValues(table.clone(values)) end)
-				busy = false
+				if pushQueued then return end
+				pushQueued = true
+				task.defer(function()
+					pushQueued = false
+					busy = true
+					pcall(function() dropdown:SetValues(table.clone(values)) end)
+					busy = false
+				end)
 			end
 			local function show(value)
 				busy = true
