@@ -924,8 +924,10 @@ local CARD_H = CONTENT_Y + BOX_H + PAD
 local RB_H = RH * 5
 local RB_CARD_H = CONTENT_Y + RB_H + PAD
 
-local FARM_SHADE = 0.35
-local PANEL_T = 0.4
+-- Latar Fast Farming dibuat lebih terang & jelas: shade hitam lebih tipis (angka makin besar = gambar makin terlihat),
+-- dan panel opsi lebih tembus supaya gambar latar kelihatan. Teks tetap terbaca karena panel masih gelap.
+local FARM_SHADE = 0.72
+local PANEL_T = 0.55
 
 -- Rebirth
 local rbCard = box(p1, 0, 0, S.cardW1, RB_CARD_H, SEC, 16)
@@ -1399,6 +1401,7 @@ end
 ---------------------------------------------------------------------
 -- PAGE 5: Boss. Kiri: toggle (Auto Farm Boss / Resume Farming / Always Dodge Stomps). Kanan: Boss Info.
 -- Label-nya disimpan di S.boss dan dikembalikan sebagai UI.Boss (ditulis oleh script utama).
+-- Kartu dibuat setinggi sidebar (SIDEMIN) supaya memenuhi tab dari atas sampai bawah; isi panel ditaruh di tengah.
 do
 local p5 = newPage()
 local B = {}
@@ -1410,25 +1413,26 @@ local bossRows = {
 local optsW = 0
 for _, r in ipairs(bossRows) do optsW = math.max(optsW, rowW(r[1], r[2])) end
 local cardW5 = S.cardW1
-local BH = RH * 3
-local cardH5 = CONTENT_Y + BH + PAD
+local cardH5 = math.max(CONTENT_Y + RH * 3 + PAD, SIDEMIN)
+local BH = cardH5 - CONTENT_Y - PAD            -- tinggi panel: sampai bawah kartu
+local BO = math.floor((BH - RH * 3) / 2)       -- baris toggle di tengah panel kiri
 
 local bsCard = box(p5, 0, 0, cardW5, cardH5, SEC, 16)
-cardBG(bsCard, ASSETS.BossBG ~= "" and ASSETS.BossBG or ASSETS.NoticeBG, 0.45)
+cardBG(bsCard, ASSETS.BossBG ~= "" and ASSETS.BossBG or ASSETS.NoticeBG, 0.3)
 B.status = cardHeader(bsCard, "👹", "Boss Farming", "Fights the boss and grabs the chest.", "Status: Inactive")
 
 local opts = box(bsCard, PAD, CONTENT_Y, optsW, BH, CARD, 12)
 opts.BackgroundTransparency = 0.4
-optRow(opts, optsW, 0, bossRows[1][1], bossRows[1][2], false, function(s) Callbacks.AutoBoss(s) end)
-hline(opts, 14, RH, optsW - 28)
-optRow(opts, optsW, RH, bossRows[2][1], bossRows[2][2], Saved.BossResume ~= false, function(s) Callbacks.BossResume(s) end)
-hline(opts, 14, RH * 2, optsW - 28)
-optRow(opts, optsW, RH * 2, bossRows[3][1], bossRows[3][2], Saved.BossDodge == true, function(s) Callbacks.BossDodge(s) end)
+optRow(opts, optsW, BO, bossRows[1][1], bossRows[1][2], false, function(s) Callbacks.AutoBoss(s) end)
+hline(opts, 14, BO + RH, optsW - 28)
+optRow(opts, optsW, BO + RH, bossRows[2][1], bossRows[2][2], Saved.BossResume ~= false, function(s) Callbacks.BossResume(s) end)
+hline(opts, 14, BO + RH * 2, optsW - 28)
+optRow(opts, optsW, BO + RH * 2, bossRows[3][1], bossRows[3][2], Saved.BossDodge == true, function(s) Callbacks.BossDodge(s) end)
 
 local ix = PAD + optsW + GAP
 local iw = cardW5 - ix - PAD
 local info = box(bsCard, ix, CONTENT_Y, iw, BH, Color3.fromRGB(18, 18, 20), 12)
-info.BackgroundTransparency = 0.05
+info.BackgroundTransparency = 0.5
 text(info, "Boss Info", 17, 14, 26, iw - 28, Color3.new(1, 1, 1), F.GothamBold)
 hline(info, 14, 50, iw - 28)
 
@@ -1436,7 +1440,7 @@ local function bossRow(cy, icon, name, value)
 	local rw = iw - 16
 	local row = new("Frame", {
 		Position = UDim2.fromOffset(8, cy - 16), Size = UDim2.fromOffset(rw, 32),
-		BackgroundColor3 = Color3.fromRGB(30, 30, 33), BorderSizePixel = 0,
+		BackgroundColor3 = Color3.fromRGB(30, 30, 33), BackgroundTransparency = 0.45, BorderSizePixel = 0,
 	}, info)
 	round(row, 7)
 	stroke(row, Color3.fromRGB(110, 110, 116), 1)
@@ -1446,9 +1450,11 @@ local function bossRow(cy, icon, name, value)
 	autoFit(text(row, name, 13, 36, 16, nw, TX, F.GothamMedium), 13, 8, nw)
 	return autoFit(text(row, value, 14, rw - vw - 8, 16, vw, TX, F.GothamBold, RIGHT), 14, 8, vw)
 end
-B.name = bossRow(76, "👹", "Boss", "None")
-B.hp = bossRow(116, "❤", "Health", "0 / 0")
-B.next = bossRow(156, "⏳", "Next Boss", "N/A")
+-- 3 baris (tinggi 32, jarak 44 => blok 120 px) ditaruh di tengah area di bawah garis judul (y = 50)
+local IY = 50 + math.floor((BH - 50 - 120) / 2) + 16
+B.name = bossRow(IY, "👹", "Boss", "None")
+B.hp = bossRow(IY + 44, "❤", "Health", "0 / 0")
+B.next = bossRow(IY + 88, "⏳", "Next Boss", "N/A")
 
 S.boss = B
 sizes[5] = {w = cardW5, h = cardH5}
