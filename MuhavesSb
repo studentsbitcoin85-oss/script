@@ -56,13 +56,34 @@ end
 local library = {Runtime = runtime}
 function library:Use() end
 
+library.AntiAFK = false
+function library:SetAntiAFK(state)
+	self.AntiAFK = state and true or false
+end
 function library:EnableAntiAFK()
+	self.AntiAFK = true
+	if self.AntiAFKStarted then return end
+	self.AntiAFKStarted = true
 	local virtualUser = game:GetService("VirtualUser")
-	runtime:Connect(game:GetService("Players").LocalPlayer.Idled, function()
+	local function poke()
 		pcall(function()
 			virtualUser:CaptureController()
 			virtualUser:ClickButton2(Vector2.new())
 		end)
+		pcall(function()
+			local humanoid = game:GetService("Players").LocalPlayer.Character
+			humanoid = humanoid and humanoid:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid:Move(Vector3.new(0, 0, 0), false) end
+		end)
+	end
+	runtime:Connect(game:GetService("Players").LocalPlayer.Idled, function()
+		if library.AntiAFK then poke() end
+	end)
+	runtime:Spawn(function()
+		while runtime.Alive do
+			task.wait(55)
+			if library.AntiAFK then poke() end
+		end
 	end)
 end
 
@@ -156,6 +177,56 @@ function library:AddWindow(title)
 			end
 		end)
 	end
+
+
+	-- ===== Black & white theme =====
+	runtime:Defer(function()
+		local gui = Window.Root and Window.Root:FindFirstAncestorOfClass("ScreenGui")
+		if not gui then return end
+		local WHITE = Color3.fromRGB(235, 235, 235)
+		local function mono(color)
+			local _, s, v = color:ToHSV()
+			if s > 0.2 then return WHITE, true end
+			return Color3.new(v, v, v), false
+		end
+		local applying = false
+		local function recolor(obj, prop, hook)
+			local ok, current = pcall(function() return obj[prop] end)
+			if not ok or typeof(current) ~= "Color3" then return end
+			local target, accent = mono(current)
+			if target ~= current then
+				applying = true
+				pcall(function() obj[prop] = target end)
+				applying = false
+			end
+			if accent and hook then
+				runtime:Connect(obj:GetPropertyChangedSignal(prop), function()
+					if applying then return end
+					recolor(obj, prop, false)
+				end)
+			end
+		end
+		local function paint(obj)
+			if obj:IsA("GuiObject") then recolor(obj, "BackgroundColor3", true) end
+			if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+				recolor(obj, "TextColor3", true)
+			elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+				if obj.Name ~= "Icon" then recolor(obj, "ImageColor3", true) end
+			elseif obj:IsA("UIStroke") then
+				recolor(obj, "Color", true)
+			elseif obj:IsA("UIGradient") then
+				pcall(function()
+					local points = {}
+					for _, key in ipairs(obj.Color.Keypoints) do
+						table.insert(points, ColorSequenceKeypoint.new(key.Time, (mono(key.Value))))
+					end
+					obj.Color = ColorSequence.new(points)
+				end)
+			end
+		end
+		for _, obj in ipairs(gui:GetDescendants()) do paint(obj) end
+		runtime:Connect(gui.DescendantAdded, function(obj) task.defer(paint, obj) end)
+	end)
 
 	-- ===== Font normalisation =====
 	runtime:Defer(function()
@@ -919,6 +990,7 @@ end)
 tabs.main.WalkOnWaterSwitch:Set(true)
 
 tabs.main:AddLabel("Other:")
+tabs.main:AddSwitch("Anti AFK", function(bool) utils.library:SetAntiAFK(bool) end):Set(true)
 
 tabs.main:AddSwitch("Infinite Jump", function(bool)
 	tabs.main.InfiniteJump = bool
