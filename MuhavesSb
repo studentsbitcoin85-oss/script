@@ -1,5 +1,5 @@
 -- ============================================================
---   MUSCLE LEGENDS -> LUNA UI (semua fitur Silence dipindah)
+--   MUSCLE LEGENDS -> LUNA UI (FIXED: section dibungkus do...end)
 -- ============================================================
 if _G.SilenceLunaStop then pcall(_G.SilenceLunaStop) end
 
@@ -173,6 +173,15 @@ end
 RT.c(Players.PlayerAdded, function() task.wait(0.5) refreshPlayerDropdowns() end)
 RT.c(Players.PlayerRemoving, function() task.wait(0.5) refreshPlayerDropdowns() end)
 
+-- getTool dipindah ke level atas (dipakai Killing & Auto Rock)
+local function getTool()
+	if not char() then return end
+	for _, v in pairs(Backpack:GetChildren()) do
+		if v.Name == "Punch" and hum() then hum():EquipTool(v) end
+	end
+	muscleEvent:FireServer("punch", "leftHand") muscleEvent:FireServer("punch", "rightHand")
+end
+
 -- ============================================================
 -- TABS
 -- ============================================================
@@ -191,6 +200,7 @@ local TSet = newTab("Settings", "settings")
 -- ============================================================
 -- MAIN
 -- ============================================================
+do
 sec(TMain, "User Settings")
 local main = {Size = {v = 2, on = false}, Speed = {v = 120, on = false}, FOV = {v = 70, on = false}}
 input(TMain, "Size", function(t) local n = tonumber((t:gsub("%s+", ""))) if n and n > 0 then main.Size.v = n end end, "2")
@@ -452,10 +462,12 @@ do
 	button(TMain, "Shader: Next", function() step(1) end)
 	table.insert(RT.Cleanups, function() restore() for _, e in ipairs(fx) do e:Destroy() end if ownedAtm then atm:Destroy() end end)
 end
+end -- MAIN
 
 -- ============================================================
 -- KILLING
 -- ============================================================
+do
 local function isAlive(p)
 	return p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0
 end
@@ -464,13 +476,6 @@ local function isProtected(p)
 	if p.Character:FindFirstChildOfClass("ForceField") or p.Character:FindFirstChild("spawnProtectionHighlight") then return true end
 	local u = p.Character:GetAttribute("SpawnProtectedUntil")
 	return typeof(u) == "number" and WS:GetServerTimeNow() < u
-end
-local function getTool()
-	if not char() then return end
-	for _, v in pairs(Backpack:GetChildren()) do
-		if v.Name == "Punch" and hum() then hum():EquipTool(v) end
-	end
-	muscleEvent:FireServer("punch", "leftHand") muscleEvent:FireServer("punch", "rightHand")
 end
 local function positionNear(target, h)
 	if not isAlive(target) or isProtected(target) or isProtected(LP) then return false end
@@ -830,10 +835,12 @@ switch(TKill, "Toggle Ring (Kill Aura)", function(b)
 	end
 	if aura.Gen == g then aura.Frozen = false end
 end)
+end -- KILLING
 
 -- ============================================================
 -- SPECS
 -- ============================================================
+do
 sec(TSpec, "Player Stats")
 local specTarget
 local emoji = {Strength = "💪", Rebirths = "🔄", Durability = "🛡", Agility = "⚡", Kills = "💀", ["Evil Karma"] = "😈", ["Good Karma"] = "😇", Brawls = "🥊"}
@@ -901,10 +908,12 @@ RT.loop(0.25, function()
 	advPD.Text = string.format("💥 Your Damage: %s (%s)", fmt(pd), commas(pd))
 	advHits.Text = "👊 Hits to Kill: " .. tostring(hits)
 end)
+end -- SPECS
 
 -- ============================================================
--- FARMING
+-- FARMING + BOSS (satu blok, saling berbagi variabel)
 -- ============================================================
+do
 sec(TFarm, "Rebirths")
 local reb = {Label = label(TFarm, "Rebirths: 0"), TargetLabel = label(TFarm, "Target: None"), Rebirths = leaderstats:WaitForChild("Rebirths"), Target = 0, Auto = false, Gen = 0}
 input(TFarm, "Set Rebirth Target (Required)", function(t) local n = tonumber(t) if n and n >= 0 then reb.Target = n end end, "0")
@@ -1732,10 +1741,12 @@ hwAutoSwitch = switch(TBoss, "Auto Farm Halloween Boss", function(state)
 		task.wait(model and 0.03 or 0.25)
 	end
 end)
+end -- FARMING + BOSS
 
 -- ============================================================
 -- PETS
 -- ============================================================
+do
 sec(TPets, "Crystals")
 local Cr = {Catalog = RS.shared.catalogs:WaitForChild("crystalChances"), Remote = RS.rEvents:WaitForChild("openCrystalRemote"),
 	Settings = {}, Dirty = {}, RetryAt = {}, Selected = nil, Amount = 1, Running = false, Rendering = false, Options = {}}
@@ -1969,10 +1980,12 @@ switch(TPets, "Auto Trade", function(state)
 		task.wait(2)
 	end
 end)
+end -- PETS
 
 -- ============================================================
 -- BOOSTS
 -- ============================================================
+do
 sec(TBoost, "Boost Eater")
 local eggEat = false
 switch(TBoost, "Eat All Eggs", function(s) eggEat = s end)
@@ -2024,10 +2037,12 @@ RT.loop(7.5, function()
 	eggCount.Text, shakeCount.Text = "Protein Eggs: " .. e, "Tropical Shakes: " .. s
 end)
 label(TBoost, "Mengganggu Boost hasil gift. Duduk di mesin supaya tidak lag!")
+end -- BOOSTS
 
 -- ============================================================
 -- TELEPORTS
 -- ============================================================
+do
 local function tp(cf) local r = root() if r then r.CFrame = cf end end
 sec(TTele, "Main")
 for _, l in ipairs({{"Tiny Island", CFrame.new(-37.1, 9.2, 1919)}, {"Main Island", CFrame.new(16.07, 9.08, 133.8)}, {"Beach", CFrame.new(-8, 9, -169.2)}}) do
@@ -2041,10 +2056,12 @@ for _, g in ipairs({
 	{"Infernal Gym", CFrame.new(-6759, 7.36, -1284)}, {"Mythical Gym", CFrame.new(2250, 7.37, 1073.2)}, {"Frost Gym", CFrame.new(-2623, 7.36, -409)}}) do
 	button(TTele, g[1], function() tp(g[2]) end)
 end
+end -- TELEPORTS
 
 -- ============================================================
 -- STATS
 -- ============================================================
+do
 sec(TStats, "Elapsed Time")
 local stopwatch = label(TStats, "0d 0h 0m 0s")
 local startTime = tick()
@@ -2067,6 +2084,7 @@ RT.loop(0.5, function()
 		statLabels[s[1]].Text = string.format("%s: %s (%s) | Gained: %s (%s)", s[1], fmt(v), commas(v), fmt(g), commas(g))
 	end
 end)
+end -- STATS
 
 -- ============================================================
 -- INFO + SETTINGS
