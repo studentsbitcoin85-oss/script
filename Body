@@ -393,18 +393,20 @@ local function rowW(title, sub, icon, num)
 	if num then w = w + 98 end
 	return w
 end
-local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb, numMin, numDef, numMax)
+local function optRow(p, w, y, title, sub, state, cb, icon, numVal, numCb, numMin, numDef, numMax, rh)
+	rh = rh or RH
+	local mid = y + rh / 2
 	local left = 14
 	if icon then
-		text(p, icon, 26, left - 2, y + RH / 2, 34, MUTED, F.GothamBold, CENTER)
+		text(p, icon, 26, left - 2, mid, 34, MUTED, F.GothamBold, CENTER)
 		left = left + 38
 	else
-		Toggles[title] = toggle(p, left, y + RH / 2, state, cb)
+		Toggles[title] = toggle(p, left, mid, state, cb)
 		left = left + 56
 	end
-	text(p, title, 17, left, y + 20, 400, TX, F.GothamBold)
-	text(p, sub, 13, left, y + 41, 400, SUB, F.GothamMedium)
-	if numVal then numberBox(p, w - 14 - 84, y + 15, 84, 28, numVal, numCb, numMin, numDef, numMax) end
+	text(p, title, 17, left, mid - 9, 400, TX, F.GothamBold)
+	text(p, sub, 13, left, mid + 12, 400, SUB, F.GothamMedium)
+	if numVal then numberBox(p, w - 14 - 84, mid - 14, 84, 28, numVal, numCb, numMin, numDef, numMax) end
 end
 
 local function pillW(t, dot) return tw(t, 14, F.GothamMedium) + (dot and 52 or 26) end
@@ -1120,7 +1122,7 @@ local NOTE_Y = cardH2 - PAD - 26
 local ROW_Y = CONTENT_Y + math.floor((NOTE_Y - GAP - CONTENT_Y - ROW_VIEW_H) / 2)
 
 local otCard = box(p2, 0, 0, cardW2, cardH2, SEC, 16)
-cardBG(otCard, ASSETS.ExtrasBG, 0.4)
+cardBG(otCard, ASSETS.ExtrasBG, 0.72)
 local otStatus = cardHeader(otCard, "⚙", "Extras", "Additional features and settings.", "Status: Ready")
 
 local tileRow = new("ScrollingFrame", {
@@ -1184,7 +1186,7 @@ local footY = CONTENT_Y + ROW_H + GAP
 local cardH3 = footY + 70 + PAD
 
 local ntCard = box(p3, 0, 0, cardW3, cardH3, SEC, 16)
-cardBG(ntCard, ASSETS.NoticeBG, 0.45)
+cardBG(ntCard, ASSETS.NoticeBG, 0.72)
 cardHeader(ntCard, "📢", "Notice", "About this script.", nil, nil, true)
 
 local lg = box(ntCard, PAD, CONTENT_Y, w1, ROW_H, BLACK, 12)
@@ -1252,7 +1254,7 @@ local cardH4 = CONTENT_Y + PANEL_H + GAP + PANEL_H + PAD + (hasDiscord and (GAP 
 local colW = math.floor((inner - 16 - 8) / 2)
 
 local hmCard = box(p4, 0, 0, cardW4, cardH4, SEC, 16)
-cardBG(hmCard, ASSETS.HomeBG, 0.45)
+cardBG(hmCard, ASSETS.HomeBG, 0.72)
 cardHeader(hmCard, "🏠", "Home", "Your account and connection details.", nil, nil, true)
 
 local function panel(y, title, h)
@@ -1415,19 +1417,19 @@ for _, r in ipairs(bossRows) do optsW = math.max(optsW, rowW(r[1], r[2])) end
 local cardW5 = S.cardW1
 local cardH5 = math.max(CONTENT_Y + RH * 3 + PAD, SIDEMIN)
 local BH = cardH5 - CONTENT_Y - PAD            -- tinggi panel: sampai bawah kartu
-local BO = math.floor((BH - RH * 3) / 2)       -- baris toggle di tengah panel kiri
+local RHB = math.floor(BH / 3)               -- tiap baris toggle setinggi 1/3 panel (mengisi penuh)
 
 local bsCard = box(p5, 0, 0, cardW5, cardH5, SEC, 16)
-cardBG(bsCard, ASSETS.BossBG ~= "" and ASSETS.BossBG or ASSETS.NoticeBG, 0.3)
+cardBG(bsCard, ASSETS.BossBG ~= "" and ASSETS.BossBG or ASSETS.NoticeBG, 0.72)
 B.status = cardHeader(bsCard, "👹", "Boss Farming", "Fights the boss and grabs the chest.", "Status: Inactive")
 
 local opts = box(bsCard, PAD, CONTENT_Y, optsW, BH, CARD, 12)
 opts.BackgroundTransparency = 0.4
-optRow(opts, optsW, BO, bossRows[1][1], bossRows[1][2], false, function(s) Callbacks.AutoBoss(s) end)
-hline(opts, 14, BO + RH, optsW - 28)
-optRow(opts, optsW, BO + RH, bossRows[2][1], bossRows[2][2], Saved.BossResume ~= false, function(s) Callbacks.BossResume(s) end)
-hline(opts, 14, BO + RH * 2, optsW - 28)
-optRow(opts, optsW, BO + RH * 2, bossRows[3][1], bossRows[3][2], Saved.BossDodge == true, function(s) Callbacks.BossDodge(s) end)
+optRow(opts, optsW, 0, bossRows[1][1], bossRows[1][2], false, function(s) Callbacks.AutoBoss(s) end, nil, nil, nil, nil, nil, nil, RHB)
+hline(opts, 14, RHB, optsW - 28)
+optRow(opts, optsW, RHB, bossRows[2][1], bossRows[2][2], Saved.BossResume ~= false, function(s) Callbacks.BossResume(s) end, nil, nil, nil, nil, nil, nil, RHB)
+hline(opts, 14, RHB * 2, optsW - 28)
+optRow(opts, optsW, RHB * 2, bossRows[3][1], bossRows[3][2], Saved.BossDodge == true, function(s) Callbacks.BossDodge(s) end, nil, nil, nil, nil, nil, nil, RHB)
 
 local ix = PAD + optsW + GAP
 local iw = cardW5 - ix - PAD
@@ -1436,25 +1438,25 @@ info.BackgroundTransparency = 0.5
 text(info, "Boss Info", 17, 14, 26, iw - 28, Color3.new(1, 1, 1), F.GothamBold)
 hline(info, 14, 50, iw - 28)
 
-local function bossRow(cy, icon, name, value)
+local INFO_TOP, INFO_GAP = 62, 10
+local IRH = math.floor((BH - INFO_TOP - 14 - 2 * INFO_GAP) / 3) -- tinggi tiap baris info
+local function bossRow(n, icon, name, value)
 	local rw = iw - 16
 	local row = new("Frame", {
-		Position = UDim2.fromOffset(8, cy - 16), Size = UDim2.fromOffset(rw, 32),
+		Position = UDim2.fromOffset(8, INFO_TOP + (n - 1) * (IRH + INFO_GAP)), Size = UDim2.fromOffset(rw, IRH),
 		BackgroundColor3 = Color3.fromRGB(30, 30, 33), BackgroundTransparency = 0.45, BorderSizePixel = 0,
 	}, info)
-	round(row, 7)
+	round(row, 9)
 	stroke(row, Color3.fromRGB(110, 110, 116), 1)
-	text(row, icon, 14, 8, 16, 22, TX, F.Gotham, CENTER)
-	local vw = math.floor(rw * 0.6)
-	local nw = math.max(20, rw - vw - 44)
-	autoFit(text(row, name, 13, 36, 16, nw, TX, F.GothamMedium), 13, 8, nw)
-	return autoFit(text(row, value, 14, rw - vw - 8, 16, vw, TX, F.GothamBold, RIGHT), 14, 8, vw)
+	text(row, icon, 20, 8, IRH / 2, 28, TX, F.Gotham, CENTER)
+	local vw = math.floor(rw * 0.55)
+	local nw = math.max(20, rw - vw - 56)
+	autoFit(text(row, name, 15, 44, IRH / 2, nw, TX, F.GothamMedium), 15, 8, nw)
+	return autoFit(text(row, value, 16, rw - vw - 12, IRH / 2, vw, TX, F.GothamBold, RIGHT), 16, 8, vw)
 end
--- 3 baris (tinggi 32, jarak 44 => blok 120 px) ditaruh di tengah area di bawah garis judul (y = 50)
-local IY = 50 + math.floor((BH - 50 - 120) / 2) + 16
-B.name = bossRow(IY, "👹", "Boss", "None")
-B.hp = bossRow(IY + 44, "❤", "Health", "0 / 0")
-B.next = bossRow(IY + 88, "⏳", "Next Boss", "N/A")
+B.name = bossRow(1, "👹", "Boss", "None")
+B.hp = bossRow(2, "❤", "Health", "0 / 0")
+B.next = bossRow(3, "⏳", "Next Boss", "N/A")
 
 S.boss = B
 sizes[5] = {w = cardW5, h = cardH5}
