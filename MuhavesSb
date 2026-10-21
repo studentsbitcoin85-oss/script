@@ -195,9 +195,10 @@ function library:AddWindow(title)
 						if not map[key] then picked, turnedOn = key, false break end
 					end
 				end
-				previous = (picked and turnedOn) and {[picked] = true} or {}
-				show(picked and turnedOn and picked or nil)
-				if picked and callback then callback(picked) end
+				if not picked then return end
+				previous = turnedOn and {[picked] = true} or {}
+				show(turnedOn and picked or nil)
+				if callback then callback(picked) end
 			end)
 
 			local object = {}
@@ -790,6 +791,7 @@ runtime:Spawn(function()
 				tabs.main.runtime.part.Name = "Part_" .. offset[3]
 				tabs.main.runtime.part.Parent = services.Workspace
 				table.insert(tabs.main.WaterParts.Parts, tabs.main.runtime.part)
+				if #tabs.main.WaterParts.Parts % 40 == 0 then task.wait() end
 			end
 		end
 	end
