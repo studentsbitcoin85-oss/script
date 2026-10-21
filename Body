@@ -97,7 +97,9 @@ assert(gui, "Fluent GUI not found")
 gui.Name = "MuhavesUI"
 UI.Gui = gui
 
-local TabFarm = Window:AddTab({Title = "Fast Farming", Icon = ""})
+local TabRebirth = Window:AddTab({Title = "Fast Rebirth", Icon = ""})
+local TabStrength = Window:AddTab({Title = "Fast Strength", Icon = ""})
+local TabBoss = Window:AddTab({Title = "Boss", Icon = ""})
 local TabExtra = Window:AddTab({Title = "Extras", Icon = ""})
 local TabNotice = Window:AddTab({Title = "Notice", Icon = ""})
 
@@ -250,15 +252,15 @@ local IDLE = Color3.fromRGB(240, 240, 240)
 
 ---------------------------------------------------------------------
 -- FAST FARMING: Auto Rebirth
-TabFarm:AddSection("Auto Rebirth")
+TabRebirth:AddSection("Auto Rebirth")
 
 do
-	local status = paragraph(TabFarm, "Status: Inactive", "")
+	local status = paragraph(TabRebirth, "Status: Inactive", "")
 	UI.Rebirth.Status = labelProxy(status)
 	status.color = IDLE
 
 	local totals = {gain = 0, rebirths = 0, runtime = 0}
-	local stats = paragraph(TabFarm, "Rebirth Stats", "")
+	local stats = paragraph(TabRebirth, "Rebirth Stats", "")
 	stats.compose = function()
 		return string.format("Rebirths: %s (+%s)\nRuntime: %s", UI.Abbr(totals.rebirths), UI.Abbr(totals.gain), timeText(totals.runtime))
 	end
@@ -266,15 +268,15 @@ do
 	stats.shownDesc = stats.desc
 
 	local paceVals = {}
-	local pace = paragraph(TabFarm, "Rebirth Pace", "")
+	local pace = paragraph(TabRebirth, "Rebirth Pace", "")
 	pace.compose = function() return line5(paceVals) end
 	cells5(pace, paceVals)
 	pace.desc = pace.compose()
 	pace.shownDesc = pace.desc
 
-	addInput(TabFarm, "Rebirth Target", "Stop Auto Rebirth at this amount (0 = no limit)", tonumber(Saved.RebirthTarget) or 0, "RebirthTarget")
-	addToggle(TabFarm, "Auto Rebirth", "Farm strength and rebirth automatically", false, "AutoRebirth")
-	addToggle(TabFarm, "Equip Rebirth Pets", "Equip the best rebirth pets while rebirthing", Saved.EquipRebirthPets == true, "EquipRebirthPets")
+	addInput(TabRebirth, "Rebirth Target", "Stop Auto Rebirth at this amount (0 = no limit)", tonumber(Saved.RebirthTarget) or 0, "RebirthTarget")
+	addToggle(TabRebirth, "Auto Rebirth", "Farm strength and rebirth automatically", false, "AutoRebirth")
+	addToggle(TabRebirth, "Equip Rebirth Pets", "Equip the best rebirth pets while rebirthing", Saved.EquipRebirthPets == true, "EquipRebirthPets")
 
 	-- Rebirth tracking (clock follows UI.RbClock.active)
 	local last, lastT = nil, os.clock()
@@ -307,18 +309,18 @@ end
 
 ---------------------------------------------------------------------
 -- FAST FARMING: Auto Farm Strength
-TabFarm:AddSection("Auto Farm Strength")
+TabStrength:AddSection("Auto Farm Strength")
 
 do
-	local status = paragraph(TabFarm, "Status: Inactive", "")
+	local status = paragraph(TabStrength, "Status: Inactive", "")
 	UI.Strength.Status = labelProxy(status)
 	status.color = IDLE
 
-	local runtime = paragraph(TabFarm, "0d 0h 0m 0s", "")
+	local runtime = paragraph(TabStrength, "0d 0h 0m 0s", "")
 	UI.Strength.Runtime = labelProxy(runtime)
 
 	local totalVals = {str = "0", strGain = "+0", dura = "0", duraGain = "+0"}
-	local totals = paragraph(TabFarm, "Stats", "")
+	local totals = paragraph(TabStrength, "Stats", "")
 	totals.compose = function()
 		return string.format("Strength: %s (%s)\nDurability: %s (%s)", totalVals.str, totalVals.strGain, totalVals.dura, totalVals.duraGain)
 	end
@@ -331,7 +333,7 @@ do
 
 	local function rateGroup(title, strKey, duraKey)
 		local strVals, duraVals = {}, {}
-		local entry = paragraph(TabFarm, title, "")
+		local entry = paragraph(TabStrength, title, "")
 		entry.compose = function()
 			return "Strength:  " .. line5(strVals) .. "\nDurability:  " .. line5(duraVals)
 		end
@@ -343,12 +345,53 @@ do
 	rateGroup("Pace (last 10s)", "StrPace", "DuraPace")
 	rateGroup("Average (whole run)", "StrAverage", "DuraAverage")
 
-	addInput(TabFarm, "Max Reps / Second", "Maximum " .. CONST.REP_CAP .. " (0 = default " .. CONST.REP_DEFAULT .. ")",
+	addInput(TabStrength, "Max Reps / Second", "Maximum " .. CONST.REP_CAP .. " (0 = default " .. CONST.REP_DEFAULT .. ")",
 		tonumber(Saved.MaxReps) or CONST.REP_DEFAULT, "MaxReps")
-	addToggle(TabFarm, "Controlled Speed", "Adapts the rep speed to what the server accepts", true, "ControlledSpeed")
-	addToggle(TabFarm, "Auto Farm Strength", "Farm strength and durability automatically", false, "AutoFarmStrength")
-	addToggle(TabFarm, "Equip Reps Pets", "Equip pets with the best rep speed", Saved.PetMode == "reps", "EquipRepsPets")
-	addToggle(TabFarm, "Equip Strength Pets", "Equip pets with the best strength", Saved.PetMode == "strength", "EquipStrengthPets")
+	addToggle(TabStrength, "Controlled Speed", "Adapts the rep speed to what the server accepts", true, "ControlledSpeed")
+	addToggle(TabStrength, "Auto Farm Strength", "Farm strength and durability automatically", false, "AutoFarmStrength")
+	addToggle(TabStrength, "Equip Reps Pets", "Equip pets with the best rep speed", Saved.PetMode == "reps", "EquipRepsPets")
+	addToggle(TabStrength, "Equip Strength Pets", "Equip pets with the best strength", Saved.PetMode == "strength", "EquipStrengthPets")
+end
+
+---------------------------------------------------------------------
+-- BOSS
+TabBoss:AddSection("Auto Boss")
+do
+	UI.Boss = {}
+	local status = paragraph(TabBoss, "Status: Waiting for Boss", "")
+	status.color = IDLE
+	UI.Boss.Status = labelProxy(status)
+	UI.Boss.Boss = labelProxy(paragraph(TabBoss, "Boss: None", ""))
+	UI.Boss.Health = labelProxy(paragraph(TabBoss, "Health: 0 / 0", ""))
+	UI.Boss.Next = labelProxy(paragraph(TabBoss, "Next Boss: N/A", ""))
+
+	local muted = true
+	local dropdown = TabBoss:AddDropdown("D_BossTargets", {
+		Title = "Target Bosses",
+		Description = "Choose which bosses to fight",
+		Values = {},
+		Multi = true,
+		Default = {},
+	})
+	dropdown:OnChanged(function(map)
+		if muted or type(map) ~= "table" then return end
+		local copy = {}
+		for name, on in pairs(map) do if on then copy[name] = true end end
+		fire("BossTargets", copy)
+	end)
+	muted = false
+	UI.Boss.SetChoices = function(list, selected)
+		muted = true
+		pcall(function()
+			dropdown:SetValues(list)
+			dropdown:SetValue(selected)
+		end)
+		muted = false
+	end
+
+	addInput(TabBoss, "Seconds Training before Boss", "Training time after a rebirth before fighting", tonumber(Saved.BossPrep) or 4, "BossPrepSeconds")
+	addToggle(TabBoss, "Continue Farming after Boss Kill", "Resumes Auto Rebirth / Auto Farm Strength after the chest", Saved.BossContinue ~= false, "BossContinue")
+	addToggle(TabBoss, "Auto Boss", "Fights the boss and claims the chest automatically", false, "AutoBoss")
 end
 
 ---------------------------------------------------------------------
@@ -402,6 +445,7 @@ end
 TabNotice:AddSection("Notes")
 TabNotice:AddParagraph({Title = "Rebirth and Strength", Content = "Auto Rebirth and Auto Farm Strength cannot run together. Turning one on turns the other off."})
 TabNotice:AddParagraph({Title = "Pets", Content = "Equip Reps Pets and Equip Strength Pets switch each other off. Pets are only equipped while farming."})
+TabNotice:AddParagraph({Title = "Auto Boss", Content = "While a boss is active, farming is paused and resumed after the chest is claimed."})
 TabNotice:AddParagraph({Title = "Max Reps", Content = "Maximum " .. CONST.REP_CAP .. " reps per second. Only affects Auto Farm Strength."})
 TabNotice:AddParagraph({Title = "Minimize", Content = "Press the minimize button to shrink the window into the MHV square. Tap the square to open it again."})
 
