@@ -82,8 +82,8 @@ function library:AddWindow(title)
 	local Window = Fluent:CreateWindow({
 		Title = "MuhavesXMain",
 		SubTitle = "Muscle Legends",
-		TabWidth = 140,
-		Size = UDim2.fromOffset(580, 460),
+		TabWidth = 120,
+		Size = UDim2.fromOffset(540, 380),
 		Acrylic = false,
 		Theme = "Dark",
 		MinimizeKey = Enum.KeyCode.RightControl
@@ -92,11 +92,95 @@ function library:AddWindow(title)
 	local window = {Fluent = Window}
 	local tabIndex = 0
 
+	-- ===== Minimize icon (kotak + gambar logo) =====
+	do
+		local ICON_ID = "rbxassetid://122269945949784"
+		local userInput = game:GetService("UserInputService")
+		local holder = Instance.new("ScreenGui")
+		holder.Name = "MuhavesXMainIcon"
+		holder.ResetOnSpawn = false
+		holder.IgnoreGuiInset = true
+		holder.DisplayOrder = 999
+		pcall(function() if syn and syn.protect_gui then syn.protect_gui(holder) end end)
+		local okParent, uiParent = pcall(function() return gethui and gethui() end)
+		holder.Parent = (okParent and uiParent) or game:GetService("CoreGui")
+		runtime:AddCleanup(function() holder:Destroy() end)
+
+		local button = Instance.new("ImageButton")
+		button.Name = "Icon"
+		button.Size = UDim2.fromOffset(54, 54)
+		button.Position = UDim2.new(0, 16, 0.5, -27)
+		button.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+		button.AutoButtonColor = false
+		button.Image = ICON_ID
+		button.ScaleType = Enum.ScaleType.Crop
+		button.Visible = false
+		button.Parent = holder
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 12)
+		corner.Parent = button
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(96, 96, 120)
+		stroke.Thickness = 1.5
+		stroke.Parent = button
+
+		-- drag (and tap to open)
+		local dragging, dragStart, startPos, moved = false, nil, nil, false
+		runtime:Connect(button.InputBegan, function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging, moved = true, false
+				dragStart, startPos = input.Position, button.Position
+			end
+		end)
+		runtime:Connect(userInput.InputChanged, function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - dragStart
+				if delta.Magnitude > 6 then moved = true end
+				if moved then
+					button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+				end
+			end
+		end)
+		runtime:Connect(userInput.InputEnded, function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+				dragging = false
+				if not moved then pcall(function() Window:Minimize() end) end
+			end
+		end)
+
+		runtime:Spawn(function()
+			while runtime.Alive do
+				local hidden = Window.Minimized == true or (Window.Root and Window.Root.Visible == false)
+				button.Visible = hidden and true or false
+				task.wait(0.15)
+			end
+		end)
+	end
+
+	-- ===== Font normalisation =====
+	runtime:Defer(function()
+		local gui = Window.Root and Window.Root:FindFirstAncestorOfClass("ScreenGui")
+		if not gui then return end
+		local function style(obj)
+			if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+				pcall(function()
+					obj.Font = obj.TextSize >= 17 and Enum.Font.GothamBold or Enum.Font.GothamMedium
+				end)
+			end
+		end
+		for _, obj in ipairs(gui:GetDescendants()) do style(obj) end
+		runtime:Connect(gui.DescendantAdded, function(obj) task.defer(style, obj) end)
+	end)
+
 	local function makeTab(fluentTab, index)
 		local tab = {Fluent = fluentTab}
 
 		function tab:AddLabel(text)
 			pace()
+			if type(text) == "string" and text:match("^[^:]+:$") then
+				fluentTab:AddSection((text:gsub(":$", "")))
+				return setmetatable({}, {__newindex = function() end, __index = function() return text end})
+			end
 			local current = tostring(text)
 			local shown, last, scheduled = current, 0, false
 			local paragraph = fluentTab:AddParagraph({Title = current, Content = ""})
@@ -2349,7 +2433,6 @@ runtime:Spawn(function()
 	end
 end)
 
-tabs.specs:AddLabel("———————————————————————————————————")
 tabs.specs:AddLabel("Advanced Stats:")
 
 tabs.specs.AdvancedStats = {
