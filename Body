@@ -1,7 +1,7 @@
 --[[
     Muhaves Private Farming - UI (file terpisah, di-load lewat loadstring)
     Dipanggil dari script utama: loadstring(game:HttpGet(URL))(CONST)
-    CONST = {VERSION = "2", REP_CAP = 1000, REP_DEFAULT = 10}
+    CONST = {VERSION = "2", REP_CAP = 500, REP_DEFAULT = 462}
     Mengembalikan tabel UI (UI.Gui, UI.Rebirth, UI.Strength, UI.Extras, UI.Notice, UI.Callbacks, ...).
 
     Tabs (urutan sidebar): Home / Fast Farming / Extras / Notice.
@@ -346,8 +346,8 @@ local function parseNumber(s)
 end
 
 local MAX_INPUT = 1e18
--- Input yang tidak valid (bukan angka / di bawah minimum) mengembalikan kotak ke nilai terakhir yang sah.
--- Parameter "default" tidak dipakai lagi; dibiarkan supaya pemanggilan lama tetap jalan.
+-- Input yang tidak valid (kosong / bukan angka / di bawah minimum, mis. 0) mengembalikan kotak ke nilai default
+-- kalau "default" diberikan (Max Reps / Second -> REP_DEFAULT). Tanpa default (Rebirth Target) kembali ke nilai terakhir.
 local function numberBox(p, x, y, w, h, value, cb, minVal, default, maxVal)
 	local f = box(p, x, y, w, h, Color3.fromRGB(12, 12, 13), 8, true)
 	stroke(f, Color3.fromRGB(85, 85, 90))
@@ -360,7 +360,7 @@ local function numberBox(p, x, y, w, h, value, cb, minVal, default, maxVal)
 	local last = tonumber(value) or 0
 	local function commit()
 		local n = parseNumber(tb.Text)
-		if not n or n < (minVal or 0) then n = last end
+		if not n or n < (minVal or 0) then n = default or last end
 		n = math.min(math.floor(n), maxVal or MAX_INPUT)
 		last = n
 		tb.Text = string.format("%.0f", n)
@@ -894,7 +894,7 @@ local rbRows = {
 local fsRows = {
 	{"Auto Farm Strength", "Smart automatic strength farming."},
 	{"Controlled Speed", "Adjusts the speed based on server response."},
-	{"Max Reps / Second", "Max " .. REP_CAP .. " reps/s  •  Recommended: 650 (higher = lag)", "🚀", true},
+	{"Max Reps / Second", "Max " .. REP_CAP .. " reps/s  •  Recommended: 462 (higher = lag)", "🚀", true},
 }
 local function rowsW(rows)
 	local w = 0
@@ -1496,7 +1496,7 @@ do
 	end)
 end
 
--- Pertama kali dipakai (belum ada nilai tersimpan): kirim default 10 ke bagian farming supaya sama dengan kotaknya.
+-- Pertama kali dipakai (belum ada nilai tersimpan): kirim default (REP_DEFAULT) ke bagian farming supaya sama dengan kotaknya.
 -- Callbacks.MaxReps di sini masih stub, jadi nilainya masuk Pending lalu di-replay oleh script farming.
 if tonumber(Saved.MaxReps) == nil then Callbacks.MaxReps(REP_DEFAULT) end
 
